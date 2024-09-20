@@ -1,0 +1,1193 @@
+/*
+Copyright 2020 SkillTree
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+<template>
+  <div :id="tableId">
+    <loading-container v-bind:is-loading="isLoading">
+      <div v-if="this.skillsOriginal && this.skillsOriginal.length">
+        <div>
+          <div v-if="showSearch" class="row px-3 pt-3 mb-0 pb-0">
+            <div class="col-12 mb-0 pb-0">
+              <b-form-group label="Name Filter" label-class="text-muted">
+                <b-input v-model="table.filter.name" v-on:keydown.enter="applyFilters"
+                         data-cy="skillsTable-skillFilter" aria-label="Filter skills by name"/>
+              </b-form-group>
+            </div>
+            <div class="col-md">
+            </div>
+          </div>
+
+          <div class="row pl-3 mb-3">
+            <div class="col-auto">
+              <b-button-group v-if="showSearch" class="d-inline-block mt-2">
+                <b-button variant="outline-primary" @click="applyFilters" data-cy="users-filterBtn"><i
+                  class="fa fa-filter"/> Filter
+                </b-button>
+                <b-button variant="outline-primary" @click="reset" data-cy="users-resetBtn"><i class="fa fa-times"/>
+                  Reset
+                </b-button>
+              </b-button-group>
+
+              <b-button-group v-if="!isReadOnlyProj" class="d-inline-block mt-2 text-right border-left ml-2 pl-2" :size="actionsBtnSize">
+                <b-button :id="`selectAllBtn_${tableId}`" variant="outline-info" ref="selectAllBtn"
+                          :size="actionsBtnSize"
+                          @click="changeSelectionForAll(true)"
+                          data-cy="selectAllSkillsBtn" class=""><i
+                  class="fa fa-check-square"/><span class="d-none d-sm-inline"> Select All </span>
+                </b-button>
+                <b-button variant="outline-info" ref="clearSelectionBtn"
+                          :size="actionsBtnSize"
+                          @click="changeSelectionForAll(false)"
+                          data-cy="clearSelectedSkillsBtn" class=""><i class="far fa-square"></i>
+                  <span class="d-none d-sm-inline"> Clear</span>
+                </b-button>
+              </b-button-group>
+            </div>
+            <div v-if="!isReadOnlyProj" class="col text-right">
+              <b-dropdown :id="`tableActionsBtn_${tableId}`" :ref="`tableActionsBtn_${tableId}`"
+                          right
+                          variant="outline-info" class="mr-3 mt-2 skillActions"
+                          :disabled="actionsDisable"
+                          :size="actionsBtnSize"
+                          data-cy="skillActionsBtn">
+                <template #button-content>
+                  <i class="fas fa-tools"></i> Action
+                  <b-badge variant="info" data-cy="skillActionsNumSelected">
+                    <span>{{ numSelectedSkills }}</span>
+                  </b-badge>
+                </template>
+                <b-dropdown-item @click="handleExportRequest" data-cy="skillExportToCatalogBtn"><i
+                  class="far fa-arrow-alt-circle-up"></i> Export To Catalog
+                </b-dropdown-item>
+                <b-dropdown-item @click="handleSkillReuseRequest" data-cy="skillReuseBtn"><i
+                  class="fas fa-recycle"></i> Reuse in <span class="text-primary">this</span>
+                  Project
+                </b-dropdown-item>
+                <b-dropdown-item @click="handleSkillMoveRequest" data-cy="skillMoveBtn"><i
+                  class="fas fa-shipping-fast"></i> Move Skills
+                </b-dropdown-item>
+                <b-dropdown-item @click="handleAddSkillsToBadgeRequest" data-cy="skillAddToBadgeBtn"><i
+                  class="fas fa-award"></i> Add To Badge
+                </b-dropdown-item>
+                <b-dropdown-divider />
+                <b-dropdown-item @click="handleAddSkillTagRequest" data-cy="tagSkillBtn"><i
+                  class="fas fa-tag"></i> Tag Skills
+                </b-dropdown-item>
+                <b-dropdown-item @click="handleRemoveSkillTagRequest" data-cy="untagSkillBtn"><i
+                  class="fas fa-trash"></i> Remove Tags
+                </b-dropdown-item>
+              </b-dropdown>
+            </div>
+          </div>
+        </div>
+
+      <div class="row mb-2 ml-1">
+        <div class="col"></div>
+        <div class="col-auto text-right" data-cy="skillsTable-additionalColumns">
+            <span class="font-italic mr-2">Additional Columns:</span>
+            <b-form-checkbox-group
+              :id="`skillsAdditionalColumns_${tableId}`"
+              class="d-inline"
+              @input="updateColumns"
+              v-model="table.extraColumns.selected"
+              :options="table.extraColumns.options"
+              aria-label="Select to display additional columns"
+              name="Skills Table Additional Columns"
+            ></b-form-checkbox-group>
+        </div>
+      </div>
+
+      <skills-b-table :options="table.options" :items="skills" :tableStoredStateId="tableId"
+                      data-cy="skillsTable"
+                      @sort-changed="handleColumnSort">
+
+        <template v-slot:cell(name)="data">
+          <div class="row" :data-cy="`nameCell_${data.item.skillId}`">
+            <div class="col">
+              <div v-if="data.item.isGroupType">
+                <div class="text-success font-weight-bold">
+                  <i class="fas fa-layer-group" aria-hidden="true"></i> <span class="text-uppercase">Group</span>
+                  <b-badge variant="success" class="ml-2 text-uppercase" data-cy="numSkillsInGroup">
+                    <span>{{
+                        data.item.numSkillsInGroup
+                      }} skill{{ data.item.numSkillsInGroup === 1 ? '' : 's' }}</span>
+                  </b-badge>
+                </div>
+                <div class="h5 text-primary"><show-more :text="data.item.nameHtml ? data.item.nameHtml : data.item.name" :limit="45" :contains-html="!!data.item.nameHtml" /></div>
+              </div>
+              <div v-if="data.item.isSkillType">
+                <i class="fas fa-book mr-1 text-success"
+                   v-if="data.item.isCatalogImportedSkills && !data.item.reusedSkill"/>
+                <b-form-checkbox v-if="!data.item.isCatalogImportedSkills && !isReadOnlyProj"
+                  :id="`${data.item.projectId}-${data.item.skillId}`"
+                  v-model="data.item.selected"
+                  :name="`checkbox_${data.item.projectId}_${data.item.skillId}`"
+                  :value="true"
+                  :unchecked-value="false"
+                  :inline="true"
+                  v-on:input="updateActionsDisableStatus"
+                  :data-cy="`skillSelect-${data.item.skillId}`"
+                >
+                  <skill-name-router-link :skill="data.item" :subject-id="subjectId"/>
+                  <div v-if="data.item.sharedToCatalog" class="h6 ml-2 d-inline-block" :data-cy="`exportedBadge-${data.item.skillId}`">
+                    <b-badge variant="secondary" class="text-uppercase">
+                      <span><i class="fas fa-book"></i> Exported</span>
+                    </b-badge>
+                  </div>
+                </b-form-checkbox>
+                <skill-name-router-link v-if="!data.item.isCatalogImportedSkills && isReadOnlyProj" :skill="data.item" :subject-id="subjectId"/>
+                <div class="d-inline-block" v-if="data.item.isCatalogImportedSkills">
+                  <router-link :data-cy="`manageSkillLink_${data.item.skillId}`" tag="a" :to="{ name:'SkillOverview',
+                                      params: { projectId: data.item.projectId, subjectId: subjectId, skillId: data.item.skillId }}"
+                               :aria-label="`Manage skill ${data.item.name}  via link`">
+                    <div class="h5 d-inline-block">
+                      <show-more :text="data.item.nameHtml ? data.item.nameHtml : data.item.name"
+                                 :limit="45" :contains-html="nameContainsHtml(data.item)"/>
+                    </div>
+                  </router-link>
+                  <div class="h6 ml-2 d-inline-block">
+                    <b-badge variant="success" class="text-uppercase"
+                             :data-cy="`importedBadge-${data.item.skillId}`">
+                      <span v-if="data.item.reusedSkill"><i
+                        class="fas fa-recycle"></i> Reused</span>
+                      <span v-else><i class="fas fa-book"></i> Imported</span>
+                    </b-badge>
+                    <b-badge v-if="!data.item.enabled" variant="warning" class="text-uppercase ml-1"
+                             :data-cy="`disabledBadge-${data.item.skillId}`">
+                      <span><i class="fas fa-book"></i> Disabled</span>
+                    </b-badge>
+                  </div>
+                </div>
+              </div>
+
+              <div v-for="(tag) in data.item.tags" :key="tag.tagId" class="h6 mr-2 d-inline-block" :data-cy="`skillTag-${data.item.skillId}-${tag.tagId}`">
+                <b-badge variant="info">
+                  <span><i class="fas fa-tag"></i> {{ tag.tagValue }}</span>
+                </b-badge>
+              </div>
+
+              <div class="mt-1">
+                <b-button size="sm" @click="data.toggleDetails" variant="outline-info" class="mr-2 py-0 px-1"
+                          :aria-label="`Expand details for ${data.item.name}`"
+                          :data-cy="`expandDetailsBtn_${data.item.skillId}`">
+                  <i v-if="data.detailsShowing" class="fa fa-minus-square mr-1"/>
+                  <i v-else class="fa fa-plus-square mr-1"/>
+                  <span v-if="data.item.isGroupType">Group</span><span v-else>Skill</span> Details
+                </b-button>
+              </div>
+
+            </div>
+            <div class="col-auto ml-auto mr-0 mt-2">
+              <router-link v-if="data.item.isSkillType"
+                           :data-cy="`manageSkillBtn_${data.item.skillId}`" :to="{ name:'SkillOverview',
+                                  params: { projectId: data.item.projectId, subjectId: subjectId, skillId: data.item.skillId }}"
+                           :aria-label="`Manage skill ${data.item.name}`"
+                           class="btn btn-outline-primary btn-sm">
+                <span v-if="data.item.isCatalogImportedSkills || isReadOnlyProj">
+                  <span class="d-none d-sm-inline">View </span> <i class="fas fa-eye" aria-hidden="true"/>
+                </span>
+                <span v-if="!data.item.isCatalogImportedSkills && !isReadOnlyProj">
+                  <span class="d-none d-sm-inline">Manage </span> <i class="fas fa-arrow-circle-right" aria-hidden="true"/>
+                </span>
+              </router-link>
+              <b-button-group v-if="!isReadOnlyProj" size="sm" class="ml-1">
+                <b-button v-if="!data.item.reusedSkill" @click="editSkill(data.item)"
+                          variant="outline-primary"
+                          :data-cy="`editSkillButton_${data.item.skillId}`"
+                          :aria-label="'edit Skill '+data.item.name"
+                          :ref="`edit_${data.item.skillId}`"
+                          title="Edit Skill" b-tooltip.hover="Edit Skill">
+                  <i class="fas fa-edit" aria-hidden="true"/>
+                </b-button>
+                <b-button v-if="data.item.type === 'Skill' && !data.item.isCatalogImportedSkills"
+                          @click="copySkill(data.item)"
+                          v-skills="'CopySkill'"
+                          variant="outline-primary" :data-cy="`copySkillButton_${data.item.skillId}`"
+                          :aria-label="'copy Skill '+data.item.name" :ref="'copy_'+data.item.skillId"
+                          :disabled="addSkillDisabled"
+                          title="Copy Skill">
+                  <i class="fas fa-copy" aria-hidden="true" />
+                </b-button>
+                <span :id="`deleteSkillButton-wrapper_${data.item.skillId}`" class="d-inline-block" tabindex="-1">
+                  <b-button :id="`deleteSkillButton_${data.item.skillId}`"
+                            :ref="`deleteSkillButton_${data.item.skillId}`"
+                            @click="deleteSkill(data.item)" variant="outline-primary"
+                            :data-cy="`deleteSkillButton_${data.item.skillId}`"
+                            :aria-label="'delete Skill '+data.item.name"
+                            title="Delete Skill"
+                            size="sm"
+                            :class="{'delete-btn-border-fix' : !data.item.reusedSkill }"
+                            :disabled="deleteButtonsDisabled">
+                    <i class="text-warning fas fa-trash" aria-hidden="true"/>
+                  </b-button>
+                </span>
+              </b-button-group>
+              <b-tooltip v-if="!isReadOnlyProj" :target="`deleteSkillButton-wrapper_${data.item.skillId}`">{{ deleteButtonsTooltip }}</b-tooltip>
+            </div>
+          </div>
+        </template>
+        <template v-slot:cell(totalPoints)="data">
+          <div :data-cy="`totalPointsCell_${data.item.skillId}`">
+            <div>{{ data.item.totalPoints | number }}</div>
+            <div v-if="data.item.isSkillType" class="small text-secondary">{{ data.item.pointIncrement | number }} pts x {{ data.item.numPerformToCompletion | number }} repetitions</div>
+            <div v-if="data.item.isGroupType" class="small text-secondary">from <b>{{ data.item.numSkillsInGroup | number }}</b> skill{{ data.item.numSkillsInGroup !== 1 ? 's' : ''}}</div>
+          </div>
+        </template>
+
+        <template v-slot:cell(expiration)="data">
+          <div v-if="data.item.expirationType && data.item.expirationType !== 'NEVER'">{{
+              getExpirationDescription(data.item)
+            }}
+            <div v-if="getNextExpirationDate(data.item)" class="text-muted small">
+              {{ getNextExpirationDate(data.item) }}
+            </div>
+          </div>
+          <div v-else class="text-secondary">
+            None
+          </div>
+        </template>
+
+        <template v-slot:cell(timeWindow)="data">
+          <div v-if="data.item.isSkillType">{{ timeWindowTitle(data.item) }}
+            <i v-if="!timeWindowHasLength(data.item)" class="fas fa-question-circle text-muted"
+               :aria-label="`${timeWindowDescription(data.item)}`"
+               v-b-tooltip.hover="`${timeWindowDescription(data.item)}`"></i>
+          </div>
+          <div v-if="data.item.isGroupType" class="text-secondary">
+            N/A
+          </div>
+        </template>
+
+        <template v-slot:cell(catalogType)="data">
+          <div v-if="data.item.isCatalogImportedSkills && !data.item.reusedSkill">
+            <b-badge variant="success"><i class="fas fa-book"></i> IMPORTED</b-badge>
+            <p class="text-secondary">Imported from <span
+              class="text-primary font-weight-bold">{{ data.item.copiedFromProjectName }}</span></p>
+          </div>
+          <div v-if="data.item.sharedToCatalog">
+            <b-badge variant="secondary"><i class="fas fa-book"></i> EXPORTED</b-badge>
+            <p class="text-secondary">Exported to Skill Catalog</p>
+          </div>
+
+          <div v-if="!data.item.isCatalogSkill" class="text-secondary">
+            N/A
+          </div>
+        </template>
+
+        <template v-slot:cell(displayOrder)="data">
+          <div class="row">
+            <div class="col">
+              <span>{{data.value}}</span>
+            </div>
+            <div v-if="!isReadOnlyProj" class="col-auto">
+              <b-button-group size="sm" class="ml-1"
+                              :id="`mvBtnGrp_${data.item.skillId}`">
+                <b-popover :target="`mvBtnGrp_${data.item.skillId}`" triggers="hover">
+                  Sorting controls are enabled only when Display Order column is sorted in ascending order.
+                </b-popover>
+                <b-button @click="moveDisplayOrderDown(data.item)" variant="outline-info" :class="{disabled:data.item.disabledDownButton}"
+                          :disabled="!sortButtonEnabled || data.item.disabledDownButton" :aria-label="'move '+data.item.name+' down in the display order'"
+                          v-skills="'ChangeSkillDisplayOrder'"
+                          :data-cy="`orderMoveDown_${data.item.skillId}`">
+                  <i class="fas fa-arrow-circle-down"/>
+                </b-button>
+                <b-button @click="moveDisplayOrderUp(data.item)" variant="outline-info" :class="{disabled: data.item.disabledUpButton}"
+                          :disabled="!sortButtonEnabled || data.item.disabledUpButton"
+                          :aria-label="'move '+data.item.name+' up in the display order'"
+                          v-skills="'ChangeSkillDisplayOrder'"
+                          :data-cy="`orderMoveUp_${data.item.skillId}`">
+                  <i class="fas fa-arrow-circle-up"/>
+                </b-button>
+              </b-button-group>
+            </div>
+          </div>
+        </template>
+        <template v-slot:cell(created)="data">
+          <div>
+            <span>{{ data.value | date }}</span>
+            <b-badge v-if="isToday(data.value)" variant="info" class="ml-2">Today</b-badge>
+          </div>
+          <div class="text-muted small">
+            {{ data.value | timeFromNow }}
+          </div>
+        </template>
+        <template v-slot:cell(selfReportingType)="data">
+          <div v-if="data.item.selfReportingType === 'Quiz'" :data-cy="`selfReportCell-${data.item.skillId}-quiz`">
+            <div>
+              {{data.item.quizType}}-Based Validation
+            </div>
+            <div v-if="!data.item.isCatalogSkill" class="text-secondary">
+              via
+            </div>
+            <div v-if="!data.item.isCatalogSkill">
+              <router-link
+                :to="{ name:'Questions', params: { quizId: data.item.quizId } }"
+                tag="a">
+                {{ data.item.quizName }}
+              </router-link>
+            </div>
+          </div>
+          <div v-else>
+            <span v-if="data.item.isSkillType"  :data-cy="`selfReportCell-${data.item.skillId}`">{{ getSelfReportingTypePretty(data.item.selfReportingType) }}</span>
+            <span v-if="data.item.isGroupType" class="text-secondary">N/A</span>
+          </div>
+        </template>
+        <template #row-details="row">
+            <child-row-skill-group-display v-if="row.item.isGroupType" :group="row.item"
+                                           :add-skill-disabled="addSkillDisabled"
+                                           :subject-name="subjectName"
+                                           @skills-reused="handleSkillsAreReusedOrMoved"
+                                           @group-changed="groupChanged(row, arguments[0])"/>
+            <ChildRowSkillsDisplay v-if="row.item.isSkillType" :project-id="projectId" :subject-id="subjectId" v-skills-onMount="'ExpandSkillDetailsSkillsPage'"
+                                   :parent-skill-id="row.item.skillId" :refresh-counter="row.item.refreshCounter"
+                                   class="mr-3 ml-5 mb-3"></ChildRowSkillsDisplay>
+        </template>
+      </skills-b-table>
+
+      </div>
+      <no-content2 v-else title="No Skills Yet" class="my-5"
+                 message="Projects are composed of Subjects which are made of Skills and a single skill defines a training unit within the gamification framework."/>
+    </loading-container>
+
+    <edit-skill v-if="editSkillInfo.show" v-model="editSkillInfo.show"
+                :skillId="editSkillInfo.skill.skillId" :group-id="editSkillInfo.skill.groupId"
+                :is-copy="editSkillInfo.isCopy" :is-edit="editSkillInfo.isEdit"
+                :project-id="projectId" :subject-id="subjectId" @skill-saved="skillCreatedOrUpdated"
+                @hidden="handleFocus"/>
+    <edit-imported-skill v-if="editImportedSkillInfo.show" v-model="editImportedSkillInfo.show"
+                         :skill="editImportedSkillInfo.skill" @skill-saved="updateImportedSkill"
+                         @hidden="handleFocus"/>
+    <edit-skill-group v-if="editGroupInfo.show" v-model="editGroupInfo.show"
+                      :group="editGroupInfo.group" :is-edit="editGroupInfo.isEdit"
+                      @group-saved="skillCreatedOrUpdated" @hidden="handleFocus"/>
+    <export-to-catalog v-if="exportToCatalogInfo.show" v-model="exportToCatalogInfo.show"
+                       :skills="exportToCatalogInfo.skills"
+                       @exported="handleSkillsExportedToCatalog"
+                       @hidden="handleExportModalIsClosed"
+                       :show-invite-only-warning="this.inviteOnlyProject"/>
+    <reuse-or-move-skills-modal id="reuseSkillsModal" v-if="reuseSkillsInfo.show"
+                                v-model="reuseSkillsInfo.show"
+                                :skills="reuseSkillsInfo.skills"
+                                @action-success="handleSkillsAreReusedOrMoved"
+                                @hidden="handleExportModalIsClosed"/>
+    <reuse-or-move-skills-modal id="moveSkillsModal" v-if="moveSkillsInfo.show"
+                                v-model="moveSkillsInfo.show"
+                                :skills="moveSkillsInfo.skills"
+                                type="move"
+                                @action-success="handleSkillsAreReusedOrMoved"
+                                @hidden="handleExportModalIsClosed"/>
+    <add-skills-to-badge-modal id="addSkillsToBadgeModal" v-if="addSkillsToBadgeInfo.show"
+                                v-model="addSkillsToBadgeInfo.show"
+                                :skills="addSkillsToBadgeInfo.skills"
+                                @action-success="handleSkillsAddedToBadge"
+                                @hidden="handleExportModalIsClosed"/>
+    <add-skill-tag id="addTagSkillsModal" v-if="tagSkillsInfo.show"
+                                v-model="tagSkillsInfo.show"
+                                :skills="tagSkillsInfo.skills"
+                                @action-success="handleSkillsTagged"
+                                @hidden="handleExportModalIsClosed"/>
+    <remove-skill-tag id="removeTagSkillsModal" v-if="removeTagSkillsInfo.show"
+                   v-model="removeTagSkillsInfo.show"
+                   :skills="removeTagSkillsInfo.skills"
+                   @action-success="handleSkillsTagRemoved"
+                   @hidden="handleExportModalIsClosed"/>
+    <removal-validation v-if="deleteSkillInfo.show" v-model="deleteSkillInfo.show"
+                        @do-remove="doDeleteSkill" @hidden="handleDeleteCancelled">
+      <skill-removal-validation :delete-skill-info="deleteSkillInfo"/>
+    </removal-validation>
+  </div>
+</template>
+
+<script>
+  import { createNamespacedHelpers } from 'vuex';
+  import { SkillsReporter } from '@skilltree/skills-client-vue';
+  import dayjs from '@/common-components/DayJsCustomizer';
+  import StringHighlighter from '@/common-components/utilities/StringHighlighter';
+  import SkillReuseIdUtil from '@/components/utils/SkillReuseIdUtil';
+  import ExportToCatalog from '@/components/skills/catalog/ExportToCatalog';
+  import RemovalValidation from '@/components/utils/modal/RemovalValidation';
+  import EditImportedSkill from '@/components/skills/skillsGroup/EditImportedSkill';
+  import ReuseOrMoveSkillsModal from '@/components/skills/reuseSkills/ReuseOrMoveSkillsModal';
+  import AddSkillTag from '@/components/skills/tags/AddSkillTag';
+  import AddSkillsToBadgeModal from '@/components/skills/badges/AddSkillsToBadgeModal';
+  import RemoveSkillTag from '@/components/skills/tags/RemoveSkillTag';
+  import SettingsService from '@/components/settings/SettingsService';
+  import SkillRemovalValidation from '@/components/skills/SkillRemovalValidation';
+  import EditSkill from '@/components/skills/EditSkill';
+  import NoContent2 from '@/components/utils/NoContent2';
+  import ChildRowSkillsDisplay from '@/components/skills/ChildRowSkillsDisplay';
+  import SkillsService from '@/components/skills/SkillsService';
+  import MsgBoxMixin from '@/components/utils/modal/MsgBoxMixin';
+  import ToastSupport from '@/components/utils/ToastSupport';
+  import LoadingContainer from '@/components/utils/LoadingContainer';
+  import SkillsBTable from '@/components/utils/table/SkillsBTable';
+  import TimeWindowMixin from '@/components/skills/TimeWindowMixin';
+  import ChildRowSkillGroupDisplay from '@/components/skills/skillsGroup/ChildRowSkillGroupDisplay';
+  import EditSkillGroup from '@/components/skills/skillsGroup/EditSkillGroup';
+  import ShowMore from '@/components/skills/selfReport/ShowMore';
+  import ProjConfigMixin from '@/components/projects/ProjConfigMixin';
+  import TableStateUtil from '@/components/utils/TableStateUtil';
+  import SkillNameRouterLink from '@/components/skills/SkillNameRouterLink';
+
+  const subjects = createNamespacedHelpers('subjects');
+  const subjectSkills = createNamespacedHelpers('subjectSkills');
+
+  const YEARLY = 'YEARLY';
+  const MONTHLY = 'MONTHLY';
+  const DAILY = 'DAILY';
+  const LAST_DAY_OF_MONTH = 'LAST_DAY_OF_MONTH';
+
+  export default {
+    name: 'SkillsTable',
+    mixins: [MsgBoxMixin, ToastSupport, TimeWindowMixin, ProjConfigMixin],
+    props: {
+      projectId: String,
+      subjectId: String,
+      subjectName: String,
+      skillsProp: Array,
+      showSearch: {
+        type: Boolean,
+        default: true,
+      },
+      showHeader: {
+        type: Boolean,
+        default: true,
+      },
+      showPaging: {
+        type: Boolean,
+        default: true,
+      },
+      tableId: {
+        type: String,
+        default: 'skillsTable',
+      },
+      disableDeleteButtonsInfo: {
+        type: Object,
+        default: null,
+      },
+      disableCopy: {
+        type: Boolean,
+        required: false,
+        default: false,
+      },
+      disableCopyMsg: {
+        type: String,
+        required: false,
+        default: '',
+      },
+      pageSize: {
+        type: Number,
+        required: false,
+        default: 10,
+      },
+      actionsBtnSize: {
+        type: String,
+        required: false,
+        default: 'md',
+      },
+    },
+    components: {
+      SkillNameRouterLink,
+      SkillRemovalValidation,
+      AddSkillsToBadgeModal,
+      ReuseOrMoveSkillsModal,
+      AddSkillTag,
+      RemoveSkillTag,
+      EditImportedSkill,
+      RemovalValidation,
+      ExportToCatalog,
+      EditSkillGroup,
+      ChildRowSkillGroupDisplay,
+      SkillsBTable,
+      EditSkill,
+      ChildRowSkillsDisplay,
+      LoadingContainer,
+      NoContent2,
+      ShowMore,
+    },
+    data() {
+      return {
+        isLoading: false,
+        currentlyFocusedSkillId: '',
+        copyDisabled: this.disableCopy,
+        copyDisabledMsg: this.disableCopyMsg,
+        inviteOnlyProject: false,
+        editSkillInfo: {
+          isEdit: false,
+          isCopy: false,
+          show: false,
+          skill: {},
+        },
+        editImportedSkillInfo: {
+          show: false,
+          skill: {},
+        },
+        editGroupInfo: {
+          isEdit: false,
+          show: false,
+          group: {},
+        },
+        exportToCatalogInfo: {
+          show: false,
+          skills: [],
+        },
+        reuseSkillsInfo: {
+          show: false,
+          skills: [],
+        },
+        moveSkillsInfo: {
+          show: false,
+          skills: [],
+        },
+        addSkillsToBadgeInfo: {
+          show: false,
+          skills: [],
+        },
+        tagSkillsInfo: {
+          show: false,
+          skills: [],
+        },
+        removeTagSkillsInfo: {
+          show: false,
+          skills: [],
+        },
+        deleteSkillInfo: {
+          show: false,
+          skill: {},
+        },
+        skillsOriginal: [],
+        skills: [],
+        actionsDisable: true,
+        numSelectedSkills: 0,
+        table: {
+          extraColumns: {
+            options: [{
+              value: 'totalPoints',
+              text: 'Points',
+            }, {
+              value: 'selfReportingType',
+              text: 'Self Report',
+            }, {
+              value: 'catalogType',
+              text: 'Catalog',
+            }, {
+              value: 'expiration',
+              text: 'Expiration',
+            }, {
+              value: 'timeWindow',
+              text: 'Time Window',
+            }, {
+              value: 'version',
+              text: 'Version',
+            }],
+            selected: [],
+          },
+          filter: {
+            name: '',
+          },
+          options: {
+            rowDetailsControls: false,
+            busy: true,
+            bordered: true,
+            outlined: true,
+            stacked: 'md',
+            sortBy: 'created',
+            sortDesc: true,
+            fields: [
+              {
+                key: 'name',
+                label: 'Skill',
+                sortable: true,
+              },
+              {
+                key: 'displayOrder',
+                label: 'Display Order',
+                sortable: true,
+              },
+              {
+                key: 'created',
+                label: 'Created',
+                sortable: true,
+              },
+
+            ],
+            pagination: {
+              remove: !this.showPaging,
+              hideUnnecessary: true,
+              currentPage: 1,
+              totalRows: 1,
+              pageSize: this.pageSize,
+              possiblePageSizes: [10, 15, 25],
+            },
+            tableDescription: `Skills for subject ${this.subjectName}`,
+          },
+        },
+        sortButtonEnabled: false,
+      };
+    },
+    mounted() {
+      this.loadDataFromParams(this.skillsProp);
+      SettingsService.getProjectSetting(this.$route.params.projectId, 'invite_only')
+        .then((setting) => {
+          this.inviteOnlyProject = Boolean(setting?.enabled);
+        });
+      const tableState = TableStateUtil.loadTableState(this.tableId);
+      if (tableState && tableState.sortBy === 'displayOrder' && tableState.sortDesc === false) {
+        this.sortButtonEnabled = true;
+      }
+    },
+    computed: {
+      deleteButtonsDisabled() {
+        return this.disableDeleteButtonsInfo
+          && this.disableDeleteButtonsInfo.minNumSkills
+          && this.skills.length <= this.disableDeleteButtonsInfo.minNumSkills;
+      },
+      deleteButtonsTooltip() {
+        const isDisabled = this.disableDeleteButtonsInfo
+          && this.disableDeleteButtonsInfo.minNumSkills
+          && this.skills.length <= this.disableDeleteButtonsInfo.minNumSkills;
+        return (isDisabled) ? this.disableDeleteButtonsInfo.tooltip : 'Delete Skill';
+      },
+      addSkillDisabled() {
+        return this.$store.getters.config && this.numSkills >= this.$store.getters.config.maxSkillsPerSubject;
+      },
+      addSkillsDisabledMsg() {
+        if (this.$store.getters.config) {
+          return `The maximum number of Skills allowed is ${this.$store.getters.config.maxSkillsPerSubject}`;
+        }
+        return '';
+      },
+      numSkills() {
+        return this.skills ? this.skills.length : 0;
+      },
+    },
+    methods: {
+      ...subjectSkills.mapActions([
+        'loadSubjectSkills',
+      ]),
+      ...subjects.mapActions([
+        'loadSubjectDetailsState',
+      ]),
+      updateColumns(newList) {
+        const extraColLookup = {
+          totalPoints: {
+            key: 'totalPoints',
+            label: 'Points',
+            sortable: true,
+          },
+          version: {
+            key: 'version',
+            label: 'Version',
+            sortable: true,
+          },
+          timeWindow: {
+            key: 'timeWindow',
+            label: 'Time Window',
+            sortable: false,
+          },
+          selfReportingType: {
+            key: 'selfReportingType',
+            label: 'Self Report Type',
+            sortable: true,
+          },
+          catalogType: {
+            key: 'catalogType',
+            label: 'Catalog',
+            sortable: true,
+          },
+          expiration: {
+            key: 'expiration',
+            label: 'Expiration',
+            sortable: true,
+          },
+        };
+
+        Object.keys(extraColLookup).forEach((key) => {
+          if (newList.includes(key)) {
+            this.table.options.fields.push(extraColLookup[key]);
+          } else {
+            this.table.options.fields = this.table.options.fields.filter((item) => item.key !== key);
+          }
+        });
+        SkillsReporter.reportSkill('SkillsTableAdditionalColumns');
+      },
+      applyFilters() {
+        if (this.table.filter.name && this.table.filter.name.length > 0) {
+          const filter = this.table.filter.name.trim().toLowerCase();
+
+          this.skills = this.skillsOriginal.filter((item) => {
+            if (item.name.trim().toLowerCase().indexOf(filter) !== -1
+              || item.skillId.trim().toLowerCase().indexOf(filter) !== -1) {
+              return true;
+            }
+            return false;
+          })?.map((item) => {
+            const nameHtml = StringHighlighter.highlight(item.name, filter);
+            const skillId = SkillReuseIdUtil.removeTag(item.skillId);
+            const skillIdHtml = StringHighlighter.highlight(skillId, filter);
+            return {
+              nameHtml,
+              skillIdHtml,
+              ...item,
+            };
+          });
+        } else {
+          this.reset();
+        }
+      },
+      loadDataFromParams(skillsProp) {
+        this.skills = skillsProp.map((item) => {
+          let enhancedSkill = { ...item };
+          enhancedSkill = this.addMetaToSkillObj(enhancedSkill);
+          return SkillsService.enhanceWithTimeWindow(enhancedSkill);
+        });
+        this.skillsOriginal = this.skills.map((item) => item);
+        this.disableFirstAndLastButtons();
+        this.table.options.pagination.totalRows = this.skills.length;
+        this.table.options.busy = false;
+      },
+      reset() {
+        this.table.filter.name = '';
+        this.skills = this.skillsOriginal.map((item) => item);
+      },
+      isToday(timestamp) {
+        return dayjs(timestamp)
+          .isSame(new Date(), 'day');
+      },
+      idContainsHtml(item) {
+        return !!item.skillIdHtml;
+      },
+      nameContainsHtml(item) {
+        return !!item.nameHtml;
+      },
+      editSkill(itemToEdit) {
+        this.currentlyFocusedSkillId = itemToEdit.skillId;
+        if (itemToEdit.isCatalogSkill && itemToEdit.catalogType === 'imported') {
+          this.editImportedSkillInfo = {
+            show: true,
+            skill: itemToEdit,
+          };
+        } else if (itemToEdit.isGroupType) {
+          this.editGroupInfo = {
+            isEdit: true,
+            show: true,
+            group: itemToEdit,
+          };
+        } else {
+          this.editSkillInfo = { skill: itemToEdit, show: true, isEdit: true };
+        }
+      },
+      copySkill(skillToCopy) {
+        // deep copy skill to prevent any future conflicts
+        this.editSkillInfo = {
+          skill: skillToCopy,
+          show: true,
+          isCopy: true,
+          isEdit: false,
+        };
+      },
+      doneShowingLoading() {
+        this.isLoading = false;
+        this.table.options.busy = false;
+      },
+      addMetaToSkillObj(skill) {
+        const isCatalogImportedSkills = skill.copiedFromProjectId !== null && skill.copiedFromProjectId !== undefined && skill.copiedFromProjectId !== '';
+        let catalogType = isCatalogImportedSkills ? 'imported' : null;
+        if (skill.sharedToCatalog) {
+          catalogType = 'exported';
+        }
+        const isCatalogSkill = isCatalogImportedSkills || skill.sharedToCatalog;
+        return {
+          ...skill,
+          isGroupType: skill.type === 'SkillsGroup',
+          isSkillType: skill.type === 'Skill',
+          selfReportingType: (skill.type === 'Skill' && !skill.selfReportingType) ? 'Disabled' : skill.selfReportingType,
+          created: new Date(skill.created),
+          subjectId: this.subjectId,
+          isCatalogSkill,
+          isCatalogImportedSkills,
+          catalogType,
+        };
+      },
+      groupChanged(row, updated) {
+        const groupIndex = this.skills.findIndex((item) => item.skillId === row.item.skillId);
+        const newGroup = this.addMetaToSkillObj(updated);
+        // eslint-disable-next-line no-param-reassign
+        row.item = Object.assign(this.skills[groupIndex], newGroup);
+      },
+      handleSkillsExportedToCatalog(skills) {
+        this.skills = this.skills.map((skill) => {
+          let replacement = skills.find((item) => item.skillId === skill.skillId);
+          if (replacement) {
+            replacement = this.addMetaToSkillObj(replacement);
+            return replacement;
+          }
+          return skill;
+        });
+        this.$nextTick(() => this.$announcer.polite(`exported ${skills.length} skill${skills.length > 1 ? 's' : ''} to the catalog`));
+      },
+      handleSkillsAreReusedOrMoved() {
+        this.loadSubjectSkills({
+          projectId: this.projectId,
+          subjectId: this.subjectId,
+        })
+          .then(() => {
+            this.loadSubjectDetailsState({
+              projectId: this.projectId,
+              subjectId: this.subjectId,
+            })
+              .then(() => {
+                this.$nextTick(() => {
+                  // cannot use this.$refs as the SkillsTable component will be fully reloaded
+                  // due to the this.loadSubjectSkills call
+                  let element = document.getElementById('selectAllBtn_skillsTable');
+                  if (!element) {
+                    // this can happen when all skills were moved and now the table is gone since there is no skills left
+                    element = document.getElementById('newSkillBtn');
+                  }
+                  if (element) {
+                    element.focus();
+                  }
+                });
+              });
+          });
+      },
+      handleSkillsAddedToBadge(skillsAddedToBadgeResult) {
+        const { destination, skillsAddedToBadge } = skillsAddedToBadgeResult;
+        this.changeSelectionForAll(false);
+        this.$nextTick(() => this.$announcer.polite(`added ${skillsAddedToBadge.length} skill${skillsAddedToBadge.length > 1 ? 's' : ''} to badge ${destination.name}`));
+      },
+      handleSkillsTagged(tagResult) {
+        const { skills, tag } = tagResult;
+        this.skills = this.skills.map((skill) => {
+          const taggedSkill = skills.find((item) => item.skillId === skill.skillId);
+          if (taggedSkill) {
+            if (!taggedSkill.tags) {
+              taggedSkill.tags = [tag];
+            } else if (taggedSkill.tags.findIndex((item) => item.tagId === tag.tagId) === -1) {
+              taggedSkill.tags.push(tag);
+            }
+            return taggedSkill;
+          }
+          return skill;
+        });
+        this.changeSelectionForAll(false);
+        this.$nextTick(() => this.$announcer.polite(`added tag to ${skills.length} skill${skills.length > 1 ? 's' : ''} with value ${tagResult.tagValue}`));
+      },
+      handleSkillsTagRemoved(tagResult) {
+        const { skills, tag } = tagResult;
+        this.skills = this.skills.map((skill) => {
+          const taggedSkill = skills.find((item) => item.skillId === skill.skillId);
+          if (taggedSkill && taggedSkill.tags) {
+            const tagIndex = taggedSkill.tags.findIndex((item) => item.tagId === tag.tagId);
+            if (tagIndex > -1) {
+              taggedSkill.tags.splice(tagIndex, 1);
+            }
+            return taggedSkill;
+          }
+          return skill;
+        });
+        this.changeSelectionForAll(false);
+        this.$nextTick(() => this.$announcer.polite(`removed tag from ${skills.length} skill${skills.length > 1 ? 's' : ''} with value ${tagResult.tagValue}`));
+      },
+      updateImportedSkill(skill) {
+        const item1Index = this.skills.findIndex((item) => item.skillId === skill.skillId);
+        SkillsService.updateImportedSkill(skill)
+          .then(() => {
+            this.skills.splice(item1Index, 1, skill);
+            this.$emit('skills-change', skill);
+          });
+      },
+      skillCreatedOrUpdated(skill) {
+        if (this.skillsOriginal.length === 0) {
+          this.isLoading = true;
+        } else {
+          this.table.options.busy = true;
+        }
+
+        const item1Index = this.skills.findIndex((item) => item.skillId === skill.originalSkillId);
+        const { isEdit } = skill;
+
+        return SkillsService.saveSkill(skill)
+          .then((skillRes) => {
+            const createdSkill = this.addMetaToSkillObj(skillRes);
+            if (item1Index >= 0) {
+              createdSkill.refreshCounter = this.skills[item1Index].refreshCounter + 1;
+              this.skills.splice(item1Index, 1, createdSkill);
+            } else {
+              createdSkill.refreshCounter = 0;
+              this.skills.push(createdSkill);
+              this.skillsOriginal.push(createdSkill);
+              // report CreateSkill on when new skill is created
+              SkillsReporter.reportSkill('CreateSkill');
+            }
+
+            // attribute based skills should report on new or update operation
+            this.reportSkills(createdSkill);
+
+            this.disableFirstAndLastButtons();
+
+            this.$emit('skills-change', skill);
+            this.successToast('Skill Saved', `Saved '${skill.name}' skill.`);
+
+            if (isEdit) {
+              // override in case skillId was updated
+              this.currentlyFocusedSkillId = createdSkill.skillId;
+              setTimeout(() => {
+                this.handleFocus();
+              }, 0);
+            }
+            const msg = skill.type === 'SkillGroup' ? `Group ${skill.name} has been saved` : `Skill ${skill.name} has been saved`;
+            this.$nextTick(() => {
+              this.$announcer.polite(msg);
+            });
+            return createdSkill;
+          })
+          .catch((err) => {
+            if (err && err.response && err.response.data.errorCode === 'MaxSkillsThreshold') {
+              this.msgOk(err.response.data.explanation, 'Maximum Skills Reached');
+            } else if (err?.response?.data?.errorCode === 'DbUpgradeInProgress') {
+              this.$router.push({ name: 'DbUpgradeInProgressPage' });
+            } else {
+              throw err;
+            }
+          })
+          .finally(() => {
+            this.doneShowingLoading();
+          });
+      },
+
+      reportSkills(createdSkill) {
+        if (createdSkill.pointIncrementInterval <= 0) {
+          SkillsReporter.reportSkill('CreateSkillDisabledTimeWindow');
+        }
+        if (createdSkill.numMaxOccurrencesIncrementInterval > 1) {
+          SkillsReporter.reportSkill('CreateSkillMaxOccurrencesWithinTimeWindow');
+        }
+        if (createdSkill.helpUrl) {
+          SkillsReporter.reportSkill('CreateSkillHelpUrl');
+        }
+      },
+      deleteSkill(row) {
+        SkillsService.checkIfSkillBelongsToGlobalBadge(row.projectId, row.skillId)
+          .then((belongsToGlobalBadge) => {
+            if (belongsToGlobalBadge) {
+              this.msgOk(`Cannot delete Skill Id: [${row.skillId}].  This skill belongs to one or more global badges. Please contact a Supervisor to remove this dependency.`, 'Unable to delete');
+            } else {
+              this.deleteSkillInfo.skill = row;
+              this.deleteSkillInfo.show = true;
+            }
+          });
+      },
+      doDeleteSkill() {
+        const { skill } = this.deleteSkillInfo;
+        if (this.skillsOriginal.length === 1) {
+          this.isLoading = true;
+        } else {
+          this.table.options.busy = true;
+        }
+        SkillsService.deleteSkill(skill)
+          .then(() => {
+            const index = this.skills.findIndex((item) => item.skillId === skill.skillId);
+            this.skills.splice(index, 1);
+
+            const skillsOriginalIndex = this.skillsOriginal.findIndex((item) => item.skillId === skill.skillId);
+            this.skillsOriginal.splice(skillsOriginalIndex, 1);
+
+            this.rebuildDisplayOrder();
+            this.disableFirstAndLastButtons();
+            this.$emit('skill-removed', skill);
+
+            this.successToast('Removed Skill', `Skill '${skill.name}' was removed.`);
+          })
+          .finally(() => {
+            this.doneShowingLoading();
+          });
+      },
+      rebuildDisplayOrder() {
+        if (this.skills && this.skills.length > 0) {
+          // rebuild the display order from 0..N
+          const tableData = this.skills.sort((a, b) => a.displayOrder - b.displayOrder);
+          for (let i = 0; i < tableData.length; i += 1) {
+            tableData[i].displayOrder = i + 1;
+          }
+        }
+      },
+
+      handleColumnSort(param) {
+        if (param.sortBy === 'displayOrder' && !param.sortDesc) {
+          this.sortButtonEnabled = true;
+        } else {
+          this.sortButtonEnabled = false;
+        }
+
+        this.disableFirstAndLastButtons();
+      },
+      moveDisplayOrderUp(row) {
+        this.moveDisplayOrder(row, 'DisplayOrderUp', -1);
+      },
+      moveDisplayOrderDown(row) {
+        this.moveDisplayOrder(row, 'DisplayOrderDown', 1);
+      },
+      moveDisplayOrder(row, actionToSubmit, displayIndexIncrement) {
+        SkillsService.updateSkill(row, actionToSubmit)
+          .then(() => {
+            const index = this.skills.findIndex((item) => item.skillId === row.skillId);
+            const newIndex = index + displayIndexIncrement;
+
+            const movedSkill = this.skills[index];
+            const otherSkill = this.skills[newIndex];
+
+            // switch display orders
+            const movedSkillDisplayOrder = movedSkill.displayOrder;
+            movedSkill.displayOrder = otherSkill.displayOrder;
+            otherSkill.displayOrder = movedSkillDisplayOrder;
+            this.skills = this.skills.map((s) => s);
+            this.disableFirstAndLastButtons();
+          });
+      },
+      disableFirstAndLastButtons() {
+        if (this.skills && this.skills.length > 0) {
+          const tableData = this.skills.sort((a, b) => a.displayOrder - b.displayOrder);
+          for (let i = 0; i < tableData.length; i += 1) {
+            tableData[i].disabledUpButton = false;
+            tableData[i].disabledDownButton = false;
+          }
+
+          tableData[0].disabledUpButton = true;
+          tableData[tableData.length - 1].disabledDownButton = true;
+        }
+      },
+      handleExportModalIsClosed(res) {
+        if (res.cancelled) {
+          this.focusOn(this.$refs.clearSelectionBtn);
+        } else {
+          this.focusOn(this.$refs.selectAllBtn);
+          this.changeSelectionForAll(false);
+        }
+      },
+      focusOn(ref) {
+        this.$nextTick(() => {
+          if (ref) {
+            ref.focus();
+          }
+        });
+      },
+      handleFocus(args = null) {
+        // this event is called from the EditSkill components callback and from
+        // the handling of the saved event; this checks filters the saved event
+        // from the EditSkill component allowing the other path to run
+        if (!args?.saved) {
+          const theRefs = this.$refs;
+          let ref = null;
+          if (this.currentlyFocusedSkillId) {
+            const refName = `edit_${this.currentlyFocusedSkillId}`;
+            ref = theRefs[refName];
+            this.currentlyFocusedSkillId = '';
+            this.$nextTick(() => {
+              ref.focus();
+            });
+          }
+        }
+      },
+      getSelfReportingTypePretty(selfReportingType) {
+        return (selfReportingType === 'HonorSystem') ? 'Honor System' : selfReportingType;
+      },
+      updateActionsDisableStatus() {
+        this.numSelectedSkills = this.skills.reduce((total, item) => (item.selected ? total + 1 : total), 0);
+        this.actionsDisable = this.numSelectedSkills === 0;
+      },
+      changeSelectionForAll(selectedValue) {
+        this.skills = this.skills.map((sk) => {
+          if (sk.isGroupType || sk.isCatalogImportedSkills) {
+            return sk;
+          }
+          return ({
+            ...sk,
+            selected: selectedValue,
+          });
+        });
+        this.updateActionsDisableStatus();
+      },
+      handleExportRequest() {
+        this.exportToCatalogInfo.skills = this.skills.filter((item) => item.selected);
+        this.exportToCatalogInfo.show = true;
+      },
+      handleSkillReuseRequest() {
+        this.reuseSkillsInfo.skills = this.skills.filter((item) => item.selected);
+        this.reuseSkillsInfo.show = true;
+      },
+      handleSkillMoveRequest() {
+        this.moveSkillsInfo.skills = this.skills.filter((item) => item.selected);
+        this.moveSkillsInfo.show = true;
+      },
+      handleAddSkillsToBadgeRequest() {
+        this.addSkillsToBadgeInfo.skills = this.skills.filter((item) => item.selected);
+        this.addSkillsToBadgeInfo.show = true;
+      },
+      handleAddSkillTagRequest() {
+        this.tagSkillsInfo.skills = this.skills.filter((item) => item.selected);
+        this.tagSkillsInfo.show = true;
+      },
+      handleRemoveSkillTagRequest() {
+        this.removeTagSkillsInfo.skills = this.skills.filter((item) => item.selected);
+        this.removeTagSkillsInfo.show = true;
+      },
+      handleDeleteCancelled() {
+        if (this.deleteSkillInfo.skill) {
+          const refId = `deleteSkillButton_${this.deleteSkillInfo.skill.skillId}`;
+          const ref = this.$refs[refId];
+          this.focusOn(ref);
+        }
+      },
+      getExpirationDescription(skill) {
+        if (skill.expirationType === YEARLY) {
+          const d = dayjs(skill.nextExpirationDate);
+          const plural = skill.every > 1;
+          return `Every${plural ? ` ${skill.every}` : ''} year${plural ? 's' : ''} on ${d.format('MMMM')} ${d.format('Do')}`;
+        }
+        if (skill.expirationType === MONTHLY) {
+          const d = dayjs(skill.nextExpirationDate);
+          const plural = skill.every > 1;
+          const date = skill.monthlyDay === LAST_DAY_OF_MONTH ? 'last' : d.format('Do');
+          return `Every${plural ? ` ${skill.every}` : ''} month${plural ? 's' : ''} on the ${date} day of the month`;
+        }
+        if (skill.expirationType === DAILY) {
+          const plural = skill.every > 1;
+          return `After ${skill.every} day${plural ? 's' : ''} of inactivity`;
+        }
+        return '';
+      },
+      getNextExpirationDate(skill) {
+        if (skill.nextExpirationDate) {
+          return `Expires next on ${dayjs(skill.nextExpirationDate).format('YYYY-MM-DD')}`;
+        }
+        return '';
+      },
+    },
+  };
+</script>
+
+<style>
+.delete-btn-border-fix {
+  border-top-left-radius: 0px !important;;
+  border-bottom-left-radius: 0px !important;;
+  border-left: none !important;
+}
+
+.skillActions i {
+  min-width: 1.2rem;
+}
+</style>

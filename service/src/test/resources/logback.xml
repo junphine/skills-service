@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="fileAppender" class="ch.qos.logback.core.FileAppender">
+        <file>target/skills-service-tests.log</file>
+        <encoder>
+            <pattern>%d [%thread] %level %mdc %logger{50} - %msg%n</pattern>
+        </encoder>
+    </appender>
+    <root level="info">
+        <appender-ref ref="fileAppender"/>
+    </root>
+</configuration>

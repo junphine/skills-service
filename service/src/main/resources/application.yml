@@ -1,0 +1,189 @@
+#
+# Copyright 2020 SkillTree
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+
+server:
+#  port: 8443
+#  ssl:
+#    enabled: true
+#    client-auth:  want
+  error:
+    whitelabel:
+      enabled: false
+  servlet:
+    session:
+      timeout: 24h
+      persistent: false
+  http2:
+    enabled: true
+  compression:
+    enabled: true
+    min-response-size: 2048
+    mime-types: text/html,text/xml,text/plain,text/css,text/javascript,application/javascript,application/json,images/x-icon
+  shutdown: graceful
+
+logging:
+  level:
+    org.springframework.core.LocalVariableTableParameterNameDiscoverer: ERROR
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 1m
+  main:
+    allow-bean-definition-overriding: true
+    allow-circular-references: true
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          lob:
+            non_contextual_creation: true
+    hibernate:
+      ddl-auto: none
+#    show-sql: true
+  liquibase:
+    "change-log": "classpath:db/changelog/db.changelog-master.xml"
+  session:
+    store-type: none
+  servlet:
+    multipart:
+      enabled: true
+      location: ${java.io.tmpdir}
+      max-file-size: ${skills.config.maxAttachmentSize}
+      max-request-size: ${skills.config.maxAttachmentSize}
+management:
+  server:
+    port: 8808
+
+#  security:
+#    oauth2:
+#      client:
+#        registration:
+#          google:
+#            client-id: 12345
+#            client-secret: 67890
+#            redirectUriTemplate: 'http://localhost:8080/{action}/oauth2/code/{registrationId}'
+#            iconClass: fab fa-google
+#          github:
+#            client-id: 98765
+#            client-secret: ABCDEF
+#            redirectUriTemplate: 'http://localhost:8080/{action}/oauth2/code/{registrationId}'
+#            iconClass: fab fa-github
+skills:
+  artificialDelay:
+    enabled: false
+  clientLibVersion: @maven.build.timestamp@
+  config:
+    publiclyExposePrometheusMetrics: false
+    # Changing this to a larger value once events have been compacted into WEEKLY events will cause
+    # those WEEKLY events which are now newer than the compactDailyEventsOlderThan to no longer be visible in the system
+    # Decreasing this value will temporarily cause any DAILY events older than the new value to not be visible until the next
+    # event compaction run.
+    compactDailyEventsOlderThan: 30
+    notifications:
+      # run every minute
+      dispatchSchedule: "0 * * * * *"
+      # run every hour - retries failed notifications
+      dispatchRetrySchedule: "0 0 * * * *"
+      # remove failed notifications after 2 days
+      retainFailedNotificationsForNumSecs: 172800
+    unusedProjectDeletionEnabled: false
+    expireUnusedProjectsOlderThan: 180
+    expirationGracePeriod: 7
+    projectExpirationSchedule: "0 4 0 * * *"
+    taskSchedulingDelayInSeconds: 5
+    maxAttachmentSize: 128MB
+    allowedAttachmentMimeTypes: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.presentationml.presentation, application/msword, application/vnd.oasis.opendocument.presentation, application/vnd.oasis.opendocument.spreadsheet, application/vnd.oasis.opendocument.text, application/pdf, application/vnd.ms-powerpoint, application/vnd.ms-excel"
+    allowedAttachmentFileTypes: ".xlsx, .docx, .pptx, .doc, .odp, .ods, .odt, .pdf, .ppt, .xls"
+    allowedVideoUploadMimeTypes: "video/webm, video/mp4"
+    attachmentWarningMessage:
+    ui:
+      dashboardVersion: @pom.version@
+      buildTimestamp: @maven.build.timestamp@
+      minimumSubjectPoints: 100
+      minimumProjectPoints: 100
+      descriptionMaxLength: 2000000
+      maxTimeWindowInMinutes: 43200
+      maxBadgeBonusInMinutes: 525600
+      docsHost: /skills-docs
+      maxProjectsPerAdmin: 25
+      maxQuizDefsPerAdmin: 1000
+      maxQuestionsPerQuiz: 500
+      maxAnswersPerQuizQuestion: 10
+      maxSubjectsPerProject: 25
+      maxBadgesPerProject: 25
+      maxSkillsPerSubject: 100
+      numProjectsForTableView: 10
+      #it may be necessary to use the (?s) modifier for paragraph validation regexes, depending on the regex specified
+      paragraphValidationRegex:
+      paragraphValidationMessage:
+      userCommunityParagraphValidationRegex:
+      userCommunityParagraphValidationMessage:
+      nameValidationRegex:
+      nameValidationMessage:
+      maxFirstNameLength: 30
+      maxLastNameLength: 30
+      maxNicknameLength: 70
+      minUsernameLength: 2
+      minPasswordLength: 6
+      maxPasswordLength: 40
+      minNameLength: 2
+      maxBadgeNameLength: 50
+      maxProjectNameLength: 50
+      maxQuizNameLength: 75
+      maxQuizTextAnswerLength: 2000
+      maxSkillNameLength: 100
+      maxSubjectNameLength: 50
+      maxLevelNameLength: 50
+      maxCustomLabelLength: 50
+      maxSkillTagLength: 50
+      minIdLength: 3
+      maxIdLength: 50
+      maxSkillVersion: 999
+      maxPointIncrement: 10000
+      maxNumPerformToCompletion: 10000
+      maxNumPointIncrementMaxOccurrences: 999
+      userSuggestOptions:
+      pointHistoryInDays: 1825
+      rankingAndProgressViewsEnabled: true
+      defaultLandingPage: "admin"
+      maxSelfReportMessageLength: ${skills.config.ui.descriptionMaxLength}
+      maxSelfReportRejectionMessageLength: 250
+      artifactBuildTimestamp: @maven.build.timestamp@
+      maxSkillsInBulkImport: 50
+      enablePageVisitReporting: false
+      maxProjectInviteEmails: 50
+      maxContactOwnersMessageLength: 2500
+      maxTagKeyLengthInApprovalWorkloadConfig: 15
+      maxTagValueLengthInApprovalWorkloadConfig: 10
+      maxVideoCaptionsLength: 5000
+      maxVideoTranscriptLength: 20000
+      motivationalSkillWarningGracePeriod: .3
+      videoUploadWarningMessage:
+      videoUploadLoadingBarLengthyCalculationTimeoutRatio: 75000
+      activityHistoryStartDate:
+    client:
+      loggingEnabled: false
+      loggingLevel: DEBUG
+  profiles:
+    active: default
+db-scheduler:
+  threads: 3
+---
+spring:
+  config:
+    activate:
+      on-profile: default
+---

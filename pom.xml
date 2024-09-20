@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>skill-tree</groupId>
+    <artifactId>skills-service-parent</artifactId>
+    <packaging>pom</packaging>
+    <version>2.11.0-SNAPSHOT</version>
+    <modules>
+        <module>dashboard</module>
+        <module>client-display</module>
+        <module>service</module>
+    </modules>
+    <properties>
+        <!--suppress UnresolvedMavenProperty -->
+        <nexusServer>${nexus.url}</nexusServer>
+        <main.basedir>${project.basedir}</main.basedir>
+        <java.version>17</java.version>
+
+        <spock.myVersion>2.4-M1-groovy-4.0</spock.myVersion>
+
+        <flywaydb.version>6.5.5</flywaydb.version>
+
+        <commons.lang.version>3.11</commons.lang.version>
+        <commons.collections.version>4.4</commons.collections.version>
+        <commons.io.version>2.7</commons.io.version>
+
+        <frontend-maven-plugin.version>1.10.3</frontend-maven-plugin.version>
+        <node.version>v18.14.1</node.version>
+
+        <guava.version>29.0-jre</guava.version>
+
+        <!-- !!!!!IMPORTANT!!!!!: when changing the springboot.version property, make sure you also change it in the spring-boot-starter-parent definition -->
+        <springboot.version>3.1.4</springboot.version>
+
+        <greenmail.version>2.0.0</greenmail.version>
+        <wiremock.version>2.27.2</wiremock.version>
+        <owasp.encoder.version>1.2.3</owasp.encoder.version>
+
+        <micrometer-registry.version>1.10.3</micrometer-registry.version>
+
+        <db-scheduler.version>11.6</db-scheduler.version>
+
+        <caffeine.version>3.1.1</caffeine.version>
+
+        <pretty-time.version>5.0.3.Final</pretty-time.version>
+    </properties>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <!-- !!!!!IMPORTANT!!!!!: when changing this version make sure to also update springboot.version property -->
+        <version>3.1.4</version>
+        <relativePath/>
+    </parent>
+
+    <distributionManagement>
+        <repository>
+            <id>nexus-releases</id>
+            <name>Release Repository</name>
+            <url>
+                ${nexusServer}/repository/maven-releases/
+            </url>
+        </repository>
+        <snapshotRepository>
+            <id>nexus-snapshots</id>
+            <name>Snapshot Repository</name>
+            <url>
+                ${nexusServer}/repository/maven-snapshots/
+            </url>
+        </snapshotRepository>
+    </distributionManagement>
+
+</project>

@@ -1,0 +1,7 @@
+{
+  "defaultUser": "skills@skills.org",
+  "rootUser": "root@skills.org",
+  "defaultPass": "password",
+  "oauthUser": "foo@bar.com",
+  "oauthPass": "foobar"
+}

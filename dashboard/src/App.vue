@@ -1,0 +1,176 @@
+/*
+Copyright 2020 SkillTree
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+*/
+<template>
+  <div role="presentation">
+    <vue-announcer />
+    <customizable-header role="region" aria-label="dynamic customizable header"></customizable-header>
+    <div id="app" class="">
+      <div class="m-0">
+        <new-software-version-component role="alert"/>
+        <div class="overall-container">
+          <pki-app-bootstrap v-if="isPkiAndNeedsToBootstrap || isOAuthOnlyAndNeedsToBootstrap" role="alert"/>
+          <loading-container v-else v-bind:is-loading="isLoading" role="presentation">
+            <div v-if="!isLoading">
+              <header-view v-if="isAuthenticatedUser && !this.$store.state.showUa" role="banner"/>
+              <div role="main">
+                <router-view id="mainContent1" tabindex="-1" aria-label="Main content area, click tab to navigate" />
+              </div>
+            </div>
+          </loading-container>
+        </div>
+      </div>
+    </div>
+    <dashboard-footer />
+    <customizable-footer role="region" aria-label="dynamic customizable footer"></customizable-footer>
+    <scroll-to-top v-if="!isScrollToTopDisabled" />
+  </div>
+</template>
+
+<script>
+  import ScrollToTop from '@/common-components/utilities/ScrollToTop';
+  import PkiAppBootstrap from '@/components/access/PkiAppBootstrap';
+  import HeaderView from '@/components/header/DashboardHeader';
+  import LoadingContainer from '@/components/utils/LoadingContainer';
+  import CustomizableHeader from '@/components/customization/CustomizableHeader';
+  import CustomizableFooter from '@/components/customization/CustomizableFooter';
+  import IconManagerService from '@/components/utils/iconPicker/IconManagerService';
+  import InceptionConfigurer from '@/InceptionConfigurer';
+  import InceptionProgressMessagesMixin from '@/components/inception/InceptionProgressMessagesMixin';
+  import NewSoftwareVersionComponent from '@/components/header/NewSoftwareVersion';
+  import DashboardFooter from '@/components/header/DashboardFooter';
+
+  export default {
+    name: 'App',
+    mixins: [InceptionProgressMessagesMixin],
+    components: {
+      DashboardFooter,
+      NewSoftwareVersionComponent,
+      CustomizableFooter,
+      CustomizableHeader,
+      HeaderView,
+      LoadingContainer,
+      PkiAppBootstrap,
+      ScrollToTop,
+    },
+    data() {
+      return {
+        isLoading: false,
+        isSupervisor: false,
+      };
+    },
+    computed: {
+      isScrollToTopDisabled() {
+        return this.$store.getters.config.disableScrollToTop === 'true' || this.$store.getters.config.disableScrollToTop === true;
+      },
+      isAuthenticatedUser() {
+        return this.$store.getters.isAuthenticated;
+      },
+      activeProjectId() {
+        return this.$store.state.projectId;
+      },
+      userInfo() {
+        return this.$store.getters.userInfo;
+      },
+      isPkiAndNeedsToBootstrap() {
+        return this.$store.getters.isPkiAuthenticated && this.$store.getters.config.needToBootstrap;
+      },
+      isOAuthOnlyAndNeedsToBootstrap() {
+        return this.$store.getters.config.oAuthOnly && this.$store.getters.config.needToBootstrap && this.$store.getters.isAuthenticated;
+      },
+    },
+    created() {
+      if (this.isAuthenticatedUser) {
+        this.$store.dispatch('access/isSupervisor').then((result) => {
+          this.isSupervisor = result;
+          this.addCustomIconCSS();
+        });
+        this.$store.dispatch('access/isRoot');
+        this.$store.dispatch('loadEmailEnabled');
+      }
+    },
+    mounted() {
+      this.registerToDisplayProgress();
+    },
+    watch: {
+      activeProjectId() {
+        if (this.isAuthenticatedUser) {
+          this.addCustomIconCSS();
+        }
+      },
+      isAuthenticatedUser(newVal) {
+        if (newVal) {
+          this.$store.dispatch('access/isSupervisor').then((result) => {
+            this.isSupervisor = result;
+          });
+          this.addCustomIconCSS();
+          this.$store.dispatch('access/isRoot');
+          this.$store.dispatch('loadEmailEnabled');
+        }
+      },
+      userInfo(newUserInfo) {
+        if (newUserInfo) {
+          InceptionConfigurer.configure();
+        }
+      },
+    },
+    methods: {
+      addCustomIconCSS() { // This must be done here AFTER authentication
+        IconManagerService.refreshCustomIconCss(this.activeProjectId, this.isSupervisor);
+      },
+    },
+  };
+</script>
+
+<style lang="scss">
+// Import custom SASS variable overrides, or alternatively
+// define your variable overrides here instead
+@import './assets/custom.scss';
+
+// Import Bootstrap and BootstrapVue source SCSS files
+@import "~bootstrap/scss/bootstrap";
+@import '~bootstrap-vue/src/index.scss';
+// @import '../node_modules/bootstrap-vue/dist/bootstrap-vue.css';
+@import '~video.js/dist/video-js.css';
+</style>
+
+<style>
+  @import '../node_modules/@fortawesome/fontawesome-free/css/all.css';
+  @import '../node_modules/material-icons/iconfont/material-icons.css';
+  @import '../node_modules/material-icons/css/material-icons.css';
+  @import '../node_modules/animate.css/animate.css';
+  @import '../node_modules/vue-select/dist/vue-select.css';
+  @import './styles/utils.css';
+
+  #app {
+    background-color: #f8f9fe;
+  }
+
+  .overall-container {
+    min-height: calc(100vh - 50px);
+  }
+
+  /* vue-table-2s bug? - "Filter:" label is not left aligned, this is a workaround */
+  .vue-table-2 .form-inline label {
+    justify-content: left !important;
+  }
+
+  :root {
+    --vs-search-input-placeholder-color: #adadad;
+    --vs-dropdown-option--active-bg: #264653;
+    --vs-dropdown-option--active-color: #FFFFFF;
+  }
+
+</style>
