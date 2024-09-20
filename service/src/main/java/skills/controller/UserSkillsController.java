@@ -16,6 +16,8 @@
 package skills.controller;
 
 import callStack.profiler.Profile;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.joda.time.format.DateTimeFormatter;
@@ -33,6 +35,7 @@ import org.springframework.web.multipart.MultipartFile;
 import skills.PublicProps;
 import skills.auth.UserInfoService;
 import skills.auth.aop.AdminOrApproverGetRequestUsersOnlyWhenUserIdSupplied;
+import skills.auth.inviteOnly.InviteOnlyAccessDeniedException;
 import skills.controller.exceptions.AttachmentValidator;
 import skills.controller.exceptions.SkillException;
 import skills.controller.exceptions.SkillsValidator;
@@ -44,10 +47,8 @@ import skills.controller.result.model.TableResult;
 import skills.controller.result.model.UploadAttachmentResult;
 import skills.dbupgrade.DBUpgradeSafe;
 import skills.icons.CustomIconFacade;
-import skills.services.AttachmentService;
-import skills.services.SelfReportingService;
-import skills.services.VersionService;
-import skills.services.VideoCaptionsService;
+import skills.services.*;
+import skills.services.admin.InviteOnlyProjectService;
 import skills.services.events.SkillEventResult;
 import skills.services.events.SkillEventsService;
 import skills.skillLoading.RankingLoader;
@@ -56,9 +57,6 @@ import skills.skillLoading.SkillsService;
 import skills.skillLoading.model.*;
 import skills.storage.model.Attachment;
 import skills.utils.MetricsLogger;
-
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import skills.utils.TablePageUtil;
 
 import java.io.InputStream;
@@ -102,7 +100,7 @@ class UserSkillsController {
     @Autowired
     SelfReportingService selfReportingService;
 
-    @Value("${skills.config.ui.pointHistoryInDays:1825}")
+    @Value("${skills.config.ui.pointHistoryInDays:3650}")
     Integer maxDaysBack;
 
     @Autowired
@@ -116,6 +114,12 @@ class UserSkillsController {
 
     @Autowired
     AttachmentService attachmentService;
+
+    @Autowired
+    InviteOnlyProjectService inviteOnlyProjectService;
+
+    @Autowired
+    AccessSettingsStorageService accessSettingsStorageService;
 
     @Autowired
     VideoCaptionsService videoCaptionsService;
@@ -520,6 +524,7 @@ class UserSkillsController {
     public String getVideoTranscript(@PathVariable("projectId") String projectId, @PathVariable("skillId") String skillId) {
         return videoCaptionsService.getVideoTranscript(projectId, skillId);
     }
+
     @RequestMapping(value = "/download/{uuid}", method = RequestMethod.GET)
     @Transactional(readOnly = true)
     public void download(@PathVariable("uuid") String uuid,
@@ -528,11 +533,26 @@ class UserSkillsController {
         if (attachment == null) {
             throw new SkillException("Attachment for uuid [" + uuid + "] does not exist");
         }
+
+        if (attachment.getProjectId() != null && inviteOnlyProjectService.isInviteOnlyProject(attachment.getProjectId())) {
+            String userId = userInfoService.getCurrentUserId();
+            if (!inviteOnlyProjectService.isPrivateProjRoleOrAdminRole(attachment.getProjectId(), userId)) {
+                throw new InviteOnlyAccessDeniedException("Access is denied", attachment.getProjectId());
+            }
+        }
+
         try (InputStream inputStream = attachment.getContent().getBinaryStream();
              OutputStream outputStream = response.getOutputStream()) {
             response.setContentType(attachment.getContentType());
             if (!StringUtils.equalsIgnoreCase(attachment.getContentType(), "application/pdf")) {
                 response.setHeader("Content-Disposition", "attachment; filename=\"" + attachment.getFilename() + "\"");
+            }
+            if (StringUtils.equalsIgnoreCase(attachment.getContentType(), "video/mp4") || StringUtils.equalsIgnoreCase(attachment.getContentType(), "video/webm")) {
+                response.setContentType(attachment.getContentType());
+                response.setHeader("Content-Length", attachment.getSize().toString());
+                Long attachmentSize = attachment.getSize() - 1;
+                response.setHeader("Content-Range", "bytes 0-" + attachmentSize + "/" + attachment.getSize().toString());
+                response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
             }
             IOUtils.copy(inputStream, outputStream);
         } catch (Exception e) {

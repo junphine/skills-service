@@ -16,18 +16,26 @@
 package skills.intTests.inviteOnly
 
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.core.io.Resource
 import org.springframework.http.HttpStatus
 import skills.intTests.utils.EmailUtils
 import skills.intTests.utils.SkillsClientException
 import skills.intTests.utils.SkillsFactory
 import skills.intTests.utils.SkillsService
 import skills.services.admin.InviteOnlyProjectService
+import skills.storage.model.Attachment
+import skills.storage.model.auth.RoleName
+import skills.storage.repos.AttachmentRepo
+import skills.utils.GroovyToJavaByteUtils
 import skills.utils.WaitFor
 
 class InviteOnlyAccessSpec extends InviteOnlyBaseSpec {
 
     @Autowired
     InviteOnlyProjectService inviteOnlyProjectService
+
+    @Autowired
+    AttachmentRepo attachmentRepo
 
     def setup() {
         inviteOnlyProjectService.validateInviteEmail = false
@@ -595,4 +603,147 @@ class InviteOnlyAccessSpec extends InviteOnlyBaseSpec {
         def err = thrown(SkillsClientException)
         err.httpStatus == HttpStatus.FORBIDDEN
     }
+
+    def "cannot download attachment from invite only without accepting invite"() {
+        def proj = SkillsFactory.createProject(99)
+        def subj = SkillsFactory.createSubject(99)
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+
+        String filename = 'test-pdf.pdf'
+        String contents = 'Test is a test'
+        Resource resource = GroovyToJavaByteUtils.toByteArrayResource(contents, filename)
+        def result = skillsService.uploadAttachment(resource, proj.projectId, null, null)
+        String attachmentHref = result.href
+
+        def skill = SkillsFactory.createSkill(99, 1)
+        skill.description = "Here is a [Link](${attachmentHref})".toString()
+        skill.pointIncrement = 200
+
+        skillsService.createSkill(skill)
+
+        skillsService.changeSetting(proj.projectId, "invite_only", [projectId: proj.projectId, setting: "invite_only", value: "true"])
+
+        List<Attachment> attachments = attachmentRepo.findAll()
+        assert attachments.size() == 1
+        String url = "/api/download/${attachments[0].uuid}"
+        SkillsService.FileAndHeaders fileAndHeaders = skillsService.downloadAttachment(url)
+        File file = fileAndHeaders.file
+        assert file
+        assert file.bytes == contents.getBytes()
+
+        def user = getRandomUsers(1, true)[0]
+        def newService = createService(user)
+        when:
+        newService.downloadAttachment(url)
+        then:
+        def err = thrown(SkillsClientException)
+        err.httpStatus == HttpStatus.FORBIDDEN
+    }
+
+    def "able to download attachment after invite was accepted"() {
+        def proj = SkillsFactory.createProject(99)
+        def subj = SkillsFactory.createSubject(99)
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+
+        String filename = 'test-pdf.pdf'
+        String contents = 'Test is a test'
+        Resource resource = GroovyToJavaByteUtils.toByteArrayResource(contents, filename)
+        def result = skillsService.uploadAttachment(resource, proj.projectId, null, null)
+        String attachmentHref = result.href
+
+        def skill = SkillsFactory.createSkill(99, 1)
+        skill.description = "Here is a [Link](${attachmentHref})".toString()
+        skill.pointIncrement = 200
+
+        skillsService.createSkill(skill)
+
+        skillsService.changeSetting(proj.projectId, "invite_only", [projectId: proj.projectId, setting: "invite_only", value: "true"])
+
+        List<Attachment> attachments = attachmentRepo.findAll()
+        assert attachments.size() == 1
+        String url = "/api/download/${attachments[0].uuid}"
+        SkillsService.FileAndHeaders fileAndHeaders = skillsService.downloadAttachment(url)
+        File file = fileAndHeaders.file
+        assert file
+        assert file.bytes == contents.getBytes()
+
+        def user = getRandomUsers(1, true)[0]
+        def shouldBeAbleToDownload = createService(new SkillsService.UseParams(
+                username: user,
+                email: EmailUtils.generateEmaillAddressFor(user),
+                firstName: "${user.toUpperCase()}_first",
+                lastName: "${user.toUpperCase()}_last"
+        ))
+
+
+        skillsService.inviteUsersToProject(proj.projectId, [validityDuration: "PT5M", recipients: [EmailUtils.generateEmaillAddressFor(user)]])
+        WaitFor.wait { greenMail.getReceivedMessages().length > 0 }
+
+        def email = EmailUtils.getEmail(greenMail, 0)
+        def invite = extractInviteFromEmail(email.html)
+
+        shouldBeAbleToDownload.joinProject(proj.projectId, invite)
+        greenMail.reset()
+        when:
+        SkillsService.FileAndHeaders res = shouldBeAbleToDownload.downloadAttachment(url)
+        File file1 = res.file
+
+        then:
+        file1
+        file1.bytes == contents.getBytes()
+    }
+
+    def 'current user is allowed to remove ROLE_PRIVATE_PROJECT_USER from myself'() {
+        def proj = SkillsFactory.createProject(99)
+        skillsService.createProject(proj)
+        skillsService.changeSetting(proj.projectId, "invite_only", [projectId: proj.projectId, setting: "invite_only", value: "true"])
+
+        skillsService.inviteUsersToProject(proj.projectId, [validityDuration: "PT5M", recipients: ["someemail@email.foo"]])
+        WaitFor.wait { greenMail.getReceivedMessages().length > 0 }
+
+        def email = EmailUtils.getEmail(greenMail, 0)
+        def invite = extractInviteFromEmail(email.html)
+
+        skillsService.joinProject(proj.projectId, invite)
+
+        when:
+        def before = skillsService.getUserRolesForProjectAndUser(proj.projectId, skillsService.userName)
+        skillsService.deleteUserRole(skillsService.userName, proj.projectId, RoleName.ROLE_PRIVATE_PROJECT_USER.toString())
+        def after = skillsService.getUserRolesForProjectAndUser(proj.projectId, skillsService.userName)
+
+        then:
+        before.roleName.sort() == [RoleName.ROLE_PROJECT_ADMIN.toString(), RoleName.ROLE_PRIVATE_PROJECT_USER.toString()].sort()
+        after.roleName.sort() == [RoleName.ROLE_PROJECT_ADMIN.toString()]
+    }
+
+    def 'canAccess endpoint only returns true for if user has ROLE_PROJECT_ADMIN or ROLE_PRIVATE_PROJECT_USER role'() {
+        def userNames = getRandomUsers(2, true)
+        def otherUser1Service = createService(userNames[0])
+        def otherUser2Service = createService(userNames[1])
+
+        def proj = SkillsFactory.createProject(99)
+        skillsService.createProject(proj)
+        skillsService.changeSetting(proj.projectId, "invite_only", [projectId: proj.projectId, setting: "invite_only", value: "true"])
+
+        skillsService.inviteUsersToProject(proj.projectId, [validityDuration: "PT5M", recipients: ["someemail@email.foo"]])
+        WaitFor.wait { greenMail.getReceivedMessages().length > 0 }
+
+        def email = EmailUtils.getEmail(greenMail, 0)
+        def invite = extractInviteFromEmail(email.html)
+
+        otherUser1Service.joinProject(proj.projectId, invite)
+
+        when:
+        def canAccessProjAdmin = skillsService.canAccessProject(proj.projectId, skillsService.userName)
+        def canAccessUser1 = skillsService.canAccessProject(proj.projectId, otherUser1Service.userName)
+        def canAccessUser2 = skillsService.canAccessProject(proj.projectId, otherUser2Service.userName)
+
+        then:
+        canAccessProjAdmin == true // proj admin
+        canAccessUser1 == true // accepted invite
+        canAccessUser2 == false // does not belong to private project
+    }
+
 }

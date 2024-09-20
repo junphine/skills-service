@@ -20,6 +20,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.*
 import skills.controller.result.model.TableResult
 import skills.intTests.utils.*
+import skills.storage.model.SkillDef
 import skills.storage.repos.UserAchievedLevelRepo
 import skills.storage.repos.UserPointsRepo
 
@@ -1189,5 +1190,259 @@ class AdminEditSpecs extends DefaultIntSpec {
         !userAchievedLevelRepo.findAllByUserAndProjectIds(user1 , [project.projectId])
         !u1LevelPostDelete
         u2LevelPostDelete == 1
+    }
+
+    def "can filter project users by id and name"() {
+        def project = SkillsFactory.createProject()
+        def subject = SkillsFactory.createSubject()
+        def skill1 = SkillsFactory.createSkill(1, 1, 1, 0, 5)
+        skill1.pointIncrement = 50
+        def skill2 = SkillsFactory.createSkill(1, 1, 2, 0, 5)
+
+        skillsService.createProject(project)
+        skillsService.createSubject(subject)
+        skillsService.createSkill(skill1)
+        skillsService.createSkill(skill2)
+
+        def users = getRandomUsers(10)
+
+        when:
+        users.each {user ->
+            skillsService.addSkill(skill1, user, new Date().minus(5))
+            skillsService.addSkill(skill1, user, new Date().minus(1))
+            skillsService.addSkill(skill2, user, new Date())
+        }
+
+        def projectUsers = skillsService.getProjectUsers(project.projectId)
+        def selectedUser = projectUsers.data[0]
+        def userFirstName = selectedUser.firstName
+        def userLastName = selectedUser.lastName
+        def userId = selectedUser.userId
+
+        def filteredByFirstName = skillsService.getProjectUsers(project.projectId, 10, 1,'userId', true, userFirstName, 0)
+        def filteredByLastName = skillsService.getProjectUsers(project.projectId, 10, 1,'userId', true, userLastName, 0)
+        def filteredById = skillsService.getProjectUsers(project.projectId, 10, 1,'userId', true, userId, 0)
+
+        then:
+        projectUsers.count == 10
+        filteredByFirstName.data[0].userId == userId
+        filteredByFirstName.data[0].firstName == userFirstName
+        filteredByFirstName.data[0].lastName == userLastName
+        filteredByLastName.data[0].userId == userId
+        filteredByLastName.data[0].firstName == userFirstName
+        filteredByLastName.data[0].lastName == userLastName
+        filteredById.data[0].userId == userId
+        filteredById.data[0].firstName == userFirstName
+        filteredById.data[0].lastName == userLastName
+    }
+
+    def "can filter subject users by id and name"() {
+        def project = SkillsFactory.createProject()
+        def subject = SkillsFactory.createSubject()
+        def skill1 = SkillsFactory.createSkill(1, 1, 1, 0, 5)
+        skill1.pointIncrement = 50
+        def skill2 = SkillsFactory.createSkill(1, 1, 2, 0, 5)
+
+        skillsService.createProject(project)
+        skillsService.createSubject(subject)
+        skillsService.createSkill(skill1)
+        skillsService.createSkill(skill2)
+
+        def users = getRandomUsers(10)
+
+        when:
+        users.each {user ->
+            skillsService.addSkill(skill1, user, new Date().minus(5))
+            skillsService.addSkill(skill1, user, new Date().minus(1))
+            skillsService.addSkill(skill2, user, new Date())
+        }
+
+        def subjectUsers = skillsService.getSubjectUsers(project.projectId, subject.subjectId)
+        def selectedUser = subjectUsers.data[0]
+        def userFirstName = selectedUser.firstName
+        def userLastName = selectedUser.lastName
+        def userId = selectedUser.userId
+
+        def filteredByFirstName = skillsService.getSubjectUsers(project.projectId, subject.subjectId, 10, 1,'userId', true, userFirstName, 0)
+        def filteredByLastName = skillsService.getSubjectUsers(project.projectId, subject.subjectId, 10, 1,'userId', true, userLastName, 0)
+        def filteredById = skillsService.getSubjectUsers(project.projectId, subject.subjectId, 10, 1,'userId', true, userId, 0)
+
+        then:
+        subjectUsers.count == 10
+        filteredByFirstName.data[0].userId == userId
+        filteredByFirstName.data[0].firstName == userFirstName
+        filteredByFirstName.data[0].lastName == userLastName
+        filteredByLastName.data[0].userId == userId
+        filteredByLastName.data[0].firstName == userFirstName
+        filteredByLastName.data[0].lastName == userLastName
+        filteredById.data[0].userId == userId
+        filteredById.data[0].firstName == userFirstName
+        filteredById.data[0].lastName == userLastName
+    }
+
+    def "can filter skill users by id and name"() {
+        def project = SkillsFactory.createProject()
+        def subject = SkillsFactory.createSubject()
+        def skill1 = SkillsFactory.createSkill(1, 1, 1, 0, 5)
+        skill1.pointIncrement = 50
+
+        skillsService.createProject(project)
+        skillsService.createSubject(subject)
+        skillsService.createSkill(skill1)
+
+        def users = getRandomUsers(10)
+
+        when:
+        users.each {user ->
+            skillsService.addSkill(skill1, user, new Date().minus(5))
+            skillsService.addSkill(skill1, user, new Date().minus(1))
+        }
+
+        def skillUsers = skillsService.getSkillUsers(project.projectId, skill1.skillId)
+        def selectedUser = skillUsers.data[0]
+        def userFirstName = selectedUser.firstName
+        def userLastName = selectedUser.lastName
+        def userId = selectedUser.userId
+        def fullNameString = userFirstName + ' ' + userLastName + ' (' + selectedUser.userIdForDisplay + ')';
+
+        def filteredByFirstName = skillsService.getSkillUsers(project.projectId, skill1.skillId, 10, 1,'userId', true, userFirstName, 0)
+        def filteredByLastName = skillsService.getSkillUsers(project.projectId, skill1.skillId, 10, 1,'userId', true, userLastName, 0)
+        def filteredById = skillsService.getSkillUsers(project.projectId, skill1.skillId, 10, 1,'userId', true, userId, 0)
+        def filteredByString = skillsService.getSkillUsers(project.projectId, skill1.skillId, 10, 1,'userId', true, fullNameString, 0)
+
+        then:
+        skillUsers.count == 10
+        filteredByFirstName.data[0].userId == userId
+        filteredByFirstName.data[0].firstName == userFirstName
+        filteredByFirstName.data[0].lastName == userLastName
+        filteredByLastName.data[0].userId == userId
+        filteredByLastName.data[0].firstName == userFirstName
+        filteredByLastName.data[0].lastName == userLastName
+        filteredById.data[0].userId == userId
+        filteredById.data[0].firstName == userFirstName
+        filteredById.data[0].lastName == userLastName
+        filteredByString.data[0].userId == userId
+        filteredByString.data[0].firstName == userFirstName
+        filteredByString.data[0].lastName == userLastName
+    }
+
+    def "editing skill points on an imported skill without finalization is successful"() {
+        def project1 = createProject(1)
+        def p1subj1 = createSubject(1, 1)
+        def p1skill1 = createSkill(1, 1, 1, 0, 5, 0, 100)
+
+        skillsService.createProject(project1)
+        skillsService.createSubject(p1subj1)
+        skillsService.createSkill(p1skill1)
+
+        skillsService.exportSkillToCatalog(project1.projectId, p1skill1.skillId)
+
+        def project2 = createProject(2)
+        def p2subj1 = createSubject(2, 1)
+        skillsService.createProject(project2)
+        skillsService.createSubject(p2subj1)
+
+        skillsService.importSkillFromCatalog(project2.projectId, p2subj1.subjectId, project1.projectId, p1skill1.skillId)
+
+        when:
+        def updated = skillsService.updateImportedSkill(project2.projectId, p1skill1.skillId, 500)
+        def updatedSkill = skillsService.getSkill([projectId: project2.projectId, subjectId: p2subj1.subjectId, skillId: p1skill1.skillId])
+
+        then:
+        updated != null
+        updated.body.success == true
+        updatedSkill.pointIncrement == 500
+    }
+
+    def "editing skill points on an imported skill with finalization is successful"() {
+        def project1 = createProject(1)
+        def p1subj1 = createSubject(1, 1)
+        def p1skill1 = createSkill(1, 1, 1, 0, 5, 0, 100)
+
+        skillsService.createProject(project1)
+        skillsService.createSubject(p1subj1)
+        skillsService.createSkill(p1skill1)
+
+        skillsService.exportSkillToCatalog(project1.projectId, p1skill1.skillId)
+
+        def project2 = createProject(2)
+        def p2subj1 = createSubject(2, 1)
+        skillsService.createProject(project2)
+        skillsService.createSubject(p2subj1)
+
+        skillsService.importSkillFromCatalog(project2.projectId, p2subj1.subjectId, project1.projectId, p1skill1.skillId)
+        skillsService.finalizeSkillsImportFromCatalog(project2.projectId, true)
+
+        when:
+        def updated = skillsService.updateImportedSkill(project2.projectId, p1skill1.skillId, 500)
+        def updatedSkill = skillsService.getSkill([projectId: project2.projectId, subjectId: p2subj1.subjectId, skillId: p1skill1.skillId])
+
+        then:
+        updated != null
+        updated.body.success == true
+        updatedSkill.pointIncrement == 500
+    }
+
+    def "editing skill points on an imported quiz skill without finalization is successful"() {
+        def project1 = createProject(1)
+        def p1subj1 = createSubject(1, 1)
+        def p1skill1 = createSkill(1, 1, 1, 0, 1, 0, 100)
+        def quiz = skillsService.createQuizDef(QuizDefFactory.createQuiz(1))
+        p1skill1.selfReportingType = SkillDef.SelfReportingType.Quiz
+        p1skill1.quizId = quiz.body.quizId
+
+        skillsService.createProject(project1)
+        skillsService.createSubject(p1subj1)
+        skillsService.createSkill(p1skill1)
+
+        skillsService.exportSkillToCatalog(project1.projectId, p1skill1.skillId)
+
+        def project2 = createProject(2)
+        def p2subj1 = createSubject(2, 1)
+        skillsService.createProject(project2)
+        skillsService.createSubject(p2subj1)
+
+        skillsService.importSkillFromCatalog(project2.projectId, p2subj1.subjectId, project1.projectId, p1skill1.skillId)
+
+        when:
+        def updated = skillsService.updateImportedSkill(project2.projectId, p1skill1.skillId, 500)
+        def updatedSkill = skillsService.getSkill([projectId: project2.projectId, subjectId: p2subj1.subjectId, skillId: p1skill1.skillId])
+
+        then:
+        updated != null
+        updated.body.success == true
+        updatedSkill.pointIncrement == 500
+    }
+
+    def "editing skill points on an imported quiz skill with finalization is successful"() {
+        def project1 = createProject(1)
+        def p1subj1 = createSubject(1, 1)
+        def p1skill1 = createSkill(1, 1, 1, 0, 1, 0, 100)
+        def quiz = skillsService.createQuizDef(QuizDefFactory.createQuiz(1))
+        p1skill1.selfReportingType = SkillDef.SelfReportingType.Quiz
+        p1skill1.quizId = quiz.body.quizId
+
+        skillsService.createProject(project1)
+        skillsService.createSubject(p1subj1)
+        skillsService.createSkill(p1skill1)
+
+        skillsService.exportSkillToCatalog(project1.projectId, p1skill1.skillId)
+
+        def project2 = createProject(2)
+        def p2subj1 = createSubject(2, 1)
+        skillsService.createProject(project2)
+        skillsService.createSubject(p2subj1)
+
+        skillsService.importSkillFromCatalog(project2.projectId, p2subj1.subjectId, project1.projectId, p1skill1.skillId)
+        skillsService.finalizeSkillsImportFromCatalog(project2.projectId, true)
+
+        when:
+        def updated = skillsService.updateImportedSkill(project2.projectId, p1skill1.skillId, 500)
+        def updatedSkill = skillsService.getSkill([projectId: project2.projectId, subjectId: p2subj1.subjectId, skillId: p1skill1.skillId])
+
+        then:
+        updated != null
+        updated.body.success == true
+        updatedSkill.pointIncrement == 500
     }
 }

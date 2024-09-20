@@ -25,21 +25,25 @@ on:
   schedule:
    - cron: '0 6 * * *'
   workflow_dispatch:
-
+  push:
+#  pull_request:
+#    paths-ignore:
+#      - 'README.md'
 
 jobs:
   build-skills-service-for-ui-tests:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v2-beta
+      - uses: actions/setup-node@v4
         with:
-          node-version: '14'
+          node-version: '20.11.0'
 
-      - uses: actions/setup-java@v1
+      - uses: actions/setup-java@v4
         with:
+          distribution: 'temurin'
           java-version: '19' # The JDK version to make available on the path.
 
       - name: Print Versions
@@ -48,7 +52,7 @@ jobs:
           java -version
 
       - name: Cache local Maven repository
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: ~/.m2/repository
           key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
@@ -61,7 +65,7 @@ jobs:
         run: mvn --batch-mode install -DskipTests
 
       - name: upload service jar
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         with:
           name: service jar
           path: ./service/target/*.jar
@@ -77,7 +81,7 @@ jobs:
       fail-fast: false
       matrix:
         # run 6 copies of the current job in parallel
-        containers: [1, 2, 3, 4, 5, 6]
+        container: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 
     services:
       postgres:
@@ -101,20 +105,21 @@ jobs:
     - name: Install Emoji Support
       run: sudo apt-get install fonts-noto-color-emoji
 
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Checkout skills-client
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         repository: NationalSecurityAgency/skills-client
         path: skills-client
 
-    - uses: actions/setup-node@v2-beta
+    - uses: actions/setup-node@v4
       with:
-        node-version: '14'
+        node-version: '20.11.0'
 
-    - uses: actions/setup-java@v1
+    - uses: actions/setup-java@v4
       with:
+        distribution: 'temurin'
         java-version: '19' # The JDK version to make available on the path.
 
     - name: Print Versions
@@ -122,7 +127,7 @@ jobs:
         mvn --version
         java -version
 
-    - uses: actions/download-artifact@v2
+    - uses: actions/download-artifact@v4
       with:
         name: service jar
         path: ./service/target/
@@ -136,7 +141,7 @@ jobs:
     - name: Check running containers
       run: docker ps -a
 
-    - name: Caputre Hydra Oauth Service logs
+    - name: Capture Hydra Oauth Service logs
       run: |
         mkdir -p ./e2e-tests/logs
         docker logs hydra > ./e2e-tests/logs/hydra.out &
@@ -145,7 +150,7 @@ jobs:
 
     - name: Register hydra client
       run: |
-        docker-compose -f ./skills-client/skills-client-integration/skills-int-e2e-test/hydra/quickstart.yml exec -T hydra \
+        docker compose -f ./skills-client/skills-client-integration/skills-int-e2e-test/hydra/quickstart.yml exec -T hydra \
         	hydra clients create \
             --endpoint http://localhost:4445/ \
             --id skilltree-test \
@@ -158,34 +163,26 @@ jobs:
     - name: Start services for Cypress tests
       run: |
         cd e2e-tests
-        npm install
-        npm run backend:dropAllDBTables
         npm run cyServices:start:skills-service:oauth
-        npm run cyServices:start:client-display:oauth
         cd ..
 
     - name: Run Cypress tests
-      uses: cypress-io/github-action@v4
-      with:
-        working-directory: e2e-tests
-        record: true
-        parallel: true
-        group: 'skills-service with OAuth'
-        tag: "${{ github.workflow }}"
-        env: oauthMode=true
-        browser: chrome
+      run: |
+        cd e2e-tests
+        npm install
+        ../.github/scripts/runSubsetOfCypressTests.sh -t 20 -c ${{ matrix.container }}
+        cd ..
       env:
-        # pass the Dashboard record key as an environment variable
-        CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
-        # pass GitHub token to allow accurately detecting a build vs a re-run build
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        ELECTRON_EXTRA_LAUNCH_ARGS: '--disable-gpu'
+        cypress_oauthMode: true
 
     - name: upload result artifacts
       if: ${{ always() }}
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with:
-        name: CI result artifacts
+        name: UI test artifacts (${{ matrix.container }})
         path: |
           ./e2e-tests/logs
-          ./e2e-tests/cypress/snapshots/**/**/__diff_output__/*.png
-          ./e2e-tests/cypress/snapshots/**/__diff_output__/*.png
+          ./e2e-tests/cypress/videos
+          ./e2e-tests/cypress/screenshots
+          ./e2e-tests/cypress/visualRegression/diff

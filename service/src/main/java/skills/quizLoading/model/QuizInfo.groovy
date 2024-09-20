@@ -32,4 +32,7 @@ class QuizInfo {
     Date userLastQuizAttemptDate
     Integer quizLength
     Integer quizTimeLimit
+    Boolean multipleTakes
+    Boolean canStartQuiz
+    String errorMessage
 }

@@ -16,19 +16,21 @@
 package skills.storage.repos
 
 import groovy.transform.CompileStatic
-import org.apache.commons.lang3.ObjectUtils
+import jakarta.persistence.QueryHint
+import org.hibernate.jpa.AvailableHints
 import org.springframework.data.domain.Pageable
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
+import org.springframework.data.jpa.repository.QueryHints
 import org.springframework.data.repository.CrudRepository
 import org.springframework.data.repository.query.Param
 import org.springframework.lang.Nullable
 import skills.controller.result.model.ProjectUser
 import skills.storage.model.SkillRelDef
-import skills.storage.model.DayCountItem
 import skills.storage.model.UserPoints
 
 import java.time.LocalDateTime
+import java.util.stream.Stream
 
 @CompileStatic
 interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
@@ -557,7 +559,7 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
     from SkillDef sdParent, SkillRelDef srd, SkillDef sdChild
     left join SkillAttributesDef attributes on sdChild.id = attributes.skillRefId
     left join UserPoints userPoints on sdChild.projectId = userPoints.projectId and sdChild.skillId = userPoints.skillId and userPoints.userId=?1
-    left join SkillApproval approval on sdChild.id = approval.skillRefId and approval.userId=?1 and approval.rejectedOn=null and approval.approverUserId=null
+    left join SkillApproval approval on sdChild.id = approval.skillRefId and approval.userId=?1 and approval.rejectedOn is null and approval.approverUserId is null
       where srd.parent=sdParent and  srd.child=sdChild and sdChild.enabled = 'true' and
       sdParent.projectId is null and sdParent.skillId=?2 and srd.type in ?3 and sdChild.version<=?4''')
     List<Object []> findGlobalChildrenAndTheirUserPoints(String userId, String skillId, List<SkillRelDef.RelationshipType> types, Integer version)
@@ -598,6 +600,7 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                     usr.skill_id is null and 
                     usr.points >= ?3 and
                     (lower(CONCAT(usattr.first_name, ' ', usattr.last_name, ' (', usattr.user_id_for_display, ')')) like lower(CONCAT('%', ?2, '%')) OR
+                    (lower(CONCAT(usattr.user_id_for_display, ' (', usattr.last_name, ', ', usattr.first_name,  ')')) like lower(CONCAT('%', ?2, '%'))) OR
                      lower(usattr.user_id_for_display) like lower(CONCAT('%', ?2, '%')))) 
                 AS temp''',
             nativeQuery = true)
@@ -627,9 +630,13 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
             nativeQuery = true)
     Long countDistinctUserIdByProjectIdAndUserTagAndUserIdLike(String projectId, String userTagKey, String userTagValue, String userId)
 
+    @QueryHints(
+            @QueryHint(name = AvailableHints.HINT_FETCH_SIZE, value = "100")
+    )
     @Query(value = '''SELECT 
                 up.user_id as userId, 
-                max(upa.performedOn) as lastUpdated, 
+                min(upa.firstPerformedOn) as firstUpdated, 
+                max(upa.lastPerformedOn) as lastUpdated, 
                 sum(up.points) as totalPoints,
                 max(ua.first_name) as firstName,
                 max(ua.last_name) as lastName,
@@ -641,7 +648,8 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
             FROM user_points up
             LEFT JOIN (
                 SELECT upa.user_id, 
-                max(upa.performed_on) AS performedOn 
+                min(upa.performed_on) AS firstPerformedOn, 
+                max(upa.performed_on) AS lastPerformedOn 
                 FROM user_performed_skill upa 
                 WHERE upa.skill_ref_id in (
                     select case when copied_from_skill_ref is not null then copied_from_skill_ref else id end as id from skill_definition where type = 'Skill' and project_id = ?1 and enabled = 'true'
@@ -660,13 +668,14 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
             LEFT JOIN (SELECT ut.user_id, max(ut.value) AS value FROM user_tags ut WHERE ut.key = ?2 group by ut.user_id) ut ON ut.user_id=ua.user_id
             WHERE 
                 up.project_id=?1 and 
-                (lower(CONCAT(ua.first_name, ' ', ua.last_name, ' (',  ua.user_id_for_display, ')')) like lower(CONCAT(\'%\', ?3, \'%\'))  OR
-                 lower(ua.user_id_for_display) like lower(CONCAT('%', ?3, '%'))
+                ((lower(CONCAT(ua.first_name, ' ', ua.last_name, ' (',  ua.user_id_for_display, ')')) like lower(CONCAT(\'%\', ?3, \'%\'))) OR
+                (lower(CONCAT(ua.user_id_for_display, ' (', ua.last_name, ', ', ua.first_name,  ')')) like lower(CONCAT(\'%\', ?3, \'%\'))) OR
+                 (lower(ua.user_id_for_display) like lower(CONCAT('%', ?3, '%')))
                 ) and 
                 up.skill_id is null and
                 up.points >= ?4
             GROUP BY up.user_id''', nativeQuery = true)
-    List<ProjectUser> findDistinctProjectUsersAndUserIdLike(String projectId, String usersTableAdditionalUserTagKey, String query, int minimumPoints, Pageable pageable)
+    Stream<ProjectUser> findDistinctProjectUsersAndUserIdLike(String projectId, String usersTableAdditionalUserTagKey, String query, int minimumPoints, Pageable pageable)
 
     @Query(value='''SELECT COUNT(*)
         FROM (SELECT DISTINCT up.user_id from user_points up where up.project_id=?1 and up.skill_id in (?2)) AS temp''',
@@ -689,15 +698,15 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
         )
         SELECT COUNT(*)
         FROM (
-            SELECT DISTINCT up.user_id 
+            SELECT up.user_id, SUM(up.points) as total_points
             from user_points up, user_attrs usattr 
             where 
                 up.user_id = usattr.user_id and
                 up.skill_ref_id in (select id from subj_skills) and 
-                up.points >= :minimumPoints and
                 (lower(CONCAT(usattr.first_name, ' ', usattr.last_name, ' (', usattr.user_id_for_display, ')')) like lower(CONCAT('%', :userId, '%')) OR
                  lower(usattr.user_id_for_display) like lower(CONCAT('%', :userId, '%')))
-        ) AS temp
+            group by up.user_id
+        ) AS temp  WHERE total_points >= :minimumPoints
     ''', nativeQuery = true)
     Long countDistinctUsersByProjectIdAndSubjectIdAndUserIdLike(@Param("projectId") String projectId, @Param("subjectId") String subjectId, @Param("userId") String userId, @Param("minimumPoints") int minimumPoints)
 

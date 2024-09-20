@@ -7,17 +7,16 @@
     <groupId>skill-tree</groupId>
     <artifactId>skills-service-parent</artifactId>
     <packaging>pom</packaging>
-    <version>2.11.0-SNAPSHOT</version>
+    <version>3.2.0-SNAPSHOT</version>
     <modules>
         <module>dashboard</module>
-        <module>client-display</module>
         <module>service</module>
     </modules>
     <properties>
         <!--suppress UnresolvedMavenProperty -->
         <nexusServer>${nexus.url}</nexusServer>
         <main.basedir>${project.basedir}</main.basedir>
-        <java.version>17</java.version>
+        <java.version>19</java.version>
 
         <spock.myVersion>2.4-M1-groovy-4.0</spock.myVersion>
 
@@ -25,15 +24,16 @@
 
         <commons.lang.version>3.11</commons.lang.version>
         <commons.collections.version>4.4</commons.collections.version>
-        <commons.io.version>2.7</commons.io.version>
+        <commons.io.version>2.16.1</commons.io.version>
 
         <frontend-maven-plugin.version>1.10.3</frontend-maven-plugin.version>
-        <node.version>v18.14.1</node.version>
+        <node.version>v14.21.3</node.version>
 
         <guava.version>29.0-jre</guava.version>
 
         <!-- !!!!!IMPORTANT!!!!!: when changing the springboot.version property, make sure you also change it in the spring-boot-starter-parent definition -->
-        <springboot.version>3.1.4</springboot.version>
+        <springboot.version>3.2.9</springboot.version>
+        <springcloud.version>3.1.1</springcloud.version>
 
         <greenmail.version>2.0.0</greenmail.version>
         <wiremock.version>2.27.2</wiremock.version>
@@ -52,7 +52,7 @@
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <!-- !!!!!IMPORTANT!!!!!: when changing this version make sure to also update springboot.version property -->
-        <version>3.1.4</version>
+        <version>3.2.9</version>
         <relativePath/>
     </parent>
 

@@ -34,6 +34,7 @@ import org.springframework.core.io.ClassPathResource
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
 import org.springframework.http.*
+import org.springframework.http.client.ClientHttpRequestInterceptor
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory
 import org.springframework.http.client.support.BasicAuthenticationInterceptor
 import org.springframework.util.LinkedMultiValueMap
@@ -101,7 +102,9 @@ class WSHelper {
     }
 
     void setProxyCredentials(String clientId, String secretCode) {
-        oAuthRestTemplate.setInterceptors([new BasicAuthenticationInterceptor(clientId, secretCode)])
+        List<ClientHttpRequestInterceptor> existingInterceptors = oAuthRestTemplate.getInterceptors()
+        existingInterceptors.add(new BasicAuthenticationInterceptor(clientId, secretCode))
+        oAuthRestTemplate.setInterceptors(existingInterceptors)
     }
 
     def appPut(String endpoint, def params) {
@@ -278,11 +281,11 @@ class WSHelper {
         return responseEntity.body.accessToken
     }
 
-    ResponseEntity<Resource> getResource(String endpoint) {
-        String url = "${skillsService}/${endpoint}"
+    ResponseEntity<Resource> getResource(String endpoint, Map params=null) {
+        String url = "${skillsService}/${endpoint}${getUrlFromParams(params)}"
         ResponseEntity<Resource> responseEntity = restTemplateWrapper.getForEntity(url, Resource)
         String resBody = responseEntity.body
-        if(!resBody || responseEntity.statusCode != HttpStatus.OK){
+        if(!resBody || (responseEntity.statusCode != HttpStatus.OK && responseEntity.statusCode != HttpStatus.PARTIAL_CONTENT)){
             String msg = "Bad request for [$url] code=${responseEntity.statusCode}"
             log.error(msg)
             SkillsClientException e = new SkillsClientException(msg, url, responseEntity.statusCode)

@@ -19,16 +19,20 @@ import callStack.profiler.Profile
 import groovy.util.logging.Slf4j
 import org.apache.commons.lang3.StringUtils
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import skills.auth.UserInfoService
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.QuizValidator
 import skills.controller.exceptions.SkillQuizException
+import skills.controller.result.model.QuizSkillResult
 import skills.quizLoading.model.*
 import skills.services.CustomValidationResult
 import skills.services.CustomValidator
 import skills.services.LockingService
+import skills.services.attributes.ExpirationAttrs
+import skills.services.attributes.SkillAttributeService
 import skills.services.events.SkillEventResult
 import skills.services.events.SkillEventsService
 import skills.services.quiz.QuizQuestionType
@@ -36,6 +40,7 @@ import skills.storage.model.*
 import skills.storage.repos.*
 import skills.utils.InputSanitizer
 
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.ZoneId
@@ -84,8 +89,22 @@ class QuizRunService {
     @Autowired
     UserInfoService userInfoService
 
+    @Autowired
+    SkillAttributeService skillAttributeService
+
+    @Value('#{"${skills.config.ui.minimumSubjectPoints}"}')
+    int minimumSubjectPoints
+
+    @Value('#{"${skills.config.ui.minimumProjectPoints}"}')
+    int minimumProjectPoints
+
+    private boolean skillExpiringSoon(String skillId, String projectId) {
+        ExpirationAttrs attrs = skillAttributeService.getExpirationAttrs( projectId, skillId )
+        return attrs && attrs?.expirationType == ExpirationAttrs.DAILY
+    }
+
     @Transactional
-    QuizInfo loadQuizInfo(String userId, String quizId) {
+    QuizInfo loadQuizInfo(String userId, String quizId, String skillId = null, String projectId = null) {
         QuizDefWithDescription quizDefWithDesc = quizDefWithDescRepo.findByQuizIdIgnoreCase(quizId)
         if (!quizDefWithDesc) {
             throw new SkillQuizException("Failed to find quiz id.", quizId, ErrorCode.BadParam)
@@ -94,6 +113,7 @@ class QuizRunService {
         List<QuizSetting> quizSettings = loadQuizSettings(quizDefWithDesc.id)
         boolean randomizeQuestionsSetting = quizSettings?.find( { it.setting == QuizSettings.RandomizeQuestions.setting })?.value?.toBoolean()
         boolean randomizeAnswersSetting = quizSettings?.find( { it.setting == QuizSettings.RandomizeAnswers.setting })?.value?.toBoolean()
+        boolean multipleTakes = quizSettings?.find( { it.setting == QuizSettings.MultipleTakes.setting })?.value?.toBoolean()
         List<QuizQuestionInfo> questions = loadQuizQuestionInfo(quizId, randomizeQuestionsSetting, randomizeAnswersSetting)
 
         UserQuizAttemptRepo.UserQuizAttemptStats userAttemptsStats =
@@ -109,6 +129,24 @@ class QuizRunService {
         Integer quizLengthAsInteger = quizLength ? Integer.valueOf(quizLength.value) : 0
         Integer lengthSetting = quizLengthAsInteger > 0 ? quizLengthAsInteger : numberOfQuestions
 
+        if(!multipleTakes && skillId && projectId) {
+            multipleTakes = skillExpiringSoon(skillId, projectId)
+        }
+
+        boolean canStartQuiz = true
+        String errorMessage = null
+        List<QuizSkillResult> skills = quizToSkillDefRepo.getSkillsForQuizWithSubjects(quizDefWithDesc.id, userId)
+        skills.forEach(skill -> {
+          if(skill.subjectPoints < minimumSubjectPoints) {
+              canStartQuiz = false
+              errorMessage = "This ${quizDefWithDesc.getType().toString()} is assigned to a Skill (${skill.skillId}) that does not have enough points to be completed. The Subject (${skill.subjectId}) that contains this skill must have at least ${ minimumSubjectPoints } points."
+          }
+            if(skill.projectPoints < minimumProjectPoints) {
+                canStartQuiz = false
+                errorMessage = "This ${quizDefWithDesc.getType().toString()} is assigned to a Skill (${skill.skillId}) that does not have enough points to be completed. The Project (${skill.projectId}) that contains this skill must have at least ${ minimumProjectPoints } points."
+            }
+        })
+
         return new QuizInfo(
                 name: quizDefWithDesc.name,
                 description: InputSanitizer.unsanitizeForMarkdown(quizDefWithDesc.description),
@@ -122,6 +160,9 @@ class QuizRunService {
                 minNumQuestionsToPass: minNumQuestionsToPassSetting ? Integer.valueOf(minNumQuestionsToPassSetting.value) : -1,
                 quizLength: lengthSetting,
                 quizTimeLimit: quizTimeLimit ? Integer.valueOf(quizTimeLimit.value) : -1,
+                multipleTakes: multipleTakes,
+                canStartQuiz: canStartQuiz,
+                errorMessage: errorMessage,
         )
     }
 
@@ -167,7 +208,7 @@ class QuizRunService {
     }
 
     @Transactional
-    QuizAttemptStartResult startQuizAttempt(String userId, String quizId) {
+    QuizAttemptStartResult startQuizAttempt(String userId, String quizId, String skillId = null, String projectId = null) {
         QuizDefWithDescription quizDefWithDesc = quizDefWithDescRepo.findByQuizIdIgnoreCase(quizId)
         List<QuizSetting> quizSettings = loadQuizSettings(quizDefWithDesc.id)
         boolean randomizeQuestionsSetting = quizSettings?.find( { it.setting == QuizSettings.RandomizeQuestions.setting })?.value?.toBoolean()
@@ -236,7 +277,7 @@ class QuizRunService {
         }
 
         QuizDef quizDef = getQuizDef(quizId)
-        validateQuizAttempts(quizDef, userId, quizId)
+        validateQuizAttempts(quizDef, userId, quizId, skillId, projectId)
         int numQuestions = quizQuestionRepo.countByQuizId(quizDef.quizId)
         QuizValidator.isTrue(numQuestions > 0, "Must have at least 1 question declared in order to start.", quizDef.quizId)
 
@@ -273,16 +314,22 @@ class QuizRunService {
     }
 
     @Profile
-    private void validateQuizAttempts(QuizDef quizDef, String userId, String quizId) {
+    private void validateQuizAttempts(QuizDef quizDef, String userId, String quizId, String skillId = null, String projectId = null) {
         UserQuizAttemptRepo.UserQuizAttemptStats userAttemptsStats = quizAttemptRepo.getUserAttemptsStats(userId, quizDef.id,
                 UserQuizAttempt.QuizAttemptStatus.INPROGRESS, UserQuizAttempt.QuizAttemptStatus.PASSED)
         Integer numCurrentAttempts = userAttemptsStats?.getUserNumPreviousQuizAttempts() ?: 0
-        if (quizDef.type == QuizDefParent.QuizType.Survey) {
+        boolean allowMultipleTakes = allowMultipleTakes(quizDef.id)
+        boolean aboutToExpire = false
+
+        if (skillId && projectId) {
+            aboutToExpire = skillExpiringSoon(skillId, projectId)
+        }
+        if (quizDef.type == QuizDefParent.QuizType.Survey  && !allowMultipleTakes) {
             if (numCurrentAttempts > 0) {
                 throw new SkillQuizException("User [${userId}] has already taken this survey", quizId, ErrorCode.BadParam)
             }
         } else {
-            if (userAttemptsStats?.getUserQuizPassed()) {
+            if (userAttemptsStats?.getUserQuizPassed() && !allowMultipleTakes && !aboutToExpire) {
                 throw new SkillQuizException("User [${userId}] already took and passed this quiz.", quizId, ErrorCode.UserQuizAttemptsExhausted)
             }
 
@@ -296,7 +343,7 @@ class QuizRunService {
 
     @Profile
     private List<QuizSetting> loadQuizSettings(Integer quizRefId) {
-        return quizSettingsRepo.findAllByQuizRefIdAndSettingIn(quizRefId, [QuizSettings.MaxNumAttempts.setting, QuizSettings.MinNumQuestionsToPass.setting, QuizSettings.RandomizeQuestions.setting, QuizSettings.RandomizeAnswers.setting, QuizSettings.QuizLength.setting, QuizSettings.QuizTimeLimit.setting])
+        return quizSettingsRepo.findAllByQuizRefIdAndSettingIn(quizRefId, [QuizSettings.MaxNumAttempts.setting, QuizSettings.MinNumQuestionsToPass.setting, QuizSettings.RandomizeQuestions.setting, QuizSettings.RandomizeAnswers.setting, QuizSettings.QuizLength.setting, QuizSettings.QuizTimeLimit.setting, QuizSettings.MultipleTakes.setting])
     }
 
     @Profile
@@ -312,9 +359,22 @@ class QuizRunService {
         return getQuizSettingAsInteger(quizRefId, QuizSettings.QuizLength.setting)
     }
     @Profile
+    private boolean allowMultipleTakes(Integer quizRefId) {
+        return getQuizSettingAsBoolean(quizRefId, QuizSettings.MultipleTakes.setting)
+    }
+    @Profile
+    private boolean alwaysShowCorrectAnswers(Integer quizRefId) {
+        return getQuizSettingAsBoolean(quizRefId, QuizSettings.AlwaysShowCorrectAnswers.setting)
+    }
+    @Profile
     private Integer getQuizSettingAsInteger(Integer quizRefId, String setting) {
         QuizSetting quizSetting = quizSettingsRepo.findBySettingAndQuizRefId(setting, quizRefId)
         return quizSetting ? Integer.valueOf(quizSetting.value) : -1
+    }
+    @Profile
+    private boolean getQuizSettingAsBoolean(Integer quizRefId, String setting) {
+        QuizSetting quizSetting = quizSettingsRepo.findBySettingAndQuizRefId(setting, quizRefId)
+        return quizSetting?.value?.toBoolean()
     }
 
     boolean shouldQuizBeFailed(UserQuizAttempt attempt) {
@@ -525,9 +585,10 @@ class QuizRunService {
         int numCorrect = gradedQuestions.count { it.isCorrect }
         Integer minNumQuestionsToPassConf = getMinNumQuestionsToPassSetting(quizDef.id)
         Integer minNumQuestionsToPass = minNumQuestionsToPassConf > 0 ? minNumQuestionsToPassConf : quizLength;
+        boolean showCorrectAnswers = alwaysShowCorrectAnswers(quizDef.id)
         boolean quizPassed = numCorrect >= minNumQuestionsToPass
 
-        boolean shouldReturnGradedRes = quizPassed && quizDef.type == QuizDefParent.QuizType.Quiz;
+        boolean shouldReturnGradedRes = (quizPassed || showCorrectAnswers) && quizDef.type == QuizDefParent.QuizType.Quiz;
         if (!quizPassed && quizDef.type == QuizDefParent.QuizType.Quiz) {
             UserQuizAttemptRepo.UserQuizAttemptStats userAttemptsStats = quizAttemptRepo.getUserAttemptsStats(userId, quizDef.id,
                     UserQuizAttempt.QuizAttemptStatus.INPROGRESS, UserQuizAttempt.QuizAttemptStatus.PASSED)
@@ -535,7 +596,7 @@ class QuizRunService {
             int numConfiguredAttempts = getMaxQuizAttemptsSetting(quizDef.id)
             // anything 0 or below is considered to be unlimited attempts
             // only return graded results if there are no more attempts available
-            shouldReturnGradedRes = numConfiguredAttempts > 0 && numCurrentAttempts >= numConfiguredAttempts;
+            shouldReturnGradedRes = showCorrectAnswers || (numConfiguredAttempts > 0 && numCurrentAttempts >= numConfiguredAttempts);
         }
 
         QuizGradedResult gradedResult = new QuizGradedResult(passed: quizPassed, numQuestionsGotWrong: quizLength - numCorrect,

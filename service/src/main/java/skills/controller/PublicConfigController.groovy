@@ -31,6 +31,7 @@ import skills.profile.EnableCallStackProf
 import skills.services.AccessSettingsStorageService
 import skills.services.FeatureService
 import skills.services.SystemSettingsService
+import skills.services.admin.ProjAdminService
 import skills.services.admin.UserCommunityService
 import skills.services.settings.Settings
 import skills.services.settings.SettingsService
@@ -67,6 +68,9 @@ class PublicConfigController {
 
     @Autowired
     SettingsService settingsService
+
+    @Autowired
+    ProjAdminService projAdminService
 
     @Autowired
     FeatureService featureService
@@ -128,6 +132,7 @@ class PublicConfigController {
         res["groupDisplayName"] = 'Group'
         res["skillDisplayName"] = 'Skill'
         res["levelDisplayName"] = 'Level'
+        res["pointDisplayName"] = 'Point'
         res["groupDescriptionsOn"] = false
         res["displayProjectDescription"] = true
         if (Boolean.valueOf(uiConfigProperties.dbUpgradeInProgress)) {
@@ -140,6 +145,7 @@ class PublicConfigController {
                     'group.displayName',
                     'skill.displayName',
                     'level.displayName',
+                    'point.displayName',
                     Settings.GROUP_DESCRIPTIONS.settingName,
                     Settings.SHOW_PROJECT_DESCRIPTION_EVERYWHERE.settingName
             ])?.collectEntries {
@@ -166,6 +172,10 @@ class PublicConfigController {
             if (customLevelName) {
                 res["levelDisplayName"] = customLevelName
             }
+            String customPointName = projectSettings?['point.displayName']
+            if (customPointName) {
+                res["pointDisplayName"] = customPointName
+            }
             Boolean groupDescriptionsOn = Boolean.valueOf(projectSettings?[Settings.GROUP_DESCRIPTIONS.settingName])
             if (groupDescriptionsOn) {
                 res["groupDescriptionsOn"] = groupDescriptionsOn
@@ -177,6 +187,12 @@ class PublicConfigController {
                 res["displayProjectDescription"] = false
             }
 
+            String name = projAdminService.lookupProjectName(projectId)
+            res["projectName"] = name
+
+            if (userCommunityService.isUserCommunityConfigured()) {
+                res["projectUserCommunityDescriptor"] = userCommunityService.getProjectUserCommunity(projectId)
+            }
         }
         res['enablePageVisitReporting'] = enablePageVisitReporting
         return res

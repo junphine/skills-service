@@ -588,7 +588,7 @@ class QuizDefService {
         int numDistinctUsersPassed = passedQuizCounts ? passedQuizCounts.getNumDistinctUsers() : 0
         int numDistinctUsersFailed = failedQuizCounts ? failedQuizCounts.getNumDistinctUsers() : 0
 
-        Integer averageRuntimeInMs = userQuizAttemptRepo.getAverageMsRuntimeForQuiz(quizId)
+        Integer averageRuntimeInMs = userQuizAttemptRepo.getAverageMsRuntimeForQuiz(quizId)?.intValue()
 
         QuizQuestionsResult quizQuestionsResult = getQuestionDefs(quizId)
         List<QuizQuestionDefResult> questionDefResults = quizQuestionsResult?.questions
@@ -765,7 +765,7 @@ class QuizDefService {
             QuizValidator.isNotNull(questionDefRequest.answers, "answers", quizId)
             QuizValidator.isTrue(questionDefRequest.answers.size() >= 2, "Must have at least 2 answers", quizId)
             questionDefRequest.answers.each {
-                QuizValidator.isNotBlank(it.answer, "answers.answer", quizId)
+                QuizValidator.isNotBlank(it.answer, "answers.answer", quizId, true)
                 propsBasedValidator.quizValidationMaxStrLength(PublicProps.UiProp.maxQuizTextAnswerLength, "Answer", it.answer, quizDef.quizId)
             }
         }

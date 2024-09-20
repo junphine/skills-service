@@ -2657,4 +2657,17 @@
         </createIndex>
     </changeSet>
 
+    <changeSet id="45" author="skills team">
+        <sql>
+            delete from user_actions_history where item = 'SkillEvents' and action = 'Create'
+        </sql>
+    </changeSet>
+
+    <changeSet id="46" author="skills team">
+        <insert tableName="skills_db_locks">
+            <column name="lock" type="varchar(255)" value="upgrade_replay_skill_events"/>
+        </insert>
+    </changeSet>
+
+
 </databaseChangeLog>

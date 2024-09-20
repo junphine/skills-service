@@ -15,14 +15,24 @@
  */
 package skills.intTests.quiz
 
+
 import org.springframework.beans.factory.annotation.Autowired
-import skills.controller.exceptions.SkillQuizException
 import skills.intTests.utils.DefaultIntSpec
 import skills.intTests.utils.QuizDefFactory
 import skills.intTests.utils.SkillsClientException
+import skills.intTests.utils.SkillsFactory
+import skills.intTests.utils.SkillsService
 import skills.quizLoading.QuizSettings
+import skills.services.StartDateUtil
+import skills.services.WeekNumberUtil
 import skills.services.quiz.QuizQuestionType
+import skills.storage.model.EventType
 import skills.storage.model.SkillDef
+import skills.storage.model.UserAchievement
+import skills.storage.model.UserEvent
+import skills.storage.model.UserPerformedSkill
+import skills.storage.model.UserPoints
+import skills.storage.model.UserQuizAttempt
 import skills.storage.repos.*
 
 import static skills.intTests.utils.SkillsFactory.*
@@ -423,5 +433,76 @@ class QuizApi_RunQuizSpecs extends DefaultIntSpec {
         then:
         SkillsClientException quizException = thrown()
         quizException.message.contains("Deadline for [${quizAttempt.id}] has expired")
+    }
+
+    def "allow word NULL in as quiz answer"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 2, 2)
+        questions[0].answers[0].answer = "Null"
+        questions[1].answers[0].answer = "NULL"
+        skillsService.createQuizQuestionDefs(questions)
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+        when:
+        def quizAttempt =  skillsService.startQuizAttempt(quiz.quizId).body
+        skillsService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id)
+        skillsService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[0].id)
+        def gradedQuizAttempt = skillsService.completeQuizAttempt(quiz.quizId, quizAttempt.id).body
+        then:
+        gradedQuizAttempt.passed == true
+        gradedQuizAttempt.numQuestionsGotWrong == 0
+        gradedQuizAttempt.gradedQuestions.questionId == quizInfo.questions.id
+        gradedQuizAttempt.gradedQuestions.isCorrect == [true, true]
+        gradedQuizAttempt.gradedQuestions[0].selectedAnswerIds == [quizInfo.questions[0].answerOptions[0].id]
+        gradedQuizAttempt.gradedQuestions[1].selectedAnswerIds == [quizInfo.questions[1].answerOptions[0].id]
+    }
+
+    def "quiz can not be taken if the project does not have enough points"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+
+        def proj = createProject(1)
+        def subj = createSubject(1, 1)
+        def skills = createSkills(1, 1, 1, 1)
+        skillsService.createProjectAndSubjectAndSkills(proj, subj, skills)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+        skillsService.createSkill(skills[0])
+
+        when:
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        then:
+        quizInfo
+        quizInfo.canStartQuiz == false
+        quizInfo.errorMessage == "This Quiz is assigned to a Skill (skill1) that does not have enough points to be completed. The Project (TestProject1) that contains this skill must have at least 100 points."
+    }
+
+    def "quiz can not be taken if the subject does not have enough points"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+
+        def proj = createProject(1)
+        def subj = createSubject(1, 1)
+        def subj2 = createSubject(1, 2)
+
+        def skills = createSkills(1, 1, 1, 1)
+        def otherSkills = createSkills(1, 1, 2, 100)
+        skillsService.createProjectAndSubjectAndSkills(proj, subj, skills)
+        skillsService.createSubject(subj2)
+        skillsService.createSkill(otherSkills[0])
+
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+        skillsService.createSkill(skills[0])
+
+        when:
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        then:
+        quizInfo
+        quizInfo.canStartQuiz == false
+        quizInfo.errorMessage == "This Quiz is assigned to a Skill (skill1) that does not have enough points to be completed. The Subject (TestSubject1) that contains this skill must have at least 100 points."
     }
 }

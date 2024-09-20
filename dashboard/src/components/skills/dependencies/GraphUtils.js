@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import TruncateFilter from '../../../filters/TruncateFilter';
+// import TruncateFilter from '../../../filters/TruncateFilter';
 
 export default {
   getTitle(skillItem, isCrossProject) {
@@ -24,10 +24,12 @@ export default {
       crossProjInfo = `<span style="border-bottom: 1px dotted black; font-weight: bold;"><i class="fas fa-handshake"></i> Cross Project Dependency</span><br/>
                            <span>Project ID: ${skillItem.projectId}</span><br/>`;
     }
-    const html = `${crossProjInfo}<span style="font-style: italic; color: #444444">Name:</span> ${skillItem.name}<br/>
-                <span style="font-style: italic; color: #444444">ID:</span> ${skillItem.skillId}<br/>
-                <span style="font-style: italic; color: #444444">Point Increment:</span> ${skillItem.pointIncrement}<br/>
-                <span style="font-style: italic; color: #444444">Total Points:</span> ${skillItem.totalPoints}`;
+    let html = `${crossProjInfo}<span style="font-style: italic; color: #444444">Name:</span> ${skillItem.name}<br/>
+                <span style="font-style: italic; color: #444444">ID:</span> ${skillItem.skillId}<br/>`;
+    if(skillItem.type === 'Skill') {
+      html += `<span style="font-style: italic; color: #444444">Point Increment:</span> ${skillItem.pointIncrement}<br/>
+      <span style="font-style: italic; color: #444444">Total Points:</span> ${skillItem.totalPoints}`;
+    }
     container.innerHTML = html;
     return container;
   },
@@ -35,7 +37,8 @@ export default {
     return isCrossProject ? `Shared from\n<b>${this.truncate(skillItem.projectName)}</b>\n${skillItem.name} ` : skillItem.name;
   },
   truncate(strValue, truncateTo = 35) {
-    return TruncateFilter(strValue, truncateTo);
+    // return TruncateFilter(strValue, truncateTo);
+    return strValue;
   },
 
 };

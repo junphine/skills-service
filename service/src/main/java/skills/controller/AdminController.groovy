@@ -27,6 +27,7 @@ import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.servlet.ModelAndView
 import skills.PublicProps
 import skills.auth.UserInfoService
 import skills.controller.exceptions.ErrorCode
@@ -35,6 +36,8 @@ import skills.controller.exceptions.SkillsValidator
 import skills.controller.request.model.*
 import skills.controller.result.model.*
 import skills.dbupgrade.DBUpgradeSafe
+import skills.metrics.builders.MetricsPagingParamsHelper
+import skills.metrics.builders.project.UserAchievementsMetricsBuilder
 import skills.services.*
 import skills.services.admin.*
 import skills.services.admin.moveSkills.SkillsMoveService
@@ -147,6 +150,9 @@ class AdminController {
     ContactUsersService contactUsersService
 
     @Autowired
+    CustomValidator customValidator
+
+    @Autowired
     UserInfoService userInfoService
 
     @Autowired
@@ -175,6 +181,20 @@ class AdminController {
 
     @Autowired
     UserActionsHistoryService userActionsHistoryService
+
+    @Autowired
+    UserProgressExportResult userProgressExportResult
+
+    @Autowired
+    UserAchievementsExportResult userAchievementsExportResult
+
+    @Autowired
+    UserAchievementsMetricsBuilder userAchievementsMetricsBuilder
+
+    @Autowired
+    SkillMetricsExportResult skillMetricsExportResult
+    @Autowired
+    SubjectSkillsExportResult subjectSkillsExportResult
 
     @Value('#{"${skills.config.ui.maxSkillsInBulkImport}"}')
     int maxBulkImport
@@ -328,7 +348,7 @@ class AdminController {
                              @RequestBody NameExistsRequest existsRequest) {
         String subjectName = existsRequest.name?.trim()
         SkillsValidator.isNotBlank(projectId, "Project Id")
-        SkillsValidator.isNotBlank(subjectName, "Subject Name")
+        SkillsValidator.isNotBlank(subjectName, "Subject Name", projectId, null, true )
 
         def sanitize = InputSanitizer.sanitize(subjectName)
         return subjAdminService.existsBySubjectName(InputSanitizer.sanitize(projectId), sanitize)
@@ -341,7 +361,7 @@ class AdminController {
                              @RequestBody NameExistsRequest nameExistsRequest) {
         String badgeName = nameExistsRequest.name?.trim()
         SkillsValidator.isNotBlank(projectId, "Project Id")
-        SkillsValidator.isNotBlank(badgeName, "Badge Name")
+        SkillsValidator.isNotBlank(badgeName, "Badge Name", projectId, null, true)
         return badgeAdminService.existsByBadgeName(InputSanitizer.sanitize(projectId), InputSanitizer.sanitize(badgeName))
     }
 
@@ -352,7 +372,7 @@ class AdminController {
                            @RequestBody NameExistsRequest existsRequest) {
         String skillName = existsRequest.name?.trim()
         SkillsValidator.isNotBlank(projectId, "Project Id")
-        SkillsValidator.isNotBlank(skillName, "Skill Name")
+        SkillsValidator.isNotBlank(skillName, "Skill Name", projectId, null, true)
         return skillsAdminService.existsBySkillName(InputSanitizer.sanitize(projectId), InputSanitizer.sanitize(skillName))
     }
 
@@ -519,6 +539,20 @@ class AdminController {
         SkillsValidator.isNotNull(badgePatchRequest.action, "Action must be provided", projectId)
 
         badgeAdminService.setBadgeDisplayOrder(projectId, badgeId, badgePatchRequest)
+    }
+
+    @GetMapping(value = "/projects/{projectId}/subjects/{subjectId}/skills/export/excel")
+    @CompileStatic
+    ModelAndView exportSubjectSkillsTable(@PathVariable("projectId") String projectId,
+                                          @PathVariable("subjectId") String subjectId) {
+
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        SkillsValidator.isNotBlank(subjectId, "Subject Id")
+
+        ModelAndView mav = new ModelAndView(subjectSkillsExportResult)
+        mav.addObject(SubjectSkillsExportResult.PROJECT_ID, projectId)
+        mav.addObject(SubjectSkillsExportResult.SUBJECT_ID, subjectId)
+        return mav
     }
 
     @RequestMapping(value = "/projects/{projectId}/subjects/{subjectId}/skills", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -823,6 +857,15 @@ class AdminController {
         return skillEventService.bulkDeleteSkillEventsForUser(projectId, userId?.toLowerCase())
     }
 
+    @RequestMapping(value = "/projects/{projectId}/users/{userId}/events/bulkDelete", method = RequestMethod.DELETE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    RequestResult deleteSkillEventBatchForUser(@PathVariable("projectId") String projectId,
+                                               @PathVariable("userId") String userId,
+                                               @RequestBody List<Integer> ids) {
+
+        return skillEventService.deleteSkillEventBatch(projectId, userId?.toLowerCase(), ids)
+    }
+
     @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/users/{userId}/events/{timestamp}", method = RequestMethod.DELETE, produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
     RequestResult deleteSkillEvent(@PathVariable("projectId") String projectId,
@@ -999,16 +1042,58 @@ class AdminController {
         return adminUsersService.loadUsersPageForProject(projectId, query, pageRequest, minimumPoints)
     }
 
+    @GetMapping(value = "/projects/{projectId}/users/export/excel")//, produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name = "exportUsers")
+    @CompileStatic
+    ModelAndView exportProjectUsers(@PathVariable("projectId") String projectId,
+                                    @RequestParam String query,
+                                    @RequestParam String orderBy,
+                                    @RequestParam Boolean ascending,
+                                    @RequestParam int minimumPoints) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        SkillsValidator.isTrue(minimumPoints >=0, "Minimum Points is less than 0", projectId)
+
+        PageRequest pageRequest = PageRequest.of(0, Integer.MAX_VALUE, ascending ? ASC : DESC, orderBy)
+        ModelAndView mav = new ModelAndView(userProgressExportResult);
+        mav.addObject(UserProgressExportResult.PROJECT_ID, projectId)
+        mav.addObject(UserProgressExportResult.QUERY, query)
+        mav.addObject(UserProgressExportResult.MINIMUM_POINTS, minimumPoints)
+        mav.addObject(UserProgressExportResult.PAGE_REQUEST, pageRequest)
+        return mav;
+    }
+
+    @GetMapping(value = "/projects/{projectId}/achievements/export/excel")
+    @CompileStatic
+    ModelAndView exportProjectUserAchievements(@PathVariable("projectId") String projectId,
+                                               @RequestParam Map<String,String> metricsProps) {
+
+        metricsProps.put(MetricsPagingParamsHelper.PROP_CURRENT_PAGE, 1.toString())
+        metricsProps.put(MetricsPagingParamsHelper.PROP_PAGE_SIZE, Integer.MAX_VALUE.toString())
+        UserAchievementsMetricsBuilder.QueryParams queryParams = userAchievementsMetricsBuilder.getQueryParams(projectId, userAchievementsMetricsBuilder.getId(), metricsProps, false)
+        ModelAndView mav = new ModelAndView(userAchievementsExportResult);
+        mav.addObject(UserAchievementsExportResult.PROJECT_ID, projectId)
+        mav.addObject(UserAchievementsExportResult.QUERY_PARAMS, queryParams)
+        return mav
+    }
+
+    @GetMapping(value = "/projects/{projectId}/skills/export/excel")
+    @CompileStatic
+    ModelAndView exportProjectSkillsMetrics(@PathVariable("projectId") String projectId) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+
+        ModelAndView mav = new ModelAndView(skillMetricsExportResult);
+        mav.addObject(SkillMetricsExportResult.PROJECT_ID, projectId)
+        return mav
+    }
+
     @GetMapping(value="/projects/{projectId}/{userId}/canAccess", produces='application/json')
     @ResponseBody
     @CompileStatic
-    Boolean canUserAccess(@PathVariable("projectId") String projectId, @PathVariable("userId") String userId,
-                          @RequestParam(required=false, value="idType") String idType) {
+    Boolean canUserAccess(@PathVariable("projectId") String projectId, @PathVariable("userId") String userId) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         SkillsValidator.isNotBlank(userId, "User ID")
 
         if (inviteOnlyProjectService.isInviteOnlyProject(projectId)) {
-            return inviteOnlyProjectService.canUserAccess(projectId, userId, idType)
+            return inviteOnlyProjectService.canUserAccess(projectId, userId)
         }
         return Boolean.TRUE
     }
@@ -1317,19 +1402,26 @@ class AdminController {
     @ResponseBody
     RequestResult contactUsers(@PathVariable("id") String projectId, @RequestBody ContactUsersRequest contactUsersRequest) {
         contactUsersRequest?.queryCriteria?.projectId = projectId
-        SkillsValidator.isNotBlank(contactUsersRequest?.emailSubject, "emailSubject")
-        SkillsValidator.isNotBlank(contactUsersRequest?.emailBody, "emailBody")
+        validateEmailBodyAndSubject(contactUsersRequest)
         contactUsersService.contactUsers(contactUsersRequest, projectId)
         return RequestResult.success()
     }
 
     @RequestMapping(value="/projects/{id}/previewEmail", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
     RequestResult testEmail(@PathVariable("id") String projectId, @RequestBody ContactUsersRequest contactUsersRequest) {
-        SkillsValidator.isNotBlank(contactUsersRequest?.emailSubject, "emailSubject")
-        SkillsValidator.isNotBlank(contactUsersRequest?.emailBody, "emailBody")
+        validateEmailBodyAndSubject(contactUsersRequest)
         String userId = userInfoService.getCurrentUserId()
         contactUsersService.sendEmail(contactUsersRequest.emailSubject, contactUsersRequest.emailBody, userId, projectId)
         return RequestResult.success()
+    }
+
+    private void validateEmailBodyAndSubject(ContactUsersRequest contactUsersRequest) {
+        SkillsValidator.isNotBlank(contactUsersRequest?.emailSubject, "emailSubject")
+        SkillsValidator.isNotBlank(contactUsersRequest?.emailBody, "emailBody")
+        CustomValidationResult customValidationResult = customValidator.validateEmailBodyAndSubject(contactUsersRequest)
+        if (!customValidationResult.valid) {
+            throw new SkillException(customValidationResult.msg)
+        }
     }
 
     @RequestMapping(value="/projects/{projectId}/skills/{skillId}/export", method = [RequestMethod.POST, RequestMethod.PUT], produces = "application/json")
@@ -1681,6 +1773,8 @@ class AdminController {
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
         return userActionsHistoryService.getUsersActions(pageRequest,
                 projectId,
+                null,
+                null,
                 itemFilter? DashboardItem.valueOf(itemFilter) : null,
                 userFilter ? URLDecoder.decode(userFilter, StandardCharsets.UTF_8) : null,
                 null,
@@ -1700,6 +1794,19 @@ class AdminController {
     @CompileStatic
     Map getDashboardActionAttributes(@PathVariable("projectId") String projectId, @PathVariable("actionId") Long actionId) {
         return userActionsHistoryService.getActionAttributes(actionId, projectId)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/expirations", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    TableResult getExpiredSkills(@PathVariable(name = "projectId") String projectId,
+                                           @RequestParam(name = "userIdForDisplay", required = false) String userIdParam,
+                                           @RequestParam(name = "skillName", required = false) String skillName,
+                                           @RequestParam int page,
+                                           @RequestParam int limit,
+                                           @RequestParam String orderBy,
+                                           @RequestParam Boolean ascending) {
+        PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
+        return userAchievementExpirationService.findAllExpiredAchievements(projectId, userIdParam, skillName, pageRequest);
     }
 }
 

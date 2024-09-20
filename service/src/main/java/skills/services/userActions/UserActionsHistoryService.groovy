@@ -87,14 +87,21 @@ class UserActionsHistoryService {
 
     @Transactional
     TableResult getUsersActions(PageRequest pageRequest,
+                                String projectId,
+                                String quizId,
                                 String projectIdFilter,
                                 DashboardItem itemFilter,
                                 String userFilter,
                                 String quizFilter,
                                 String itemIdFilter,
                                 DashboardAction actionFilter) {
+        String projectIdFilterQuery = projectIdFilter ? '%' + projectIdFilter.toLowerCase() + '%' : null
+        String userFilterQuery = userFilter ? '%' + userFilter.toLowerCase() + '%' : null
+        String quizFilterQuery = quizFilter ? '%' + quizFilter.toLowerCase() + '%' : null
+        String itemIdFilterQuery = itemIdFilter ? '%' + itemIdFilter.toLowerCase() + '%' : null
         Page<UserActionsHistoryRepo.UserActionsPreview> userActionsPreviewFromDB = userActionsHistoryRepo.getActions(
-                projectIdFilter, itemFilter, userFilter, quizFilter, itemIdFilter, actionFilter, pageRequest)
+                projectId?.toLowerCase(), quizId?.toLowerCase(),
+                projectIdFilterQuery, itemFilter, userFilterQuery, quizFilterQuery, itemIdFilterQuery, actionFilter, pageRequest)
         Long totalRows = userActionsPreviewFromDB.getTotalElements()
         List<DashboardUserActionRes> actionResList = userActionsPreviewFromDB.getContent().collect {
             new DashboardUserActionRes(
@@ -108,6 +115,8 @@ class UserActionsHistoryService {
                     projectId: it.projectId,
                     quizId: it.quizId,
                     created: it.created,
+                    firstName: it.firstName,
+                    lastName: it.lastName
             )
         }
 
@@ -144,8 +153,10 @@ class UserActionsHistoryService {
     }
 
     DashboardUserActionsFilterOptions getUserActionsFilterOptions(String projectId = null, String quizId = null) {
-        List<DashboardAction> dashboardActions = userActionsHistoryRepo.findDistinctDashboardActions(projectId, quizId)
-        List<DashboardItem> dashboardItems = userActionsHistoryRepo.findDistinctDashboardItems(projectId, quizId)
+        String projectIdFilter = projectId ? projectId.toLowerCase() : null
+        String quizIdFilter = quizId ? quizId.toLowerCase() : null
+        List<DashboardAction> dashboardActions = userActionsHistoryRepo.findDistinctDashboardActions(projectIdFilter, quizIdFilter)
+        List<DashboardItem> dashboardItems = userActionsHistoryRepo.findDistinctDashboardItems(projectIdFilter, quizIdFilter)
 
         return new DashboardUserActionsFilterOptions(
                 actionFilterOptions: dashboardActions.collect { it.toString() },

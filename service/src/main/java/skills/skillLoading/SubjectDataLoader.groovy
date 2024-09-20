@@ -27,10 +27,12 @@ import skills.services.settings.SettingsService
 import skills.skillLoading.model.SkillDependencySummary
 import skills.skillLoading.model.SkillTag
 import skills.storage.model.*
+import skills.storage.repos.ExpiredUserAchievementRepo
 import skills.storage.repos.QuizToSkillDefRepo
 import skills.storage.repos.SkillApprovalRepo
 import skills.storage.repos.SkillDefRepo
 import skills.storage.repos.SkillDefWithExtraRepo
+import skills.storage.repos.UserAchievedLevelRepo
 import skills.storage.repos.UserPerformedSkillRepo
 import skills.storage.repos.UserPointsRepo
 
@@ -66,6 +68,12 @@ class SubjectDataLoader {
     @Autowired
     SkillApprovalRepo skillApprovalRepo
 
+    @Autowired
+    ExpiredUserAchievementRepo expiredUserAchievementRepo
+
+    @Autowired
+    UserAchievedLevelRepo achievedLevelRepository
+
     static class SkillsAndPoints {
         SkillDef skillDef
         int points
@@ -85,6 +93,8 @@ class SubjectDataLoader {
         List<SimpleBadgeRes> badges = []
         List<SkillTag> tags = []
         SkillAttributesDef attributes
+        Date expiredOn
+        Date achievedOn
     }
 
     static class SkillsData {
@@ -140,6 +150,8 @@ class SubjectDataLoader {
         skillsAndPoints = handleBadges(projectId, skillsAndPoints)
         skillsAndPoints = handleSkillTags(projectId, skillsAndPoints)
         skillsAndPoints = handleSkillQuizInfo(projectId, skillsAndPoints)
+        skillsAndPoints = handleAchievements(projectId, userId, skillsAndPoints)
+        skillsAndPoints = handleSkillExpirations(projectId, userId, skillsAndPoints)
 
         new SkillsData(childrenWithPoints: skillsAndPoints)
     }
@@ -170,6 +182,40 @@ class SubjectDataLoader {
             }
         }
         return skillsAndPoints;
+    }
+
+    private List<SkillsAndPoints> handleAchievements(String projectId, String userId, List<SkillsAndPoints> skillsAndPoints) {
+        if(projectId) {
+            List<String> skillIds = collectSkillIds(skillsAndPoints)
+            List<UserAchievement> achievedSkills = achievedLevelRepository.getAchievedDateByUserIdAndProjectIdAndSkillBatch(userId, projectId, skillIds)
+            if (achievedSkills) {
+                skillsAndPoints.each { it ->
+                    List<UserAchievement> achievements = achievedSkills.findAll{skill -> skill.skillId == it.skillDef.skillId}
+                    if(achievements) {
+                        achievements?.sort { skill -> skill.achievedOn }
+                        it.achievedOn = achievements.first()?.achievedOn
+                    }
+                }
+            }
+        }
+        return skillsAndPoints
+    }
+
+    private List<SkillsAndPoints> handleSkillExpirations(String projectId, String userId, List<SkillsAndPoints> skillsAndPoints) {
+        if(projectId) {
+            List<String> skillIds = collectUnachievedSkillIds(skillsAndPoints)
+            def expiredSkills = expiredUserAchievementRepo.findMostRecentExpirationForAllSkills(projectId, userId, skillIds)
+            if (expiredSkills) {
+                skillsAndPoints.each { it ->
+                    def expirations = expiredSkills.findAll{skill -> skill.skillId == it.skillDef.skillId}
+                    if(expirations) {
+                        expirations?.sort { skill -> skill.expiredOn }
+                        it.expiredOn = expirations.first()?.expiredOn
+                    }
+                }
+            }
+        }
+        return skillsAndPoints
     }
 
     @Profile
@@ -226,6 +272,22 @@ class SubjectDataLoader {
             }
             else if(it.skillDef.type == SkillDef.ContainerType.Skill) {
                 skillIds.add(it.skillDef.skillId)
+            }
+        }
+        return skillIds
+    }
+
+    private List<String> collectUnachievedSkillIds(List<SkillsAndPoints> skillsAndPoints) {
+        List<String> skillIds = []
+        skillsAndPoints.forEach { it ->
+            if(!it.achievedOn) {
+                if (it.skillDef.type == SkillDef.ContainerType.SkillsGroup) {
+                    if (it.children) {
+                        skillIds.addAll(it.children.findAll{ child -> !child.achievedOn }.collect { child -> child.skillDef.skillId })
+                    }
+                } else if (it.skillDef.type == SkillDef.ContainerType.Skill) {
+                    skillIds.add(it.skillDef.skillId)
+                }
             }
         }
         return skillIds

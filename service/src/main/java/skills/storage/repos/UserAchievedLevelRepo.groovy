@@ -31,6 +31,8 @@ import skills.storage.model.DayCountItem
 import skills.storage.model.UserAchievement
 import skills.storage.model.UserTagCount
 
+import java.util.stream.Stream
+
 @CompileStatic
 interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>, JpaSpecificationExecutor<UserAchievement> {
 
@@ -47,6 +49,10 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
     @Nullable
     @Query('''select ua.achievedOn from UserAchievement ua where ua.userId= ?1 and ua.projectId=?2 and ua.skillId=?3''')
     Date getAchievedDateByUserIdAndProjectIdAndSkillId(String userId, String projectId, String skillId)
+
+    @Nullable
+    @Query('''select ua from UserAchievement ua where ua.userId = ?1 and ua.projectId = ?2 and ua.skillId in ?3''')
+    List<UserAchievement> getAchievedDateByUserIdAndProjectIdAndSkillBatch(String userId, String projectId, List<String> skillId)
 
     @Query('''select ua from UserAchievement ua where ua.userId = ?1 and ua.projectId in ?2''')
     List<UserAchievement> findAllByUserAndProjectIds(String userId, Collection<String> projectId)
@@ -634,12 +640,19 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
         SkillDef.ContainerType getType()
 
         String getUserIdForDisplay()
+
+        String getFirstName()
+
+        String getLastName()
+
+        String getUserTag()
     }
 
     @Query('''select ua.achievedOn as achievedOn, ua.userId as userId, ua.level as level, ua.skillId as skillId,
-            sd.name as name, sd.type as type, uAttrs.userIdForDisplay as userIdForDisplay
+            sd.name as name, sd.type as type, uAttrs.userIdForDisplay as userIdForDisplay, uAttrs.firstName as firstName, uAttrs.lastName as lastName, ut.value as userTag
             from UserAttrs uAttrs, UserAchievement ua 
                 left join SkillDef sd on ua.skillRefId = sd.id 
+            LEFT JOIN (SELECT ut.userId userId, max(ut.value) AS value FROM UserTag ut WHERE ut.key = :usersTableAdditionalUserTagKey group by ut.userId) ut ON ut.userId=ua.userId
             where 
                 ua.userId = uAttrs.userId and
                 ua.projectId = :projectId and
@@ -652,7 +665,7 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
                 (sd.type in (:types) OR (:disableTypes = 'true') OR (ua.skillId is null AND (:includeOverallType = 'true'))) and 
                 (ua.skillId is not null OR (:includeOverallType = 'true'))
                 ''')
-    List<AchievementItem> findAllForAchievementNavigator(
+    Stream<AchievementItem> findAllForAchievementNavigator(
             @Param("projectId") String projectId,
             @Param("userNameFilter") String userNameFilter,
             @Param("fromDate") Date fromDate,
@@ -662,6 +675,7 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
             @Param("types") List<SkillDef.ContainerType> types,
             @Param("disableTypes") String disableTypes,
             @Param("includeOverallType") String includeOverallType,
+            @Param("usersTableAdditionalUserTagKey") String usersTableAdditionalUserTagKey,
             @Param("pageable") Pageable pageable)
 
     @Query('''select count(uAttrs) 
@@ -815,7 +829,7 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
                   and ups.skill_ref_id = case when skill.copied_from_skill_ref is not null then skill.copied_from_skill_ref else skill.id end
                 group by skill.skill_id
             ) performedSkills
-                on sd.skillId = performedSkills.skill_id
+                on sd.skillId = performedSkills.skill_id order by sd.skillId
            ''', nativeQuery = true)
     List<SkillUsageItem> findAllForSkillsNavigator(@Param("projectId") String projectId)
 
@@ -846,31 +860,31 @@ select count(distinct ua) from UserAchievement ua where ua.projectId = :projectI
     int countNumAchievedForSkill(@Param("projectId") String projectId, @Param("skillId") String skillId)
 
     @Query(value = '''select count(ua) as totalCount,
-                      sum(case when ua.achievedOn >= (current_date - 30) then 1 end) as monthCount,
-                      sum(case when ua.achievedOn >= (current_date - 7) then 1 end) as weekCount,
-                      sum(case when ua.achievedOn >= (current_date - 1) then 1 end) as todayCount,
-                      max(ua.achievedOn) as lastAchieved
-        from SkillDef skillDef, UserAchievement ua
+                      sum(case when ua.achieved_on >= (current_date - 30) then 1 end) as monthCount,
+                      sum(case when ua.achieved_on >= (current_date - 7) then 1 end) as weekCount,
+                      sum(case when ua.achieved_on >= (current_date - 1) then 1 end) as todayCount,
+                      max(ua.achieved_on) as lastAchieved
+        from skill_definition skillDef, user_achievement ua
         where
             ua.level is null and
-            ua.userId= :userId and
-            skillDef.skillId = ua.skillId and
-            skillDef.projectId = ua.projectId and
+            ua.user_id= :userId and
+            skillDef.skill_id = ua.skill_id and
+            skillDef.project_id = ua.project_id and
             skillDef.type='Skill' and 
-            skillDef.projectId IN 
+            skillDef.project_id IN 
             (
-                select s.projectId
-                from Setting s
-                where s.projectId = skillDef.projectId
+                select s.project_id
+                from settings s
+                where s.project_id = skillDef.project_id
                   and s.setting = 'production.mode.enabled'
                   and s.value = 'true'
             ) and 
-            skillDef.projectId IN (
-                select s.projectId
-                from Setting s, User uu
-                where (s.setting = 'my_project' and uu.userId=:userId and uu.id = s.userRefId and s.projectId = skillDef.projectId)
+            skillDef.project_id IN (
+                select s.project_id
+                from settings s, users uu
+                where (s.setting = 'my_project' and uu.user_id=:userId and uu.id = s.user_ref_id and s.project_id = skillDef.project_id)
             ) 
-    ''')
+    ''', nativeQuery = true)
     AchievedSkillsCount countAchievedProductionSkillsForUserByDayWeekMonth(@Param('userId') String userId)
 
     @Modifying

@@ -41,6 +41,7 @@ import skills.services.GlobalBadgesService
 import skills.services.LevelDefinitionStorageService
 import skills.services.admin.SkillTagService
 import skills.services.admin.SkillsGroupAdminService
+import skills.services.admin.UserAchievementExpirationService
 import skills.services.admin.UserCommunityService
 import skills.services.admin.skillReuse.SkillReuseIdUtil
 import skills.services.attributes.BonusAwardAttrs
@@ -161,6 +162,9 @@ class SkillsLoader {
 
     @Autowired
     SkillAttributeService skillAttributeService
+
+    @Autowired
+    ExpiredUserAchievementRepo expiredUserAchievementRepo
 
     @Autowired
     TaskConfig taskConfig
@@ -293,12 +297,16 @@ class SkillsLoader {
         int levelTotalPoints
         LevelInfo levelInfo
         int todaysPoints = 0
+        int totalSkills
+        int skillsAchieved
 
         if (subjects) {
             points = (int) subjects.collect({ it.points }).sum()
             totalPoints = (int) subjects.collect({ it.totalPoints }).sum()
             levelInfo = getRealLevelInfo(projDef, userId, points, totalPoints)
             todaysPoints = (Integer) subjects?.collect({ it.todaysPoints })?.sum()
+            skillsAchieved = (Integer) subjects?.collect({ it.skillsAchieved })?.sum()
+            totalSkills = (Integer) subjects?.collect({ it.totalSkills })?.sum()
 
             skillLevel = levelInfo?.level
             levelPoints = levelInfo?.currentPoints
@@ -334,6 +342,8 @@ class SkillsLoader {
                 todaysPoints: todaysPoints,
                 levelPoints: levelPoints,
                 levelTotalPoints: levelTotalPoints,
+                totalSkills: totalSkills,
+                skillsAchieved: skillsAchieved,
                 subjects: subjects,
                 badges: new OverallSkillSummary.BadgeStats(numTotalBadges: numTotalBadges, numBadgesCompleted: numBadgesAchieved, enabled: numTotalBadges > 0),
                 projectDescription: projectDescription
@@ -528,10 +538,17 @@ class SkillsLoader {
         ExpirationAttrs expirationAttrs = skillAttributeService.getExpirationAttrs(projectId, skillId)
         Date expirationDate
         Date mostRecentlyPerformedOn
+        Date lastExpirationDate
         int daysOfInactivityBeforeExp = 0
         Boolean isMotivationalSkill = false
         if (expirationAttrs) {
             expirationDate = expirationAttrs.nextExpirationDate
+            if(!achievedOn) {
+                def expiredSkill = expiredUserAchievementRepo.findMostRecentExpirationForSkill(projectId, userId, skillId)
+                if (expiredSkill) {
+                    lastExpirationDate = expiredSkill.expiredOn
+                }
+            }
             isMotivationalSkill = expirationAttrs?.expirationType == ExpirationAttrs.DAILY
             if (isMotivationalSkill) {
                 UserPerformedSkill mostRecentUPS = userPerformedSkillRepo.findTopBySkillRefIdAndUserIdOrderByPerformedOnDesc(skillDef.id, userId)
@@ -612,6 +629,7 @@ class SkillsLoader {
                 isMotivationalSkill: isMotivationalSkill,
                 daysOfInactivityBeforeExp: daysOfInactivityBeforeExp,
                 mostRecentlyPerformedOn: mostRecentlyPerformedOn,
+                lastExpirationDate: lastExpirationDate
         )
     }
 
@@ -864,6 +882,8 @@ class SkillsLoader {
         int totalPoints
         Integer points
         Integer todaysPoints
+        Integer skillsAchieved
+        Integer totalSkills
         if (loadSkills) {
             List<SkillRelDef.RelationshipType> relTypes = [
                     SkillRelDef.RelationshipType.RuleSetDefinition, // skills under subject
@@ -884,9 +904,13 @@ class SkillsLoader {
         if (skillsRes && version >= 500) {
             points = skillsRes ? skillsRes.collect({ it.points }).sum() as Integer : 0
             todaysPoints = skillsRes ? skillsRes.collect({ it.todaysPoints }).sum() as Integer : 0
+            skillsAchieved = skillsRes ? skillsRes.collect({ it.points == it.totalPoints ? 1 : 0 }).sum() as Integer : 0
+            totalSkills = skillsRes ? skillsRes.size() : 0
         } else {
             points = calculatePointsForSubject(projDef.projectId, userId, subjectDefinition)
             todaysPoints= calculateTodayPoints(userId, subjectDefinition)
+            skillsAchieved = achievedLevelRepository.countAchievedChildren(userId, projDef.projectId, subjectDefinition.skillId, SkillRelDef.RelationshipType.RuleSetDefinition)
+            totalSkills = skillDefRepo.countChildren(projDef.projectId, subjectDefinition.skillId, SkillRelDef.RelationshipType.RuleSetDefinition)
         }
 
         // convert null result to 0
@@ -928,6 +952,9 @@ class SkillsLoader {
 
                 totalPoints: totalPoints,
                 todaysPoints: todaysPoints,
+
+                skillsAchieved: skillsAchieved,
+                totalSkills: totalSkills,
 
                 skills: skillsRes,
 
@@ -1223,14 +1250,17 @@ class SkillsLoader {
                     })
                 }
 
-                Date achievedOn = achievedLevelRepository.getAchievedDateByUserIdAndProjectIdAndSkillId(userId, skillDef.projectId, skillDef.skillId)
                 Date expirationDate
                 Date mostRecentlyPerformedOn
+                Date lastExpirationDate
                 int daysOfInactivityBeforeExp = 0
                 Boolean isMotivationalSkill = false
                 if (skillDefAndUserPoints.attributes && skillDefAndUserPoints.attributes.type == SkillAttributesDef.SkillAttributesType.AchievementExpiration) {
                     ExpirationAttrs expirationAttrs = skillAttributeService.convertAttrs(skillDefAndUserPoints.attributes, ExpirationAttrs)
                     expirationDate = expirationAttrs.nextExpirationDate
+                    if(!skillDefAndUserPoints.achievedOn) {
+                        lastExpirationDate = skillDefAndUserPoints.expiredOn
+                    }
                     isMotivationalSkill = expirationAttrs?.expirationType == ExpirationAttrs.DAILY
                     if (isMotivationalSkill) {
                         UserPerformedSkill mostRecentUPS = userPerformedSkillRepo.findTopBySkillRefIdAndUserIdOrderByPerformedOnDesc(skillDef.id, userId)
@@ -1257,7 +1287,7 @@ class SkillsLoader {
                         pointIncrementInterval: skillDef.pointIncrementInterval,
                         maxOccurrencesWithinIncrementInterval: skillDef.numMaxOccurrencesIncrementInterval,
                         totalPoints: skillDef.totalPoints,
-                        achievedOn: achievedOn,
+                        achievedOn: skillDefAndUserPoints.achievedOn,
                         dependencyInfo: skillDefAndUserPoints.dependencyInfo,
                         badgeDependencyInfo: badgeDependencySummary,
                         selfReporting: loadSelfReportingFromApproval(skillDefAndUserPoints),
@@ -1273,6 +1303,7 @@ class SkillsLoader {
                         isMotivationalSkill: isMotivationalSkill,
                         daysOfInactivityBeforeExp: daysOfInactivityBeforeExp,
                         mostRecentlyPerformedOn: mostRecentlyPerformedOn,
+                        lastExpirationDate: lastExpirationDate
                 )
             }
         }

@@ -49,6 +49,9 @@ public class MockUserInfoService {
     @Autowired
     UserAttrsRepo userAttrsRepo
 
+    @Autowired
+    CertificateRegistry certificateRegistry
+
     static final Map<String, FirstnameLastname> DN_TO_NAME = [
             "cn=jdoe@email.foo, ou=integration tests, o=skilltree test, c=us": new FirstnameLastname("John", "Doe"),
             "cn=jadoe@email.foo, ou=integration tests, o=skilltree test, c=us": new FirstnameLastname("Jane", "Doe"),
@@ -70,7 +73,7 @@ public class MockUserInfoService {
 
     @PostConstruct
     void start() {
-        def matcher = userInfoHealthCheckUri =~ /https:\/\/localhost:(\d\d\d\d)\/actuator\/health/
+        def matcher = userInfoHealthCheckUri =~ /https:\/\/localhost:(\d\d\d\d)\/status/
         int port = Integer.parseInt(matcher[0][1]);
 
         log.info("starting mock user-info-service on port ${port}")
@@ -88,10 +91,10 @@ public class MockUserInfoService {
                 .needClientAuth(true)
                 .extensions(new UserInfoResponseTransformer(userAttrsRepo)));
 
-        mockServer.stubFor(any(urlPathEqualTo("/actuator/health")).willReturn(
+        mockServer.stubFor(any(urlPathEqualTo("/status")).willReturn(
                 ok()
                 .withHeader(CONTENT_TYPE, "application/json")
-                .withBody("""{ "status": "UP" }""")
+                .withBody("""{ "status": "OK" }""")
         ));
         mockServer.stubFor(any(urlPathEqualTo("/userQuery")).willReturn(
                 ok()
@@ -185,7 +188,15 @@ public class MockUserInfoService {
         }
     }
 
-    public static class FirstnameLastname {
+    FirstnameLastname getFirstNameLastnameForUserId(String userId) {
+        return DN_TO_NAME.get(certificateRegistry.loadDnFromUserId(userId)?.toLowerCase())
+    }
+
+    String getUserIdWithCase(String userId) {
+        return certificateRegistry.loadCNFromCert(certificateRegistry.getCertificate(userId))
+    }
+
+    static class FirstnameLastname {
         String firstname=""
         String lastname=""
         public FirstnameLastname(String firstname, String lastname){

@@ -36,9 +36,12 @@ import skills.controller.request.model.GlobalSettingsRequest
 import skills.controller.request.model.SuggestRequest
 import skills.controller.request.model.UserTagRequest
 import skills.controller.result.model.*
+import skills.dbupgrade.ReportedSkillEventQueue
 import skills.profile.EnableCallStackProf
 import skills.services.AccessSettingsStorageService
 import skills.services.ContactUsersService
+import skills.services.CustomValidationResult
+import skills.services.CustomValidator
 import skills.services.FeatureService
 import skills.services.SystemSettingsService
 import skills.services.admin.ProjAdminService
@@ -54,6 +57,7 @@ import skills.settings.SystemSettings
 import skills.storage.model.UserTag
 import skills.storage.model.auth.RoleName
 import skills.storage.repos.UserTagRepo
+import skills.tasks.executors.ExpireUserAchievementsTaskExecutor
 
 import javax.xml.bind.DatatypeConverter
 import java.nio.charset.StandardCharsets
@@ -100,6 +104,9 @@ class RootController {
     ContactUsersService contactUsersService
 
     @Autowired
+    CustomValidator customValidator
+
+    @Autowired
     UserTagRepo userTagRepo
 
     @Autowired
@@ -110,6 +117,12 @@ class RootController {
 
     @Autowired
     UserActionsHistoryService userActionsHistoryService
+
+    @Autowired
+    ExpireUserAchievementsTaskExecutor expireUserAchievementsTaskExecutor
+
+    @Autowired
+    ReportedSkillEventQueue reportedSkillEventQueue
 
     @GetMapping('/rootUsers')
     @ResponseBody
@@ -161,6 +174,15 @@ class RootController {
         }
     }
 
+    @PostMapping('/runSkillExpiration')
+    void runSkillExpiration() {
+        expireUserAchievementsTaskExecutor.removeExpiredUserAchievements()
+    }
+
+    @PostMapping('/runReplayEventsAfterUpgrade')
+    void runReplayEventsAfterUpgrade() {
+        reportedSkillEventQueue.replayEvents()
+    }
 
     @GetMapping('/isRoot')
     boolean isRoot(Principal principal) {
@@ -329,8 +351,7 @@ class RootController {
 
     @PostMapping('/users/contactAllProjectAdmins')
     RequestResult contactProjectAdministrators(@RequestBody ContactUsersRequest cur) {
-        SkillsValidator.isNotBlank(cur?.emailSubject, "emailSubject")
-        SkillsValidator.isNotBlank(cur?.emailBody, "emailBody")
+        validateEmailBodyAndSubject(cur)
         //intentionally ignore queryCriteria as that doesn't apply to this use case
         contactUsersService.contactAllProjectAdmins(cur.emailSubject, cur.emailBody)
         return RequestResult.success()
@@ -338,11 +359,19 @@ class RootController {
 
     @RequestMapping(value="/users/previewEmail", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
     RequestResult testEmail(@RequestBody ContactUsersRequest contactUsersRequest) {
-        SkillsValidator.isNotBlank(contactUsersRequest?.emailSubject, "emailSubject")
-        SkillsValidator.isNotBlank(contactUsersRequest?.emailBody, "emailBody")
+        validateEmailBodyAndSubject(contactUsersRequest)
         String userId = userInfoService.getCurrentUserId()
         contactUsersService.sendEmail(contactUsersRequest.emailSubject, contactUsersRequest.emailBody, userId)
         return RequestResult.success()
+    }
+
+    private void validateEmailBodyAndSubject(ContactUsersRequest contactUsersRequest) {
+        SkillsValidator.isNotBlank(contactUsersRequest?.emailSubject, "emailSubject")
+        SkillsValidator.isNotBlank(contactUsersRequest?.emailBody, "emailBody")
+        CustomValidationResult customValidationResult = customValidator.validateEmailBodyAndSubject(contactUsersRequest)
+        if (!customValidationResult.valid) {
+            throw new SkillException(customValidationResult.msg)
+        }
     }
 
     @RequestMapping(value="/users/{userId}/tags/{tagKey}", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
@@ -377,6 +406,8 @@ class RootController {
                                     @RequestParam(required=false) String actionFilter) {
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
         return userActionsHistoryService.getUsersActions(pageRequest,
+                null,
+                null,
                 projectIdFilter ? URLDecoder.decode(projectIdFilter, StandardCharsets.UTF_8) : null,
                 itemFilter? DashboardItem.valueOf(itemFilter) : null,
                 userFilter ? URLDecoder.decode(userFilter, StandardCharsets.UTF_8) : null,

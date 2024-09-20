@@ -20,11 +20,14 @@ import org.joda.time.format.DateTimeFormatter
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.http.HttpStatus
 import skills.intTests.utils.DefaultIntSpec
+import skills.intTests.utils.QuizDefFactory
 import skills.intTests.utils.SkillsClientException
 import skills.intTests.utils.SkillsFactory
 import skills.intTests.utils.SkillsService
+import skills.quizLoading.QuizSettings
 import skills.services.attributes.ExpirationAttrs
 import skills.storage.model.ExpiredUserAchievement
+import skills.storage.model.SkillDef
 import skills.storage.model.UserAchievement
 import skills.storage.model.UserPerformedSkill
 import skills.storage.model.UserPoints
@@ -1763,5 +1766,523 @@ class PostAchievementSkillExpirationSpecs extends DefaultIntSpec {
             ])
         }
         expireUserAchievementsTaskExecutor.removeExpiredUserAchievements()
+    }
+
+    def "get list of expired skills for project"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(10, )
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        Map badge = [projectId: proj.projectId, badgeId: 'badge1', name: 'Test Badge 1']
+        skillsService.addBadge(badge)
+        skillsService.assignSkillToBadge(projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId)
+        badge.enabled = 'true'
+        skillsService.updateBadge(badge, badge.badgeId)
+
+        String userId = "user1"
+        String secondUserId = "user2"
+        Long timestamp = (new Date()-8).time
+
+        setup:
+        skills.forEach { it ->
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, new Date(timestamp))
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], secondUserId, new Date(timestamp))
+        }
+
+        when:
+        expireSkills(proj.projectId, skills)
+
+        def user1Expired = skillsService.getExpiredSkills(proj.projectId, "user1", "", 30, 1, "skillName", true).data
+        def user2Expired = skillsService.getExpiredSkills(proj.projectId, "user2", "", 30, 1, "skillName", true).data
+
+        then:
+        user1Expired.skillId == [
+            "skill1", "skill10", "skill2", "skill3", "skill4", "skill5", "skill6", "skill7", "skill8", "skill9"
+        ]
+        user1Expired.skillName == [
+            "Test Skill 1", "Test Skill 10", "Test Skill 2", "Test Skill 3", "Test Skill 4", "Test Skill 5", "Test Skill 6", "Test Skill 7", "Test Skill 8", "Test Skill 9"
+        ]
+        user2Expired.skillId == [
+            "skill1", "skill10", "skill2", "skill3", "skill4", "skill5", "skill6", "skill7", "skill8", "skill9"
+        ]
+        user2Expired.skillName == [
+            "Test Skill 1", "Test Skill 10", "Test Skill 2", "Test Skill 3", "Test Skill 4", "Test Skill 5", "Test Skill 6", "Test Skill 7", "Test Skill 8", "Test Skill 9"
+        ]
+
+    }
+
+    def "get list of expired skills for project filtered by skill name"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(10, )
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        Map badge = [projectId: proj.projectId, badgeId: 'badge1', name: 'Test Badge 1']
+        skillsService.addBadge(badge)
+        skillsService.assignSkillToBadge(projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId)
+        badge.enabled = 'true'
+        skillsService.updateBadge(badge, badge.badgeId)
+
+        String userId = "user1"
+        String secondUserId = "user2"
+        Long timestamp = (new Date()-8).time
+
+        setup:
+        skills.forEach { it ->
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, new Date(timestamp))
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], secondUserId, new Date(timestamp))
+        }
+
+        when:
+        expireSkills(proj.projectId, skills)
+
+        def skill4Expired = skillsService.getExpiredSkills(proj.projectId, "", "Test Skill 4", 30, 1, "userId", true).data
+        def skill7Expired = skillsService.getExpiredSkills(proj.projectId, "", "Test Skill 7", 30, 1, "userId", true).data
+
+        then:
+        skill4Expired.skillId == [
+                "skill4", "skill4"
+        ]
+        skill4Expired.skillName == [
+                "Test Skill 4", "Test Skill 4"
+        ]
+        skill7Expired.skillId == [
+                "skill7", "skill7"
+        ]
+        skill7Expired.skillName == [
+                "Test Skill 7", "Test Skill 7"
+        ]
+
+    }
+
+    def "get expired skill summaries"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(10, )
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        Map badge = [projectId: proj.projectId, badgeId: 'badge1', name: 'Test Badge 1']
+        skillsService.addBadge(badge)
+        skillsService.assignSkillToBadge(projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId)
+        badge.enabled = 'true'
+        skillsService.updateBadge(badge, badge.badgeId)
+
+        String userId = "user1"
+        String secondUserId = "user2"
+        Date timestamp8Days = new Date()-8
+        Date timestamp9Days = new Date()-8
+        Long secondTimestamp = new Date().time
+
+        setup:
+        skills.forEach { it ->
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, timestamp8Days)
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, timestamp9Days)
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], secondUserId, new Date(secondTimestamp))
+        }
+
+        when:
+        expireSkills(proj.projectId, skills)
+        def skill4Information = skillsService.getSingleSkillSummary(userId, proj.projectId, skills[3].skillId)
+        def skill7Information = skillsService.getSingleSkillSummary(userId, proj.projectId, skills[6].skillId)
+        def skill4InformationUser2 = skillsService.getSingleSkillSummary(secondUserId, proj.projectId, skills[3].skillId)
+        def skill7InformationUser2 = skillsService.getSingleSkillSummary(secondUserId, proj.projectId, skills[6].skillId)
+
+        then:
+        skill4Information.lastExpirationDate != null
+        skill7Information.lastExpirationDate != null
+        skill4InformationUser2.lastExpirationDate == null
+        skill7InformationUser2.lastExpirationDate == null
+    }
+
+    def "achieve skill after expiration"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(10, )
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        Map badge = [projectId: proj.projectId, badgeId: 'badge1', name: 'Test Badge 1']
+        skillsService.addBadge(badge)
+        skillsService.assignSkillToBadge(projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId)
+        badge.enabled = 'true'
+        skillsService.updateBadge(badge, badge.badgeId)
+
+        String userId = "user1"
+        Date yesterday = (new Date()-1)
+        Date twoDaysAgo = (new Date()-2)
+        Date timestamp8Days = new Date()-8
+        Date timestamp9Days = new Date()-8
+
+        setup:
+        skills.forEach { it ->
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, timestamp8Days)
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, timestamp9Days)
+        }
+
+        when:
+        expireSkills(proj.projectId, skills)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[3].skillId], userId, yesterday)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[3].skillId], userId, twoDaysAgo)
+        def skill4Information = skillsService.getSingleSkillSummary(userId, proj.projectId, skills[3].skillId)
+
+        then:
+        skill4Information.lastExpirationDate == null
+    }
+
+    def "get expired skill summaries for subject"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(10, )
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        Map badge = [projectId: proj.projectId, badgeId: 'badge1', name: 'Test Badge 1']
+        skillsService.addBadge(badge)
+        skillsService.assignSkillToBadge(projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId)
+        badge.enabled = 'true'
+        skillsService.updateBadge(badge, badge.badgeId)
+
+        String userId = "user1"
+        String secondUserId = "user2"
+        Date timestamp8Days = new Date()-8
+        Date timestamp9Days = new Date()-8
+        Long secondTimestamp = new Date().time
+
+        setup:
+        skills.forEach { it ->
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, timestamp8Days)
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, timestamp9Days)
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], secondUserId, new Date(secondTimestamp))
+        }
+
+        when:
+        expireSkills(proj.projectId, skills)
+        def subjectInfo = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
+
+        then:
+        subjectInfo.skills.lastExpirationDate != null
+    }
+
+    def "achieve skill after expiration and get subject summary"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(10, )
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        Map badge = [projectId: proj.projectId, badgeId: 'badge1', name: 'Test Badge 1']
+        skillsService.addBadge(badge)
+        skillsService.assignSkillToBadge(projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId)
+        badge.enabled = 'true'
+        skillsService.updateBadge(badge, badge.badgeId)
+
+        String userId = "user1"
+
+        setup:
+        skills.forEach { it ->
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, new Date() - 21)
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, new Date() - 20)
+        }
+
+        when:
+        expireSkills(proj.projectId, skills)
+        def subjectInfo = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[0].skillId], userId, new Date() - 8)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[0].skillId], userId, new Date() - 9)
+        def laterSubjectInfo = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
+
+        then:
+        subjectInfo.skills.lastExpirationDate != null
+        laterSubjectInfo.skills[0].lastExpirationDate == null
+    }
+
+    def "with multiple expirations, latest expiration is returned in subject summary"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(10, )
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        Map badge = [projectId: proj.projectId, badgeId: 'badge1', name: 'Test Badge 1']
+        skillsService.addBadge(badge)
+        skillsService.assignSkillToBadge(projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId)
+        badge.enabled = 'true'
+        skillsService.updateBadge(badge, badge.badgeId)
+
+        String userId = "user1"
+
+        setup:
+        skills.forEach { it ->
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, new Date() - 31)
+            skillsService.addSkill([projectId: proj.projectId, skillId: it.skillId], userId, new Date() - 30)
+        }
+
+        when:
+        expireSkills(proj.projectId, skills)
+        def subjectInfo = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[0].skillId], userId, new Date() - 20)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[0].skillId], userId, new Date() - 19)
+        expireSkills(proj.projectId, skills)
+        def secondSubjectInfo = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[0].skillId], userId, new Date() - 9)
+        skillsService.addSkill([projectId: proj.projectId, skillId: skills[0].skillId], userId, new Date() - 8)
+        expireSkills(proj.projectId, skills)
+        def laterSubjectInfo = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
+
+        then:
+        laterSubjectInfo.skills[0].lastExpirationDate != null
+        subjectInfo.skills[0].lastExpirationDate != laterSubjectInfo.skills[0].lastExpirationDate != null
+        secondSubjectInfo.skills[0].lastExpirationDate != laterSubjectInfo.skills[0].lastExpirationDate != null
+        subjectInfo.skills[0].lastExpirationDate != secondSubjectInfo.skills[0].lastExpirationDate != null
+    }
+
+    def "expiring skill events for a skill with a completed quiz removes the quiz run"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 1, 2)
+        skillsService.createQuizQuestionDefs(questions)
+
+        def proj = SkillsFactory.createProject(1)
+        def subj = SkillsFactory.createSubject(1)
+        def skills = SkillsFactory.createSkills(1, 1, 1, 200, 1)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        List<String> users = getRandomUsers(1, true)
+        def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0]).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, users[0]).body
+
+        def initialQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        def performedSkills = skillsService.getPerformedSkills(users[0], proj.projectId)
+
+        assert performedSkills.count == 1
+        assert performedSkills.data[0].skillId == skills[0].skillId
+
+        when:
+        expireSkill(proj.projectId, skills[0], 0)
+        def quizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        performedSkills = skillsService.getPerformedSkills(users[0], proj.projectId)
+
+        then:
+        initialQuizRuns.totalCount == users.size()
+        quizRuns.totalCount == 0
+        performedSkills.count == 0
+    }
+
+    def "can complete quiz again after skill has expired"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 1, 2)
+        skillsService.createQuizQuestionDefs(questions)
+
+        def proj = SkillsFactory.createProject(1)
+        def subj = SkillsFactory.createSubject(1)
+        def skills = SkillsFactory.createSkills(1, 1, 1, 200, 1)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        List<String> users = getRandomUsers(1, true)
+        def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0]).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, users[0]).body
+
+        def initialQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        expireSkill(proj.projectId, skills[0], 0)
+        def quizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+
+        when:
+        def quizAttempt2 =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0]).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt2.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt2.id, users[0]).body
+
+        then:
+        def newQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        initialQuizRuns.totalCount == 1
+        quizRuns.totalCount == 0
+        newQuizRuns.totalCount == 1
+    }
+
+    def "can not complete quiz again if multiple takes not enabled and not expiring"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 1, 2)
+        skillsService.createQuizQuestionDefs(questions)
+
+        def proj = SkillsFactory.createProject(1)
+        def subj = SkillsFactory.createSubject(1)
+        def skills = SkillsFactory.createSkills(1, 1, 1, 200, 1)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        List<String> users = getRandomUsers(1, true)
+        def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0]).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, users[0]).body
+
+        when:
+        def initialQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        initialQuizRuns.totalCount == 1
+        initialQuizRuns.data[0].status == "PASSED"
+        def quizAttempt2 =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0]).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt2.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt2.id, users[0]).body
+
+        then:
+        SkillsClientException exception = thrown()
+        exception.httpStatus == HttpStatus.BAD_REQUEST
+        exception.message.contains('User [' + users[0] + '] already took and passed this quiz.')
+    }
+
+    def "can complete quiz again if multiple takes enabled"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 1, 2)
+        skillsService.createQuizQuestionDefs(questions)
+
+        def proj = SkillsFactory.createProject(1)
+        def subj = SkillsFactory.createSubject(1)
+        def skills = SkillsFactory.createSkills(1, 1, 1, 200, 1)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        skillsService.saveQuizSettings(quiz.quizId, [
+                [setting: 'quizMultipleTakes', value: 'true'],
+        ])
+
+        List<String> users = getRandomUsers(1, true)
+        def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0]).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, users[0]).body
+
+        when:
+        def initialQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        initialQuizRuns.totalCount == 1
+        initialQuizRuns.data[0].status == "PASSED"
+        def quizAttempt2 =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0]).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt2.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt2.id, users[0]).body
+
+        then:
+        def newQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        newQuizRuns.totalCount == 2
+    }
+
+    def "can complete quiz again if skill is expiring in a day"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 1, 2)
+        skillsService.createQuizQuestionDefs(questions)
+
+        def proj = SkillsFactory.createProject(1)
+        def subj = SkillsFactory.createSubject(1)
+        def skills = SkillsFactory.createSkills(1, 1, 1, 200, 1)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        skillsService.saveSkillExpirationAttributes( proj.projectId, "skill1", [ expirationType: ExpirationAttrs.DAILY, every: 1 ]);
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        List<String> users = getRandomUsers(1, true)
+        def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0], "skill1", proj.projectId).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, users[0]).body
+
+        when:
+        def initialQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        initialQuizRuns.totalCount == 1
+        initialQuizRuns.data[0].status == "PASSED"
+        def quizAttempt2 =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0], "skill1", proj.projectId).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt2.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt2.id, users[0]).body
+
+        then:
+        def newQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        newQuizRuns.totalCount == 2
+    }
+
+    def "can complete quiz again if skill expiration is daily"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 1, 2)
+        skillsService.createQuizQuestionDefs(questions)
+
+        def proj = SkillsFactory.createProject(1)
+        def subj = SkillsFactory.createSubject(1)
+        def skills = SkillsFactory.createSkills(1, 1, 1, 200, 1)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz.quizId
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        skillsService.saveSkillExpirationAttributes( proj.projectId, "skill1", [ expirationType: ExpirationAttrs.DAILY, every: 2 ]);
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        List<String> users = getRandomUsers(1, true)
+        def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0], "skill1", proj.projectId).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, users[0]).body
+
+        when:
+        def initialQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        initialQuizRuns.totalCount == 1
+        initialQuizRuns.data[0].status == "PASSED"
+        def quizAttempt2 =  skillsService.startQuizAttemptForUserId(quiz.quizId, users[0], "skill1", proj.projectId).body
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, users[0])
+        skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, users[0]).body
+
+        then:
+        def newQuizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '')
+        newQuizRuns.totalCount == 2
     }
 }

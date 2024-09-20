@@ -364,12 +364,18 @@ class InviteOnlyProjectService {
      * @return
      */
     @Transactional(readOnly = true)
-    boolean canUserAccess(String projectId, String userId, String idType) {
+    boolean canUserAccess(String projectId, String userId) {
+        List<UserRoleRes> roles = accessSettingsStorageService.getUserRolesForProjectIdAndUserId(projectId, userId)
+        return roles?.find {it.roleName == RoleName.ROLE_PRIVATE_PROJECT_USER || it.roleName == RoleName.ROLE_PROJECT_ADMIN}
+    }
+
+    @Transactional(readOnly = true)
+    boolean isPrivateProjRoleOrAdminRole(String projectId, String userId) {
         if (authMode == AuthMode.PKI) {
-            userId = userInfoService.getUserName(userId, true, idType)
+            userId = userInfoService.getUserName(userId, true, UserInfoService.ID_IDTYPE)
         }
         List<UserRoleRes> roles = accessSettingsStorageService.getUserRolesForProjectIdAndUserId(projectId, userId)
-        return roles?.find {it.roleName == RoleName.ROLE_PRIVATE_PROJECT_USER }
+        return roles?.find {it.roleName == RoleName.ROLE_PRIVATE_PROJECT_USER || it.roleName == RoleName.ROLE_PROJECT_ADMIN}
     }
 
     @Transactional(readOnly = true)

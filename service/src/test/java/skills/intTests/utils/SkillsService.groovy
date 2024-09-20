@@ -22,11 +22,11 @@ import org.springframework.core.io.Resource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity
 import org.springframework.util.StreamUtils
+import org.springframework.web.bind.annotation.GetMapping
 import skills.controller.request.model.ActionPatchRequest
 import skills.services.settings.Settings
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
-import skills.storage.model.UserAttrs
 import skills.storage.model.auth.RoleName
 
 @Slf4j
@@ -904,6 +904,10 @@ class SkillsService {
         wsHelper.apiGet(url)
     }
 
+    def getIconUsages(String projId, String cssClass) {
+        return wsHelper.adminGet("/projects/${projId}/icons/${cssClass}/usage")
+    }
+
     def uploadIcon(Map props, File icon){
         Map body = [:]
         body.put("customIcon", icon)
@@ -937,8 +941,8 @@ class SkillsService {
         HttpHeaders headers
     }
 
-    FileAndHeaders downloadAttachment(String downloadUrl) {
-        ResponseEntity<Resource> responseEntity = wsHelper.getResource(downloadUrl)
+    FileAndHeaders downloadAttachment(String downloadUrl, Map params=null) {
+        ResponseEntity<Resource> responseEntity = wsHelper.getResource(downloadUrl, params)
         File file = File.createTempFile('download', 'tmp')
         StreamUtils.copy(responseEntity.getBody().getInputStream(), new FileOutputStream(file))
         return new FileAndHeaders(file: file, headers: responseEntity.headers)
@@ -1024,6 +1028,20 @@ class SkillsService {
         return wsHelper.adminGet("${getProjectUrl(projectId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
     }
 
+    def getUserProgressExcelExport(String projectId, String orderBy = 'totalPoints', boolean ascending = true, String query = "", int minimumPoints = 0) {
+        return downloadAttachment("/admin${getProjectUrl(projectId)}/users/export/excel?&ascending=${ascending ? 1 : 0}&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    }
+
+    def getUserAchievementsExcelExport(String projectId, Map params=null) {
+        return downloadAttachment("/admin${getProjectUrl(projectId)}/achievements/export/excel".toString(), params)
+    }
+    def getSkillMetricsExcelExport(String projectId) {
+        return downloadAttachment("/admin${getProjectUrl(projectId)}/skills/export/excel".toString())
+    }
+    def getSkillsForSubjectExport(String projectId, String subjectId) {
+        return downloadAttachment("/admin${getSubjectUrl(projectId, subjectId)}/skills/export/excel".toString())
+    }
+
     def getSubjectUsers(String projectId, String subjectId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0) {
         return wsHelper.adminGet("${getSubjectUrl(projectId, subjectId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
     }
@@ -1031,6 +1049,10 @@ class SkillsService {
     def getUserStats(String projectId, String userId) {
 //        userId = getUserIdEncoded(userId)
         return wsHelper.adminGet("/projects/${projectId}/users/${userId}/stats".toString())
+    }
+
+    def getExpiredSkills(String projectId, String userId, String skillName, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true) {
+        return wsHelper.adminGet("/projects/${projectId}/expirations?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&orderBy=${orderBy}&userIdForDisplay=${userId}&skillName=${skillName}".toString())
     }
 
     def getLastSkillEventForProject(String projectId) {
@@ -1058,8 +1080,6 @@ class SkillsService {
         userId = getUserId(userId)
         return wsHelper.apiGet(getUserLevelForProjectUrl(projectId, userId))
     }
-
-
 
     def editLevel(String projectId, String subjectId, String level, Map props){
         return wsHelper.adminPost(getEditLevelUrl(projectId, subjectId, level), props)
@@ -1151,6 +1171,10 @@ class SkillsService {
         return wsHelper.rootPost("/users", [suggestQuery: query])?.body
     }
 
+    def runReplayEventsAfterUpgrade() {
+        return wsHelper.rootPost("/runReplayEventsAfterUpgrade")?.body
+    }
+
     def saveUserTag(String userId, String tagKey, List<String> tags) {
         return wsHelper.rootPost("/users/${userId}/tags/${tagKey}", [tags: tags])?.body
     }
@@ -1170,6 +1194,10 @@ class SkillsService {
     def addRootRole(String userId) {
         userId = getUserId(userId, false)
         return wsHelper.rootPut("/addRoot/${userId}")
+    }
+
+    def expireSkills() {
+        wsHelper.rootPost('/runSkillExpiration');
     }
 
     def pinProject(String projectId) {
@@ -1204,20 +1232,29 @@ class SkillsService {
 
     def grantSupervisorRole(String userId) {
         userId = getUserId(userId)
-        return wsHelper.rootPut("/users/${userId}/roles/ROLE_SUPERVISOR")
+        return wsHelper.rootPut("/users/${userId}/roles/${RoleName.ROLE_SUPERVISOR.toString()}")
     }
 
     def grantRootRole(String userId) {
         userId = getUserId(userId)
-        return wsHelper.rootPut("/users/${userId}/roles/ROLE_SUPER_DUPER_USER")
+        return wsHelper.rootPut("/users/${userId}/roles/${RoleName.ROLE_SUPER_DUPER_USER.toString()}")
+    }
+
+    def grantDashboardAdminRole(String userId) {
+        userId = getUserId(userId)
+        return wsHelper.rootPut("/users/${userId}/roles/${RoleName.ROLE_DASHBOARD_ADMIN_ACCESS.toString()}")
     }
 
     def removeSupervisorRole(String userId) {
-        return wsHelper.rootDelete("/users/${userId}/roles/ROLE_SUPERVISOR")
+        return wsHelper.rootDelete("/users/${userId}/roles/${RoleName.ROLE_SUPERVISOR.toString()}")
     }
 
     def revokeInviteOnlyProjectAccess(String projectId, String userId) {
-        return wsHelper.adminDelete("/projects/${projectId}/users/${userId}/roles/ROLE_PRIVATE_PROJECT_USER")
+        return wsHelper.adminDelete("/projects/${projectId}/users/${userId}/roles/${RoleName.ROLE_PRIVATE_PROJECT_USER.toString()}")
+    }
+
+    def canAccessProject(String projectId, String userId) {
+        return wsHelper.adminGet("/projects/${projectId}/${userId}/canAccess")
     }
 
     def addOrUpdateGlobalSetting(String setting, Map value) {
@@ -1849,9 +1886,9 @@ class SkillsService {
         return wsHelper.apiPost(url, userId ? [userId : userId] : null)
     }
 
-    def startQuizAttemptForUserId(String quizId, String userId) {
+    def startQuizAttemptForUserId(String quizId, String userId, String skillId = null, String projectId = null) {
         String url = "/quiz-definitions/${quizId}/users/${userId}/attempt"
-        return wsHelper.adminPost(url, [])
+        return wsHelper.adminPost(url, [skillId: skillId, projectId: projectId])
     }
     def reportQuizAnswerForUserId(String quizId, Integer attemptId, Integer answerId, String userId, Map params = [isSelected:true]) {
         String url = "/quiz-definitions/${quizId}/users/${userId}/attempt/${attemptId}/answers/${answerId}"
