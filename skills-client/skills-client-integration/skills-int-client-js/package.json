@@ -1,0 +1,31 @@
+{
+    "name": "skills-int-client-js",
+    "version": "3.5.0",
+    "license": "Apache-2.0",
+    "description": "SkillTree Client Lib Integration Tests - Native JS",
+    "main": "index.js",
+    "scripts": {
+        "postinstall": "node copyDeps.js",
+        "serve": "npm install && npx live-server --no-browser --port=8092 --open=app --cors --proxy=/api:http://localhost:8090/api --proxy=/native:http://localhost:8092/app --proxy=/assets:http://localhost:8092/app/assets",
+        "test": "npm run test",
+        "licenseDepCheck": "license-checker --production --onlyAllow='MIT;ISC;Apache-2.0' --summary",
+        "licenseHeaderCheck": "license-check-and-add check -f '../license-add/license-add-config.json'",
+        "licenseHeaderAdd": "license-check-and-add add -f ../license-add/license-add-config.json",
+        "licenseCheck": "npm run licenseHeaderCheck && npm run licenseDepCheck",
+        "build": "npm run licenseCheck && echo nothingelsetodo"
+    },
+    "author": "SkillTree Team",
+    "dependencies": {
+        "@skilltree/skills-client-js": "3.5.0",
+        "axios": "1.7.4",
+        "bootstrap": "4.5.2",
+        "jquery": "3.5.1",
+        "js-beautify": "1.13.0"
+    },
+    "devDependencies": {
+        "fs-extra": "8.1.0",
+        "license-check-and-add": "3.0.4",
+        "license-checker": "25.0.1",
+        "live-server": "1.2.1"
+    }
+}

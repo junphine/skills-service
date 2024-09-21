@@ -1,5 +1,5 @@
 /*
-Copyright 2020 SkillTree
+Copyright 2024 SkillTree
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,48 +13,35 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+<script setup>
+import { onMounted, watch } from 'vue'
+import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
+import SkillsDisplayHome from '@/skills-display/components/SkillsDisplayHome.vue'
+import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js'
+import { useRoute } from 'vue-router'
+
+const skillsDisplayAttributes = useSkillsDisplayAttributesState()
+const themeState = useSkillsDisplayThemeState()
+
+skillsDisplayAttributes.projectId = 'Inception'
+skillsDisplayAttributes.serviceUrl = ''
+skillsDisplayAttributes.loadingConfig = false
+skillsDisplayAttributes.internalBackButton = false
+
+themeState.theme.landingPageTitle = 'Dashboard Skills'
+themeState.theme.disableSkillTreeBrand = true
+themeState.theme.disableBreadcrumb = true
+skillsDisplayAttributes.loadConfigStateIfNeeded()
+
+
+</script>
+
 <template>
-  <div class="inception-container pb-4">
-    <skills-display
-      :options="options"
-      :version="skillsVersion"
-      :theme="theme"
-      ref="skillsDisplayRef"
-      @route-changed="skillsDisplayRouteChanged"/>
+  <div>
+    <skills-display-home id="inception" class="my-3" />
   </div>
 </template>
 
-<script>
-  import { SkillsDisplay } from '@skilltree/skills-client-vue';
-  import SkillsDisplayOptionsMixin from '../myProgress/SkillsDisplayOptionsMixin';
-
-  export default {
-    name: 'InceptionSkills',
-    mixins: [SkillsDisplayOptionsMixin],
-    components: {
-      SkillsDisplay,
-    },
-    data() {
-      return {
-        projectId: 'Inception',
-        skillsVersion: 0,
-        theme: {
-          disableSkillTreeBrand: true,
-          disableBreadcrumb: true,
-          backgroundColor: '#f6f8fa',
-          landingPageTitle: 'Dashboard Skills',
-          maxWidth: '100%',
-          pageTitleTextColor: '#212529',
-          pageTitleFontSize: '1.5rem',
-        },
-      };
-    },
-  };
-</script>
-
 <style scoped>
-.inception-container {
-  min-height: calc(100vh - 80px);
-  background-color: #f6f8fa;
-}
+
 </style>

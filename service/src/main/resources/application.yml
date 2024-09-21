@@ -117,7 +117,7 @@ skills:
       descriptionMaxLength: 2000000
       maxTimeWindowInMinutes: 43200
       maxBadgeBonusInMinutes: 525600
-      docsHost: /skills-docs
+      docsHost: https://skilltreeplatform.dev
       maxProjectsPerAdmin: 25
       maxQuizDefsPerAdmin: 1000
       maxQuestionsPerQuiz: 500
@@ -125,7 +125,7 @@ skills:
       maxSubjectsPerProject: 25
       maxBadgesPerProject: 25
       maxSkillsPerSubject: 100
-      numProjectsForTableView: 10
+      numProjectsToStartShowingAsCards: 6
       #it may be necessary to use the (?s) modifier for paragraph validation regexes, depending on the regex specified
       paragraphValidationRegex:
       paragraphValidationMessage:
@@ -134,6 +134,7 @@ skills:
       nameValidationRegex:
       nameValidationMessage:
       maxFirstNameLength: 30
+      maxHostLength: 50
       maxLastNameLength: 30
       maxNicknameLength: 70
       minUsernameLength: 2
@@ -143,7 +144,7 @@ skills:
       maxBadgeNameLength: 50
       maxProjectNameLength: 50
       maxQuizNameLength: 75
-      maxQuizTextAnswerLength: 2000
+      maxQuizTextAnswerLength: 8000
       maxSkillNameLength: 100
       maxSubjectNameLength: 50
       maxLevelNameLength: 50
@@ -183,7 +184,12 @@ db-scheduler:
   threads: 3
 ---
 spring:
+  cloud:
+    aws:
+      s3:
+        enabled: false
   config:
     activate:
       on-profile: default
+
 ---

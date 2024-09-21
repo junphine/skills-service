@@ -1,5 +1,5 @@
 /*
-Copyright 2020 SkillTree
+Copyright 2024 SkillTree
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -13,40 +13,39 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-<template>
-  <b-button v-if="isConfigurationInitialized" to="/administrator/skills" variant="outline-primary" size="sm" aria-label="Dashboard Skills"
-            data-cy="inception-button">
-    <i class="fas fa-trophy mr-1" aria-hidden="true"></i>
-    <skills-level project-id="Inception" />
-  </b-button>
-</template>
+<script setup>
+import { onMounted, ref } from 'vue'
+import { SkillsLevelJS, SkillsConfiguration } from '@skilltree/skills-client-js'
 
-<script>
-  import { SkillsLevel, SkillsConfiguration } from '@skilltree/skills-client-vue';
+const isConfigurationInitialized = ref(false)
 
-  export default {
-    name: 'InceptionButton',
-    components: {
-      SkillsLevel,
-    },
-    data() {
-      return {
-        isConfigurationInitialized: false,
-      };
-    },
-    mounted() {
-      SkillsConfiguration.afterConfigure()
-        .then(() => {
-          this.isConfigurationInitialized = true;
-        });
-    },
-    computed: {
-      userId() {
-        return this.$store.getters.userInfo.userId;
-      },
-    },
-  };
+onMounted(() => {
+  SkillsConfiguration.afterConfigure()
+    .then(() => {
+      const skillsLevel = new SkillsLevelJS('Inception')
+      if (document.querySelector('#skills-level-container')) {
+        skillsLevel.attachTo(document.querySelector('#skills-level-container'))
+      }
+
+    }).finally(() => {
+    isConfigurationInitialized.value = true
+  })
+})
+
 </script>
+
+<template>
+  <router-link to="/administrator/skills/Inception" aria-label="Dashboard Skills" tabindex="-1">
+    <Button v-show="isConfigurationInitialized"
+            outlined
+            icon="fas fa-trophy"
+            label="Dashboard Skills"
+            severity="info">
+      <i class="fas fa-trophy mr-1" aria-hidden="true"></i>
+      <span id="skills-level-container" />
+    </Button>
+  </router-link>
+</template>
 
 <style scoped>
 

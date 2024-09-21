@@ -83,9 +83,9 @@ function updateUserInfo() {
   <Card>
     <template #content v-if="!isLoading">
       <Message v-if="saveMessage" :sticky="false" :life="10000">{{saveMessage}}</Message>
-      <SkillsTextInput name="firstName" label="First Name" is-required :initialValue="firstName" v-if="!pkiAuthenticated" />
-      <SkillsTextInput name="lastName" label="Last Name" is-required :initialValue="lastName" v-if="!pkiAuthenticated" />
-      <SkillsTextInput name="nickname" label="Primary Name" :initialValue="nickname" />
+      <SkillsTextInput name="firstName" :label="$t('First Name')" is-required :initialValue="firstName" v-if="!pkiAuthenticated" />
+      <SkillsTextInput name="lastName" :label="$t('Last Name')" is-required :initialValue="lastName" v-if="!pkiAuthenticated" />
+      <SkillsTextInput name="nickname" :label="$t('Primary Name')" :initialValue="nickname" />
 
       <SkillsButton label="Save" icon="fas fa-arrow-circle-right" @click="updateUserInfo" :disabled="!meta.valid || !meta.dirty" data-cy="generalSettingsSave" />
     </template>

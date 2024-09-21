@@ -1,0 +1,17 @@
+/.idea/
+/**/node_modules
+/skills-client-js/coverage/
+/skills-client-js/dist/
+/skills-client-integration/skills-int-service/src/main/resources/public/
+
+.history
+/target/
+/skills-client-integration/skills-int-e2e-test/logs/
+/skills-client-integration/skills-int-e2e-test/cypress/videos/
+/skills-client-integration/skills-int-e2e-test/nohup.out
+/skills-client-vue/package-lock.json
+/skills-client-react/package-lock.json
+/skills-client-js/package-lock.json
+/skills-client-ng/package-lock.json
+/skills-client-ng/dist/
+/skills-client-ng/projects/skilltree/skills-client-ng/src/version.js

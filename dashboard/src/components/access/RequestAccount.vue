@@ -134,7 +134,7 @@ const onSubmit = handleSubmit((values) => {
             <form @submit="onSubmit">
               <div class="w-full">
                 <SkillsTextInput
-                    label="First Name"
+                    :label="$t('First Name')"
                     size="small"
                     autocomplete="given-name"
                     :is-required="true"
@@ -150,7 +150,7 @@ const onSubmit = handleSubmit((values) => {
                   </template>
                 </SkillsTextInput>
                   <SkillsTextInput
-                      label="Last Name"
+                      :label="$t('Last Name')"
                       size="small"
                       autocomplete="family-name"
                       :is-required="true"

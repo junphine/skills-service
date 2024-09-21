@@ -1,0 +1,169 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Continuous Integration with OAuth
+
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+#on:
+#  push:
+#    paths-ignore:
+#      - 'README.md'
+#      - .github/workflows/skills-service-backward-compat.yml
+#      - .github/workflows/client-libs-backward-compat.yml
+#  pull_request:
+#    paths-ignore:
+#      - 'README.md'
+#      - .github/workflows/skills-service-backward-compat.yml
+#      - .github/workflows/client-libs-backward-compat.yml
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  # This workflow contains a single job called "build"
+  build:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Docker Hub image
+        image: postgres
+        # Provide the password for postgres
+        env:
+          POSTGRES_PASSWORD: skillsPassword
+          POSTGRES_DB: skills
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          # Maps tcp port 5432 on service container to the host
+          - 5432:5432
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+    - uses: actions/checkout@v2
+
+    - uses: actions/setup-node@v2-beta
+      with:
+        node-version: '14'
+
+    - uses: actions/setup-java@v1
+      with:
+        java-version: '19' # The JDK version to make available on the path.
+
+    - name: Print Versions
+      run: |
+        mvn --version
+        java -version
+        npm -version
+        node --version
+
+    - name: Cache local Maven repository
+      uses: actions/cache@v2
+      with:
+        path: ~/.m2/repository
+        key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+        restore-keys: |
+          ${{ runner.os }}-maven-
+
+    - name: Cache npm
+      uses: actions/cache@v2
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-node-
+
+    - name: download skill-service
+      run: |
+        mkdir skills-service
+        cd skills-service
+        curl -s https://api.github.com/repos/NationalSecurityAgency/skills-service/releases/latest | grep browser_download_url | cut -d '"' -f 4 | wget -qi -
+        ls ./
+        cd ..
+
+    - name: setup npm links
+      run: ./.github/workflows/scripts/setupNpmLinks.sh
+
+    - name: build integration test apps
+      run: |
+        cd ./skills-client-integration
+        mvn --batch-mode clean install
+        cd ../
+
+    - name: run hyrda oauth service
+      run: ./.github/workflows/scripts/runHydra.sh
+
+    - name: Check running containers
+      run: docker ps -a
+
+    - name: Caputre Hydra Oauth Service logs
+      run: |
+        mkdir -p ./skills-client-integration/skills-int-e2e-test/target/logs
+        docker logs hydra > ./skills-client-integration/skills-int-e2e-test/target/logs/hydra.out &
+        docker container logs -f hydra_consent > ./skills-client-integration/skills-int-e2e-test/target/logs/hydra_consent.out &
+        docker container logs -f hydra_postgres > ./skills-client-integration/skills-int-e2e-test/target/logs/hydra_postgres.out &
+
+    - name: Register hydra client
+      run: |
+        cd skills-client-integration/skills-int-e2e-test/hydra
+        docker compose -f quickstart.yml exec -T hydra \
+        	hydra clients create \
+            --endpoint http://localhost:4445/ \
+            --id skilltree-test \
+            --secret client-secret \
+            --grant-types authorization_code,refresh_token \
+            --response-types code \
+            --scope openid \
+            --callbacks http://localhost:8080/login/oauth2/code/hydra
+
+    - name: start services for OAuth cypress tests
+      run: |
+        cd skills-client-integration/skills-int-e2e-test
+        npm install
+        npm run cyServices:start:skills-service:ci:oauth
+        npm run cyServices:start:integration-apps:oauth
+        cd ../../
+
+#    - name: Run Cypress tests using OAuth
+#      uses: cypress-io/github-action@v2
+#      with:
+#        working-directory: skills-client-integration/skills-int-e2e-test
+#        record: true
+#        parallel: false
+#        group: 'skills-client oauth tests'
+#        tag: "${{ github.workflow }}"
+#        env: 'authMode=oauth'
+#      env:
+#        # pass the Dashboard record key as an environment variable
+#        CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
+#        # pass GitHub token to allow accurately detecting a build vs a re-run build
+#        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Run Cypress tests
+      run: |
+        cd skills-client-integration/skills-int-e2e-test
+        npm run cy:run:oauth
+        cd ../../
+
+    - name: upload result artifacts
+      if: ${{ always() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: result artifacts
+        path: |
+          ./skills-service/*.jar
+          ./skills-client-integration/skills-int-service/target/*.jar
+          ./skills-client-integration/skills-int-e2e-test/target/logs/*.out
+          ./skills-client-integration/skills-int-e2e-test/cypress/videos/*.mp4
+          ./skills-client-integration/skills-int-e2e-test/cypress/screenshots/**/*.png
+          ./skills-client-integration/skills-int-e2e-test/logs
+          ./skills-client-integration/skills-int-e2e-test/cypress/videos
+          ./skills-client-integration/skills-int-e2e-test/cypress/screenshots
+          ./skills-client-integration/skills-int-e2e-test/cypress/snapshots/**/**/__diff_output__/*.png
+          ./skills-client-integration/skills-int-e2e-test/cypress/snapshots/**/__diff_output__/*.png

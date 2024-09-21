@@ -88,6 +88,9 @@ import '@toast-ui/editor/dist/toastui-editor.css'
 // import 'primevue/resources/themes/lara-light-green/theme.css'
 import 'video.js/dist/video-js.css'
 
+import { createI18n } from 'vue3-i18n'
+import messageZH from './assets/i18n/zh-CN.json';
+import messageEN from './assets/i18n/en.json';
 
 log.setLevel('warn')
 
@@ -95,6 +98,18 @@ const pinia = createPinia()
 
 const app = createApp(App)
 
+const lang = localStorage.getItem('lang') || 'zh-CN';
+
+const i18n = createI18n({
+  legacy: false, // 设置为 false，启用 composition API 模式
+  fallbackLocale: 'en',
+  // 全局使用 t 函数
+  globalInjection:true,
+  messages: { en: messageEN, 'zh-CN': messageZH },
+  locale: lang,
+});
+
+app.use(i18n);
 app.use(router)
 app.use(pinia)
 app.use(PrimeVue)
