@@ -17,6 +17,7 @@ limitations under the License.
 import { onMounted, ref, computed } from 'vue'
 import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js'
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import { useThemesHelper } from "@/components/header/UseThemesHelper.js";
 import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
 import { useSkillsDisplayService } from '@/skills-display/services/UseSkillsDisplayService.js'
 import { useRoute } from 'vue-router'
@@ -29,6 +30,7 @@ const skillsDisplayService = useSkillsDisplayService()
 const route = useRoute()
 const attributes = useSkillsDisplayAttributesState()
 const themeState = useSkillsDisplayThemeState()
+const themeHelper = useThemesHelper()
 const animationEnded = ref(false)
 const numFormat = useNumberFormat()
 
@@ -39,7 +41,12 @@ onMounted(() => {
     }
   })
 })
-
+const chartAxisColor = () => {
+  if (themeState.theme.charts.axisLabelColor) {
+    return themeState.theme.charts.axisLabelColor
+  }
+  return themeHelper.isDarkTheme ? 'white' : undefined
+}
 const usersPerLevelLoading = ref(true)
 const usersPerLevel = ref({})
 const loadData = () => {
@@ -141,7 +148,7 @@ const chartOptions = ref({
     labels: {
       rotate: -45,
       style: {
-        colors: themeState.theme.charts.axisLabelColor
+        colors: chartAxisColor()
       }
     }
   },
@@ -156,7 +163,7 @@ const chartOptions = ref({
     },
     labels: {
       style: {
-        colors: [themeState.theme.charts.axisLabelColor]
+        colors: chartAxisColor()
       },
       formatter: function format(val) {
         if (val === Infinity) {
@@ -173,7 +180,7 @@ const chartOptions = ref({
 </script>
 
 <template>
-  <Card data-cy="levelBreakdownChart" :pt="{ content: { class: 'mb-0 pb-0'}}" class="w-min-15rem">
+  <Card data-cy="levelBreakdownChart" :pt="{ content: { class: '!mb-0 !pb-0'}}" class="w-min-15rem h-full">
     <template #subtitle>
       <div class="flex">
         <div>

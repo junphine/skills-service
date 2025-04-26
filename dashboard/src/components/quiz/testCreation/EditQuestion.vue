@@ -24,11 +24,16 @@ import MarkdownEditor from '@/common-components/utilities/markdown/MarkdownEdito
 import SkillsInputFormDialog from '@/components/utils/inputForm/SkillsInputFormDialog.vue'
 import SkillsDropDown from '@/components/utils/inputForm/SkillsDropDown.vue';
 import ConfigureAnswers from '@/components/quiz/testCreation/ConfigureAnswers.vue';
+import QuizType from "@/skills-display/components/quiz/QuizType.js";
 
 const model = defineModel()
 const props = defineProps({
   questionDef: Object,
   isEdit: {
+    type: Boolean,
+    default: false,
+  },
+  isCopy: {
     type: Boolean,
     default: false,
   }
@@ -38,19 +43,28 @@ const route = useRoute()
 const loadingComponent = ref(false)
 const currentScaleOptions = ref([3, 4, 5, 6, 7, 8, 9, 10])
 const answersRef = ref(null)
+const showHint = ref(false)
 
 const modalTitle = computed(() => {
-  return props.isEdit ? 'Editing Existing Question' : 'New Question'
+  if( props.isEdit ) {
+    return 'Editing Existing Question';
+  } else if( props.isCopy ) {
+    return 'Copy Question'
+  }
+  return 'New Question'
 })
-const modalId = props.isEdit ? `questionEditModal${props.questionDef.id}` : 'questionEditModal'
+const modalId = props.isEdit || props.isCopy ? `questionEditModal${props.questionDef.id}` : 'questionEditModal'
 const appConfig = useAppConfig()
 
 onMounted(() => {
-  if (props.questionDef.questionType === QuestionType.Rating && props.isEdit) {
+  if (props.questionDef.questionType === QuestionType.Rating && (props.isEdit || props.isCopy)) {
     initialQuestionData.currentScaleValue = props.questionDef.answers.length;
   }
-  if (props.isEdit) {
+  if (props.isEdit || props.isCopy) {
     questionType.value.selectedType = questionType.value.options.find((o) => o.id === props.questionDef.questionType)
+  }
+  if (isQuizType.value && props.questionDef.answerHint) {
+    showHint.value = true;
   }
 });
 
@@ -70,40 +84,53 @@ function questionTypeChanged(inputItem) {
         isCorrect: false,
       }]);
     })
+  } else {
+    if(answersRef.value) {
+      answersRef.value.resetAnswers();
+    }
   }
 
 }
 
-const questionType = ref({
-  options: [{
-    label: 'Multiple Choice',
-    prop: 'extra',
-    id: QuestionType.MultipleChoice,
-    icon: 'fas fa-tasks',
-  }, {
-    label: 'Single Choice',
-    id: QuestionType.SingleChoice,
-    icon: 'far fa-check-square',
-  }, {
-    label: 'Input Text',
-    id: QuestionType.TextInput,
-    icon: 'far fa-keyboard',
-  }, {
+const questionTypes = [{
+  label: 'Multiple Answers',
+  description: 'Two or more correct answers',
+  prop: 'extra',
+  id: QuestionType.MultipleChoice,
+  icon: 'fas fa-tasks',
+}, {
+  label: 'Multiple Choice',
+  description: 'A single correct answer',
+  id: QuestionType.SingleChoice,
+  icon: 'far fa-check-square',
+}, {
+  label: 'Input Text',
+  description: 'A free-form text answer',
+  id: QuestionType.TextInput,
+  icon: 'far fa-keyboard',
+}]
+if (QuizType.isSurvey(props.questionDef.quizType)) {
+  questionTypes.push({
     label: 'Rating',
+    description: 'A star-based rating',
     id: QuestionType.Rating,
     icon: 'fa fa-star',
-  }],
+  })
+}
+
+const questionType = ref({
+  options: questionTypes,
   selectedType: {
-    label: 'Multiple Choice',
+    label: 'Multiple Answers',
     id: QuestionType.MultipleChoice,
     icon: 'fas fa-tasks',
   },
 })
 const isSurveyType = computed(() => {
-  return props.questionDef.quizType === 'Survey';
+  return QuizType.isSurvey(props.questionDef.quizType)
 })
 const isQuizType = computed(() => {
-  return props.questionDef.quizType === 'Quiz';
+  return QuizType.isQuiz(props.questionDef.quizType);
 })
 const isQuestionTypeTextInput = computed(() => {
   return questionType.value.selectedType && questionType.value.selectedType.id === QuestionType.TextInput;
@@ -111,11 +138,22 @@ const isQuestionTypeTextInput = computed(() => {
 const isQuestionTypeRatingInput = computed(() => {
   return questionType.value.selectedType && questionType.value.selectedType.id === QuestionType.Rating;
 })
+const isQuestionTypeMultipleChoice = computed(() => {
+  return questionType.value.selectedType && questionType.value.selectedType.id === QuestionType.MultipleChoice;
+})
+const isQuestionTypeSingleChoice = computed(() => {
+  return questionType.value.selectedType && questionType.value.selectedType.id === QuestionType.SingleChoice;
+})
 const quizType = computed(() => {
   return props.questionDef.quizType;
 })
 const title = computed(() => {
-  return props.isEdit ? 'Editing Existing Question' : 'New Question';
+  if ( props.isEdit ) {
+    return 'Editing Existing Question';
+  } else if( props.isCopy ) {
+    return 'Copy Question';
+  }
+  return 'New Question';
 })
 const quizId = computed(() => {
   return props.questionDef.quizId ? props.questionDef.quizId : route.params.quizId;
@@ -151,6 +189,21 @@ const maxNumAnswers = (value) => {
   }
   return value && value.length <= appConfig.maxAnswersPerQuizQuestion;
 }
+const singleChoiceQuestionsMustHave1Answer = (value) => {
+  if (isSurveyType.value || !isDirty.value || !QuestionType.isSingleChoice(questionType.value.selectedType.id)) {
+    return true;
+  }
+  const numCorrect = value.filter((a) => (a.isCorrect)).length;
+  return numCorrect === 1;
+}
+const multipleChoiceQuestionsMustHaveAtLeast2Answer = (value) => {
+  if (isSurveyType.value || !isDirty.value || !QuestionType.isMultipleChoice(questionType.value.selectedType.id)) {
+    return true;
+  }
+  const numCorrect = value.filter((a) => (a.isCorrect)).length;
+  return numCorrect >= 2;
+}
+
 
 const schema = object({
   'questionType': object()
@@ -162,6 +215,11 @@ const schema = object({
       .max(appConfig.descriptionMaxLength)
       .customDescriptionValidator('Question', false)
       .label('Question'),
+  'answerHint': string()
+      .test('answerHintRequired', 'Answer Hint is required when enabled', (value) => !!(!showHint.value || value))
+      .max(appConfig.maxQuizAnswerHintLength)
+      .customDescriptionValidator('Answer Hint', false)
+      .label('Answer Hint'),
   'answers': array()
       .of(
           object({
@@ -173,29 +231,30 @@ const schema = object({
       .test('atLeastTwoAnswersFilledIn', 'Must have at least 2 answers', (value) => atLeastTwoAnswersFilledIn(value))
       .test('correctAnswersMustHaveText', 'Answers labeled as correct must have text', (value) => correctAnswersMustHaveText(value))
       .test('maxNumAnswers', `Exceeded maximum number of [${appConfig.maxAnswersPerQuizQuestion}] answers`, (value) => maxNumAnswers(value))
+      .test('singleChoiceQuestionsMustHave1Answer', 'Multiple Choice Question must have 1 correct answer', (value) => singleChoiceQuestionsMustHave1Answer(value))
+      .test('multipleChoiceQuestionsMustHaveAtLeast2Answer', 'Multiple Answers Question must have at least 2 correct answers', (value) => multipleChoiceQuestionsMustHaveAtLeast2Answer(value))
   ,
 })
 const initialQuestionData = {
-  questionType: props.isEdit ? questionType.value.options.find((o) => o.id === props.questionDef.questionType) : questionType.value.selectedType,
+  questionType: props.isEdit || props.isCopy ? questionType.value.options.find((o) => o.id === props.questionDef.questionType) : questionType.value.selectedType,
   question: props.questionDef.question || '',
+  answerHint: props.questionDef.answerHint || '',
   answers: props.questionDef.answers || [],
-  currentScaleValue: props.questionDef.questionType === QuestionType.Rating && props.isEdit ?  props.questionDef.answers.length : 5,
+  currentScaleValue: props.questionDef.questionType === QuestionType.Rating && props.isEdit || props.isCopy ? props.questionDef.answers.length : 5,
 }
 
 const close = () => { model.value = false }
 
 const saveQuiz = (values) => {
-  const { question, answers, currentScaleValue } = values
+  const { question, answerHint, answers, currentScaleValue } = values
   const removeEmptyQuestions = answers.filter((a) => (a.answer && a.answer.trim().length > 0));
   const numCorrect = answers.filter((a) => a.isCorrect).length;
   let { questionType : { id : questionType } } = values
-  if (isQuizType.value) {
-    questionType = numCorrect > 1 ? QuestionType.MultipleChoice : QuestionType.SingleChoice;
-  }
   const quizToSave = {
     id: props.questionDef.id,
     quizId: quizId.value,
     question,
+    answerHint,
     questionType,
     answers: (questionType === QuestionType.TextInput || questionType === QuestionType.Rating) ? [] : removeEmptyQuestions,
   };
@@ -233,6 +292,7 @@ const onSavedQuestion = (savedQuestion) => {
       :id="modalId"
       v-model="model"
       :is-edit="isEdit"
+      :is-copy="isCopy"
       :header="modalTitle"
       :loading="loadingComponent"
       :validation-schema="schema"
@@ -253,20 +313,45 @@ const onSavedQuestion = (savedQuestion) => {
           :resizable="true"
           markdownHeight="150px"
           name="question" />
+      <div data-cy="answerHintSection" v-if="isQuizType">
+        <div class="flex mb-2">
+          <SkillsCheckboxInput
+              v-model="showHint"
+              :binary="true"
+              inputId="answerHintEnable"
+              name="answerHintEnable"
+              data-cy=answerHintEnableCheckbox />
+          <div class="flex-1 align-content-end">
+            <label for="answerHintEnable" class="font-bold text-primary ml-2">Enable Answer Hint</label>
+          </div>
+        </div>
+        <SkillsTextarea v-if="showHint"
+            id="answerHintInput"
+            placeholder="Hint to be presented to user"
+            aria-label="Hint to be presented to user"
+            rows="3"
+            max-rows="3"
+            name="answerHint"
+            data-cy="answerHint"
+            :submit-on-enter="false"
+            :disabled="!showHint"
+        />
+      </div>
 
-      <div class="mt-3 mb-2">
+      <div class="mt-4 mb-2">
         <span class="font-bold text-primary">Answers</span>
       </div>
-      <div v-if="questionDef.quizType === 'Survey'" class="mb-2">
+      <div class="mb-2">
         <SkillsDropDown
             name="questionType"
             data-cy="answerTypeSelector"
             v-model="questionType.selectedType"
+            aria-label="Selection Question Type"
             @update:modelValue="questionTypeChanged"
             :isRequired="true"
             :options="questionType.options">
           <template #value="slotProps">
-            <div v-if="slotProps.value" class="p-1" :data-cy="`selectionItem_${slotProps.value.id}`">
+            <div v-if="slotProps.value" class="p-1" :data-cy="`selectionItem_${slotProps.value.id}`" :aria-label="`Select ${slotProps.value.label}`">
               <i :class="slotProps.value.icon" style="min-width: 1.2rem" class="border rounded p-1 mr-2" aria-hidden="true"></i>
               <span class="">{{ slotProps.value.label }}</span>
             </div>
@@ -275,13 +360,13 @@ const onSavedQuestion = (savedQuestion) => {
           <template #option="slotProps">
             <div class="p-1" :data-cy="`selectionItem_${slotProps.option.id}`">
               <i :class="slotProps.option.icon" style="min-width: 1.2rem" class="border rounded p-1 mr-2" aria-hidden="true"></i>
-              <span class="">{{ slotProps.option.label }}</span>
+              <span class="">{{ slotProps.option.label }}</span><span class="hidden sm:inline">: {{ slotProps.option.description }}</span>
             </div>
           </template>
         </SkillsDropDown>
       </div>
 
-      <div v-if="isQuestionTypeTextInput" class="flex pl-3">
+      <div v-if="isQuestionTypeTextInput" class="flex pl-4">
         <label for="textInputPlaceholder" hidden>Text Input Answer Placeholder:</label>
         <Textarea
             style="resize: none"
@@ -293,7 +378,7 @@ const onSavedQuestion = (savedQuestion) => {
             rows="3"/>
       </div>
 
-      <div v-if="isQuestionTypeRatingInput" class="flex flex-column">
+      <div v-if="isQuestionTypeRatingInput" class="flex flex-col">
         <SkillsDropDown
             label="Scale"
             name="currentScaleValue"
@@ -303,23 +388,30 @@ const onSavedQuestion = (savedQuestion) => {
             :options="currentScaleOptions" />
       </div>
 
-      <div v-if="!isQuestionTypeTextInput && !isQuestionTypeRatingInput" class="pl-3">
-        <div class="mb-1" v-if="isQuizType">
-          <span class="text-secondary">Check one or more correct answer(s) on the left:</span>
+      <div v-if="!isQuestionTypeTextInput && !isQuestionTypeRatingInput" class="pl-4">
+        <div class="mb-2" v-if="isQuizType">
+          <span
+              v-if="isQuestionTypeMultipleChoice"
+              class="text-secondary">Check two or more correct answers on the left:</span>
+          <span
+              v-if="isQuestionTypeSingleChoice"
+              class="text-secondary">Check one correct answer on the left:</span>
         </div>
         <ConfigureAnswers
             ref="answersRef"
             v-model="props.questionDef.answers"
             :quiz-type="props.questionDef.quizType"
+            :question-type="questionType.selectedType.id "
             :class="{ 'p-invalid': answersErrorMessage }"
             :aria-invalid="!!answersErrorMessage"
             aria-errormessage="answersError"
               aria-describedby="answersError" />
-        <small
-            role="alert"
-            class="p-error"
-            data-cy="answersError"
-            id="answersError">{{ answersErrorMessage || '' }}</small>
+        <Message severity="error"
+                 variant="simple"
+                 size="small"
+                 :closable="false"
+                 data-cy="answersError"
+                 id="answersError">{{ answersErrorMessage || '' }}</Message>
       </div>
     </template>
   </SkillsInputFormDialog>

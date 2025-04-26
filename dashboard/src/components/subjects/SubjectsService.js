@@ -99,5 +99,20 @@ export default {
         data
       )
       .then((res) => res.data)
-  }
+  },
+  copySubjectOrSkillsToAnotherProject(projectId, otherProjectId, props) {
+    return axios.post(
+        `/admin/projects/${encodeURIComponent(projectId)}/copy/projects/${encodeURIComponent(otherProjectId)}`, props
+    )
+  },
+  validateCopyItemsToAnotherProject(projectId, otherProjectId, props) {
+    return axios.post(
+        `/admin/projects/${encodeURIComponent(projectId)}/copy/projects/${encodeURIComponent(otherProjectId)}/validateCopy`, props
+    ).then((res) => res.data)
+  },
+  getSubjectsAndSkillGroups(projectId) {
+    return axios.get(
+        `/admin/projects/${encodeURIComponent(projectId)}/subjectsAndSkillsGroups`
+    ).then((res) => res.data)
+  },
 }

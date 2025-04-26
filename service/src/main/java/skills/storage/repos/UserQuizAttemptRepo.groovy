@@ -15,12 +15,14 @@
  */
 package skills.storage.repos
 
+import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.lang.Nullable
+import skills.controller.result.model.MyQuizAttempt
 import skills.controller.result.model.QuizRun
 import skills.storage.model.UserQuizAttempt
 import skills.storage.model.UserQuizAttempt.QuizAttemptStatus
@@ -38,7 +40,7 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
         from UserQuizAttempt quizAttempt, QuizDef quizDef
         where quizAttempt.quizDefinitionRefId = quizDef.id
             and quizDef.quizId = ?1
-            and quizAttempt.status <> 'INPROGRESS'
+            and quizAttempt.status in ('PASSED', 'FAILED')
         group by quizAttempt.status
      ''')
     List<QuizCounts> getUserQuizAttemptCounts(String quizId)
@@ -49,7 +51,7 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
             quiz_definition quizDef
             where quizAttempt.quiz_definition_ref_id = quizDef.id
                     and quizDef.quiz_id = ?1
-                    and quizAttempt.status <> 'INPROGRESS'
+                    and quizAttempt.status  in ('PASSED', 'FAILED')
      ''', nativeQuery = true)
     Double getAverageMsRuntimeForQuiz(String quizId)
 
@@ -58,7 +60,7 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
         from UserQuizAttempt quizAttempt, QuizDef quizDef
         where quizAttempt.quizDefinitionRefId = quizDef.id
             and quizDef.quizId = ?1
-            and quizAttempt.status <> 'INPROGRESS'
+            and quizAttempt.status in ('PASSED', 'FAILED')
      ''')
     Integer getDistinctNumUsersByQuizId(String quizId)
 
@@ -121,17 +123,6 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
      ''')
     long countByQuizId(String quizId)
 
-    @Query('''select count(quizAttempt)
-        from UserQuizAttempt quizAttempt, QuizDef quizDef, UserAttrs userAttrs
-        where quizAttempt.quizDefinitionRefId = quizDef.id
-            and quizAttempt.userId = userAttrs.userId
-            and (lower(userAttrs.userIdForDisplay) like lower(CONCAT('%', ?2, '%')) OR
-                (lower(CONCAT(userAttrs.firstName, ' ', userAttrs.lastName, ' (',  userAttrs.userIdForDisplay, ')')) like lower(CONCAT(\'%\', ?2, \'%\'))) OR
-                (lower(CONCAT(userAttrs.userIdForDisplay, ' (', userAttrs.lastName, ', ', userAttrs.firstName,  ')')) like lower(CONCAT(\'%\', ?2, \'%\'))))
-            and quizDef.quizId = ?1
-     ''')
-    Integer countQuizRuns(String quizId, String userQuery)
-
     @Query(value = '''select quizAttempt.id                as attemptId,
                            quizAttempt.started           as started,
                            quizAttempt.completed         as completed,
@@ -146,19 +137,70 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
                          user_attrs userAttrs
                              left join (SELECT ut.user_id, max(ut.value) AS value
                                         FROM user_tags ut
-                                        WHERE lower(ut.key) = lower(?3)
+                                        WHERE lower(ut.key) = lower(:usersTableAdditionalUserTagKey)
                                         group by ut.user_id) ut ON ut.user_id = userAttrs.user_id
                     where quizAttempt.quiz_definition_ref_id = quizDef.id
                       and quizAttempt.user_id = userAttrs.user_id
-                      and (lower(userAttrs.user_id_for_display) like lower(CONCAT('%', ?2, '%')) or
-                      (lower(CONCAT(userAttrs.first_name, ' ', userAttrs.last_name, ' (',  userAttrs.user_id_for_display, ')')) like lower(CONCAT(\'%\', ?2, \'%\'))) OR
-                      (lower(CONCAT(userAttrs.user_id_for_display, ' (', userAttrs.last_name, ', ', userAttrs.first_name,  ')')) like lower(CONCAT(\'%\', ?2, \'%\'))))
-                      and quizDef.quiz_id = ?1
+                      and (quizAttempt.status = :quizAttemptStatus OR :quizAttemptStatus IS NULL)
+                      and (lower(userAttrs.user_id_for_display) like lower(CONCAT('%', :userQuery, '%')) or
+                      (lower(CONCAT(userAttrs.first_name, ' ', userAttrs.last_name, ' (',  userAttrs.user_id_for_display, ')')) like lower(CONCAT(\'%\', :userQuery, \'%\'))) OR
+                      (lower(CONCAT(userAttrs.user_id_for_display, ' (', userAttrs.last_name, ', ', userAttrs.first_name,  ')')) like lower(CONCAT(\'%\', :userQuery, \'%\'))))
+                      and quizDef.quiz_id = :quizId
      ''', nativeQuery = true)
-    List<QuizRun> findQuizRuns(String quizId, String userQuery, String usersTableAdditionalUserTagKey, PageRequest pageRequest)
+    Page<QuizRun> findQuizRuns(@Param('quizId')  String quizId,
+                               @Param('userQuery') String userQuery,
+                               @Param('usersTableAdditionalUserTagKey') String usersTableAdditionalUserTagKey,
+                               @Nullable@Param('quizAttemptStatus') String quizAttemptStatus,
+                               PageRequest pageRequest)
 
-    @Query('''select quizAttempt from UserQuizAttempt quizAttempt where quizAttempt.quizDefinitionRefId = ?1 and quizAttempt.status = ?2''')
-    List<UserQuizAttempt> findByQuizRefIdByStatus(Integer quizRefId, QuizAttemptStatus status, PageRequest pageRequest)
+    @Query(value = '''
+        select attempts.id as attemptId,
+               attempts.status as status,
+               attempts.started as started,
+               attempts.completed as completed,
+               quizDef.name as quizName,
+               quizDef.quizId as quizId,
+               quizDef.type as quizType
+        from UserQuizAttempt attempts, QuizDef quizDef
+        left join QuizSetting ucSetting on (ucSetting.quizRefId = quizDef.id and ucSetting.setting = 'user_community')
+        where attempts.userId=:userId and 
+            attempts.quizDefinitionRefId = quizDef.id and
+            attempts.status != 'INPROGRESS' and
+            lower(quizDef.name) LIKE lower(CONCAT('%', :quizNameQuery, '%')) and 
+            ((ucSetting.value is null or lower(ucSetting.value) = 'false') or :isUserUCMember = true)
+     ''')
+    @Nullable
+    Page<MyQuizAttempt> findUserQuizAttempts(
+            @Param('userId') String userId,
+            @Param('quizNameQuery') String quizNameQuery,
+            @Param('isUserUCMember') Boolean isUserUCMember,
+            PageRequest pageRequest)
+
+    @Nullable
+    @Query('''select quizAttempt from UserQuizAttempt quizAttempt where quizAttempt.quizDefinitionRefId = ?1 and quizAttempt.status in ?2''')
+    List<UserQuizAttempt> findByQuizRefIdByStatus(Integer quizRefId, List<QuizAttemptStatus> status, PageRequest pageRequest)
+
+    @Nullable
+    @Query('''select quizAttempt from UserQuizAttempt quizAttempt where quizAttempt.quizDefinitionRefId = ?1 and quizAttempt.userId = ?2 and quizAttempt.status in ?3''')
+    List<UserQuizAttempt> findByQuizRefIdAndUserIdAndStatus(Long quizRefId, String userId, List<QuizAttemptStatus> status, PageRequest pageRequest)
+
+    @Nullable
+    @Query(value = '''SELECT attemptId, status, quizDefRefId, updated
+            FROM (
+                     SELECT attempt.id as attemptId, attempt.status as status, attempt.quiz_definition_ref_id as quizDefRefId, attempt.updated as updated,
+                            ROW_NUMBER() OVER (PARTITION BY attempt.quiz_definition_ref_id ORDER BY attempt.updated DESC) AS rowNumber
+                     FROM user_quiz_attempt attempt
+                     WHERE attempt.quiz_definition_ref_id = any(:quizRefIds) AND attempt.user_id = :userId
+                 ) sub
+            WHERE rowNumber = 1''', nativeQuery = true)
+    List<QuizToSkillDefRepo.QuizAttemptInfo> getLatestQuizAttemptsForUserByQuizIds(@Param("quizRefIds") Integer [] quizRefIds, @Param("userId") String userId)
+
+    @Nullable
+    @Query(value = '''SELECT attempt.id as attemptId, attempt.status as status, attempt.quiz_definition_ref_id as quizDefRefId, attempt.updated as updated
+                     FROM user_quiz_attempt attempt
+                     WHERE attempt.quiz_definition_ref_id = :quizRefId AND attempt.user_id = :userId ORDER BY attempt.updated DESC LIMIT 1''', nativeQuery = true)
+    QuizToSkillDefRepo.QuizAttemptInfo getLatestQuizAttemptForUserByQuizId(@Param("quizRefId") Integer quizRefId, @Param("userId") String userId)
+
 
     List<UserQuizAttempt> findByUserIdAndQuizDefinitionRefIdAndStatus(String userId, Integer quizRefId, QuizAttemptStatus status)
 
@@ -171,6 +213,13 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
                     and q.status = ?2''')
     List<UserQuizAttempt> findByInSkillRefIdAndByStatus(List<Integer> skillRefIds, QuizAttemptStatus status, PageRequest pageRequest)
 
+    @Query('''select q
+              from UserQuizAttempt q, QuizToSkillDef qtoS
+              where q.quizDefinitionRefId = qtoS.quizRefId
+                    and qtoS.skillRefId = ?1
+                    and q.userId = ?2
+                    and q.status = ?3''')
+    List<UserQuizAttempt> findBySkillRefIdAndUserIdAndByStatus(Integer skillRefId, String userId, QuizAttemptStatus status, PageRequest pageRequest)
 
     @Modifying
     @Query(value = '''delete from user_quiz_attempt
@@ -217,4 +266,18 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
                 group by DATE_TRUNC ('day', attempt.started)
                 order by dateVal''', nativeQuery = true)
     List<DateCount> getUsageOverTime(String quizId)
+
+    static interface AttemptCounts {
+        Integer getNumAttempts()
+        Integer getNumQuizAttempts()
+    }
+    @Query('''select 
+            count(*) as numAttempts,
+            sum(case when quizDef.type = 'Quiz' then 1 else 0 end) as numQuizAttempts 
+        from UserQuizAttempt attempt, QuizDef quizDef 
+        where attempt.userId = ?1
+            and attempt.status in ('PASSED', 'FAILED')
+            and attempt.quizDefinitionRefId = quizDef.id''')
+    AttemptCounts getAttemptCountsForUser(String userId)
+
 }

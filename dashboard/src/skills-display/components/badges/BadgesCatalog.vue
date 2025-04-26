@@ -93,7 +93,7 @@ const buildBadgeLink = (badge) => {
 <template>
   <Card class="card" data-cy="myBadges">
     <template #header>
-      <div class="flex p-3" v-if="badges && badges.length > 0">
+      <div class="flex p-4" v-if="badges && badges.length > 0">
         <div class="">
           <InputGroup>
             <InputText
@@ -102,12 +102,12 @@ const buildBadgeLink = (badge) => {
               aria-label="Search badges"
               data-cy="badgeSearchInput" />
             <InputGroupAddon class="p-0 m-0">
-              <SkillsButton
+              <SkillsButton :pt="{ root: { class: '!border-0' } }"
                 icon="fas fa-times"
                 text
                 outlined
                 @click="searchString = ''"
-                class="position-absolute skills-theme-btn" variant="outline-info" style="right: 0rem;"
+                class="position-absolute skills-theme-btn m-0 h-full"
                 aria-label="clear search input"
                 data-cy="clearSkillsSearchInput" />
             </InputGroupAddon>
@@ -127,7 +127,7 @@ const buildBadgeLink = (badge) => {
 
     <template #content>
       <div class="">
-        <div class="mb-5" v-for="(badge, index) in shownBadges" v-bind:key="badge.badgeId">
+        <div class="mb-8" v-for="(badge, index) in shownBadges" v-bind:key="badge.badgeId">
           <badge-catalog-item
             :display-project-name="displayBadgeProject"
             :badge="badge"
@@ -137,11 +137,11 @@ const buildBadgeLink = (badge) => {
             ></badge-catalog-item>
         </div>
 
-        <no-content2 v-if="!(shownBadges && shownBadges.length > 0) && searchString.length > 0" class="my-5"
+        <no-content2 v-if="!(shownBadges && shownBadges.length > 0) && searchString.length > 0" class="my-8"
                      icon="fas fa-search-minus"
                      title="No results" :message="`Please refine [${searchString}] search${(filterId) ? ' and/or clear the selected filter' : ''}`"/>
 
-        <no-content2 v-if="!(badges && badges.length > 0) && searchString.length === 0" class="my-5"
+        <no-content2 v-if="!(badges && badges.length > 0) && searchString.length === 0" class="my-8"
                      data-cy="badge-catalog_no-badges"
                      :message="noBadgesMessage"/>
 

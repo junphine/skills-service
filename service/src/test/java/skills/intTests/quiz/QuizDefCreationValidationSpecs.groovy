@@ -51,6 +51,18 @@ class QuizDefCreationValidationSpecs extends DefaultIntSpec {
         skillsClientException.message.contains("QuizId was not provided")
     }
 
+    def "quiz id must not be null string"() {
+        def quiz1 = QuizDefFactory.createQuiz(1)
+
+        when:
+        quiz1.quizId = "null"
+        skillsService.createQuizDef(quiz1)
+
+        then:
+        SkillsClientException skillsClientException = thrown()
+        skillsClientException.message.contains("QuizId was not provided")
+    }
+
     def "quiz id must be at least 3 chars"() {
         def quiz1 = QuizDefFactory.createQuiz(1)
 
@@ -199,5 +211,15 @@ class QuizDefCreationValidationSpecs extends DefaultIntSpec {
         skillsClientException.message.contains("Not supported quiz type [Some] please select one from [Survey, Quiz]")
     }
 
+    def "quiz creation returns created date"() {
+        def quiz1 = QuizDefFactory.createQuiz(1)
+
+        when:
+        def createdQuiz = skillsService.createQuizDef(quiz1).body
+
+        then:
+        createdQuiz.quizId == quiz1.quizId
+        createdQuiz.created
+    }
 }
 

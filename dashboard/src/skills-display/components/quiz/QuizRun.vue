@@ -18,6 +18,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { object, string, number, array } from 'yup';
 import { useSkillsAnnouncer } from '@/common-components/utilities/UseSkillsAnnouncer.js'
 import { useTimeUtils } from '@/common-components/utilities/UseTimeUtils.js'
+import { useCheckIfAnswerChangedForValidation } from '@/common-components/utilities/UseCheckIfAnswerChangedForValidation.js'
 import dayjs from '@/common-components/DayJsCustomizer.js'
 import SkillsSpinner from '@/components/utils/SkillsSpinner.vue';
 
@@ -30,6 +31,12 @@ import QuestionType from '@/skills-display/components/quiz/QuestionType.js';
 import SkillsOverlay from "@/components/utils/SkillsOverlay.vue";
 import QuizRunQuestion from '@/skills-display/components/quiz/QuizRunQuestion.vue';
 import { useForm } from "vee-validate";
+import QuizStatus from "@/components/quiz/runsHistory/QuizStatus.js";
+import {useAppConfig} from "@/common-components/stores/UseAppConfig.js";
+import {useNumberFormat} from "@/common-components/filter/UseNumberFormat.js";
+import MarkdownText from "@/common-components/utilities/markdown/MarkdownText.vue";
+import {useDebounceFn} from "@vueuse/core";
+import {useDescriptionValidatorService} from "@/common-components/validators/UseDescriptionValidatorService.js";
 
 const props = defineProps({
   quizId: String,
@@ -53,6 +60,10 @@ const props = defineProps({
 const emit = defineEmits(['cancelled', 'testWasTaken'])
 const announcer = useSkillsAnnouncer()
 const timeUtils = useTimeUtils()
+const appConfig = useAppConfig()
+const numFormat = useNumberFormat()
+const checkIfAnswerChangedForValidation = useCheckIfAnswerChangedForValidation()
+const descriptionValidatorService = useDescriptionValidatorService()
 
 const isLoading = ref(true);
 const isCompleting = ref(false);
@@ -78,18 +89,61 @@ const ratingSelected = (value) => {
 const getQuestionNumFromPath = (path) => {
   return Number(path.split('[').pop().split(']')[0]) + 1;
 }
+
+const validateFunCache = new Map()
+const createValidateAnswerFn = (valueOuter, contextOuter) => {
+  if (!QuestionType.isTextInput(contextOuter.parent.questionType)) {
+    return true
+  }
+  const doValidateAnswer = (value, context) => {
+    if (!value || value.trim().length === 0 || !appConfig.paragraphValidationRegex) {
+      return true
+    }
+    const forceAnswerValidation = isSubmitting.value
+    if (!forceAnswerValidation && !checkIfAnswerChangedForValidation.hasValueChanged(context.originalValue, context)) {
+      return true
+    }
+    return descriptionValidatorService.validateDescription(value, false, null, true).then((result) => {
+      if (result.valid) {
+        return true
+      }
+      checkIfAnswerChangedForValidation.removeAnswer(context)
+      if (result.msg) {
+        return context.createError({ message: `Answer to question #${getQuestionNumFromPath(context.path)} - ${result.msg}` })
+      }
+      return context.createError({ message: `'Field' is invalid` })
+    })
+  }
+
+  if (isSubmitting.value) {
+    return doValidateAnswer(valueOuter, contextOuter)
+  }
+  let validateFn = validateFunCache.get(contextOuter.path)
+  if (!validateFn) {
+    validateFn = useDebounceFn((valueDebounce, contextDebounce) => {
+      return doValidateAnswer(valueDebounce, contextDebounce)
+    }, appConfig.formFieldDebounceInMs)
+
+    validateFunCache.set(contextOuter.path, validateFn)
+  }
+  return validateFn(valueOuter, contextOuter)
+}
 const schema = object({
   'questions': array()
       .of(
           object({
             'questionType': string(),
             'answerText': string()
+                .trim()
+                .max(appConfig.maxTakeQuizInputTextAnswerLength, (d) => `Answer to question #${getQuestionNumFromPath(d.path)} must not exceed ${numFormat.pretty(appConfig.maxTakeQuizInputTextAnswerLength)} characters`)
                 .when('questionType', {
                   is: QuestionType.TextInput,
                   then: (sch)  => sch
                       .trim()
                       .required((d) => `Answer to question #${getQuestionNumFromPath(d.path)} is required`)
-                      .customDescriptionValidator(null, false, null, (d) => `Answer to question #${getQuestionNumFromPath(d.path)}`),
+                      .test('customAnswerValidator',"", async (value, context) => {
+                        return await createValidateAnswerFn(value, context)
+                      }),
                 }),
             'answerRating': number()
                 .when('questionType', {
@@ -113,7 +167,6 @@ const schema = object({
 const { values, meta, handleSubmit, isSubmitting, resetForm, setFieldValue, validate, validateField, errors, errorBag, setErrors } = useForm({
   validationSchema: schema,
 })
-// const { remove, push, fields } = useFieldArray('questions');
 
 onMounted(() => {
   if (props.quiz) {
@@ -153,7 +206,7 @@ const beginDateTimer = () => {
       if (currentDate.value >= dayjs(quizInfo.value.deadline).utc().valueOf()) {
         destroyDateTimer();
         QuizRunService.failQuizAttempt(props.quizId, quizAttemptId.value).then((gradedRes) => {
-          const numTotal = quizInfo.value.questions.length;
+          const numTotal = quizInfo.value.quizLength;
           const numCorrect = 0;
           const percentCorrect = Math.trunc(((numCorrect * 100) / numTotal));
           quizResult.value = {
@@ -203,9 +256,9 @@ const failQuizAttempt = () => {
       passed: false,
       started: null,
     },
-    missedBy: quizInfo.value.questions.length,
+    missedBy: quizInfo.value.quizLength,
     numCorrect: 0,
-    numTotal: quizInfo.value.questions.length,
+    numTotal: quizInfo.value.quizLength,
     percentCorrect: 0,
     outOfTime: true,
   };
@@ -259,6 +312,7 @@ const initializeFormData = (copy) => {
       answerRating: answerRating ? Number(answerRating.answerOption) : 0,
     }
   })
+  checkIfAnswerChangedForValidation.reset()
   resetForm({ values: { questions: formQuestions }, errors: {} });
 }
 const updateSelectedAnswers = (questionSelectedAnswer) => {
@@ -296,15 +350,18 @@ const submitTestRun = handleSubmit((values) => {
 const reportTestRunToBackend = () => {
   return QuizRunService.completeQuizAttempt(props.quizId, quizAttemptId.value)
       .then((gradedRes) => {
-        const numTotal = quizInfo.value.questions.length;
+        const numTotal = quizInfo.value.quizLength;
         const numCorrect = numTotal - gradedRes.numQuestionsGotWrong;
         const percentCorrect = Math.trunc(((numCorrect * 100) / numTotal));
+        const minNumQuestionsToPass = quizInfo.value.minNumQuestionsToPass;
+        const numQuestionsGotWrong = gradedRes.numQuestionsGotWrong;
+        const missedBy = minNumQuestionsToPass > 0 ? minNumQuestionsToPass - numCorrect : numQuestionsGotWrong;
         quizResult.value = {
           gradedRes,
           numCorrect,
           numTotal,
           percentCorrect,
-          missedBy: gradedRes.numQuestionsGotWrong,
+          missedBy,
         };
 
         if (gradedRes.gradedQuestions && gradedRes.gradedQuestions.length > 0) {
@@ -315,7 +372,7 @@ const reportTestRunToBackend = () => {
             const answerOptions = q.answerOptions.map((a) => ({
               ...a,
               selected: gradedQuestion.selectedAnswerIds.includes(a.id),
-              isGraded: true,
+              isGraded: !QuizStatus.isNeedsGrading(gradedQuestion.status),
               isCorrect: gradedQuestion.correctAnswerIds.includes(a.id),
             }));
             return ({
@@ -326,6 +383,7 @@ const reportTestRunToBackend = () => {
           });
           quizInfo.value = updatedQuizInfo;
         }
+        announcer.polite('Quiz Completed')
       });
 }
 const tryAgain = () => {
@@ -350,27 +408,24 @@ const doneWithThisRun = () => {
 
 <template>
   <div>
-    <SkillsSpinner :is-loading="isLoading" class="mt-3"/>
+    <SkillsSpinner :is-loading="isLoading" class="mt-4"/>
     <div v-if="!isLoading">
       <QuizRunSplashScreen v-if="splashScreen.show" :quiz-info="quizInfo" @cancelQuizAttempt="cancelQuizAttempt" @start="startQuizAttempt" :multipleTakes="multipleTakes">
         <template #aboveTitle>
-          <slot name="splashPageTitle">
-            <span v-if="isSurveyType">Thank you for taking the time to take this survey!</span>
-            <span v-else>You are about to begin the quiz!</span>
-          </slot>
+          <slot name="splashPageTitle" />
         </template>
       </QuizRunSplashScreen>
 
       <SurveyRunCompletionSummary
           ref="surveyRunCompletionSummary"
           v-if="isSurveyType && quizResult && !splashScreen.show"
-          class="mb-3"
+          class="mb-4"
           :quiz-info="quizInfo"
           :quiz-result="quizResult"
           @close="doneWithThisRun">
         <template #completeAboveTitle>
-          <slot name="completeAboveTitle">
-            <i class="fas fa-handshake text-primary" aria-hidden="true"></i> Thank you for taking the time to complete the survey!
+          <slot name="aboveTitleWhenPassed" v-if="quizResult.gradedRes.passed">
+            <Message severity="success" icon="fas fa-handshake">Thank you for taking the time to complete the survey!</Message>
           </slot>
         </template>
       </SurveyRunCompletionSummary>
@@ -379,30 +434,41 @@ const doneWithThisRun = () => {
           id="quizRunCompletionSummary"
           ref="quizRunCompletionSummary"
           v-if="!isSurveyType && quizResult && !splashScreen.show"
-          class="mb-3"
+          class="mb-4"
           :quiz-info="quizInfo"
           :quiz-result="quizResult"
           @close="doneWithThisRun"
           @run-again="tryAgain">
         <template #completeAboveTitle>
-          <slot name="completeAboveTitle">
-            <span v-if="isSurveyType">Thank you for taking time to take this survey! </span>
-            <span v-else>Thank you for completing the Quiz!</span>
+          <slot name="aboveTitleWhenPassed" v-if="quizResult.gradedRes.passed">
+            <Message severity="success" icon="fas fa-handshake">
+              <span v-if="isSurveyType">Thank you for taking time to take this survey! </span>
+              <span v-else>Thank you for completing the Quiz!</span>
+            </Message>
           </slot>
         </template>
       </QuizRunCompletionSummary>
       
-      <Card v-if="!splashScreen.show && !(isSurveyType && quizResult) && showQuestions" class="mb-4" data-cy="quizRunQuestions">
+      <Card v-if="!splashScreen.show && !(isSurveyType && quizResult) && showQuestions" class="mb-6" data-cy="quizRunQuestions">
         <template #content>
-          <div class="flex flex-wrap align-items-center justify-content-center border-bottom-1 py-2 mb-3" data-cy="subPageHeader">
+          <div class="flex flex-wrap items-center justify-center border-b py-2 mb-4" data-cy="subPageHeader">
             <div class="flex">
-              <div class="text-2xl text-primary font-bold skills-page-title-text-color" data-cy="quizName">{{ quizInfo.name }}</div>
+              <div class="text-2xl text-primary font-bold skills-page-title-text-color" data-cy="quizName" role="heading" aria-level="1">{{ quizInfo.name }}</div>
             </div>
             <div class="flex-1 text-right text-muted">
               <Tag severity="success" data-cy="numQuestions">{{quizInfo.quizLength}}</Tag> <span class="uppercase">questions</span>
               <span v-if="quizInfo.quizTimeLimit > 0 && dateTimer !== null"> | {{ timeUtils.formatDurationDiff(currentDate, quizInfo.deadline, false, true)}}</span>
             </div>
           </div>
+
+          <Card :pt="{ body: { class: '!p-1' }, content: { class: '!p-1' } }" class="mb-3" v-if="quizInfo.description && quizInfo.showDescriptionOnQuizPage">
+            <template #content>
+              <markdown-text
+                  :text="quizInfo.description"
+                  instance-id="quizDescriptionText"
+                  data-cy="quizDescription" />
+            </template>
+          </Card>
 
           <SkillsOverlay :show="isCompleting" opacity="0.2">
             <div v-for="(q, index) in quizInfo.questions" :key="q.id">
@@ -417,18 +483,9 @@ const doneWithThisRun = () => {
             </div>
           </SkillsOverlay>
 
-          <QuizRunValidationWarnings v-if="!meta.valid" :errors-to-show="errorsToShow" />
+          <QuizRunValidationWarnings v-if="!meta.valid && !quizResult?.gradedRes?.needsGrading" :errors-to-show="errorsToShow" />
 
-          <div v-if="!quizResult" class="text-left mt-5 flex flex-wrap">
-<!--            <SkillsButton severity="info" outlined-->
-<!--                          label="Save and Close"-->
-<!--                          icon="fas fa-save"-->
-<!--                          @click="saveAndCloseThisRun"-->
-<!--                          class="text-uppercase mr-2 font-weight-bold skills-theme-btn"-->
-<!--                          :disabled="isCompleting"-->
-<!--                          :aria-label="`Save and close this ${quizInfo.quizType}`"-->
-<!--                          data-cy="saveAndCloseQuizAttemptBtn">-->
-<!--            </SkillsButton>-->
+          <div v-if="!quizResult" class="text-left mt-8 flex flex-wrap">
             <SkillsOverlay :show="isCompleting" opacity="0.6">
               <SkillsButton severity="success" outlined
                             :label="`Complete ${quizInfo.quizType}`"
@@ -442,17 +499,18 @@ const doneWithThisRun = () => {
             </SkillsOverlay>
           </div>
 
-          <div v-if="quizResult && quizResult.gradedRes && quizResult.gradedRes.passed" class="text-left mt-5">
-            <SkillsButton :severity="quizResult.gradedRes.passed ? 'success' : 'danger'" outlined
+          <div v-if="quizResult && quizResult.gradedRes && quizResult.gradedRes.passed" class="text-left mt-8">
+            <SkillsButton :severity="quizResult.gradedRes.passed || quizResult.gradedRes.needsGrading ? 'success' : 'danger'" outlined
                           label="Close"
                           icon="fas fa-times-circle"
                           @click="doneWithThisRun"
                           class="text-uppercase font-weight-bold skills-theme-btn">
             </SkillsButton>
           </div>
-          <div v-if="quizResult && quizResult.gradedRes && !quizResult.gradedRes.passed" class="mt-5">
+          <div v-if="quizResult && quizResult.gradedRes && !quizResult.gradedRes.passed" class="mt-8">
             <div class="my-2" v-if="(quizInfo.maxAttemptsAllowed - quizInfo.userNumPreviousQuizAttempts - 1) > 0"><span class="text-info">No worries!</span> Would you like to try again?</div>
-            <SkillsButton severity="danger" outlined
+            <SkillsButton :severity="quizResult.gradedRes.needsGrading ? 'success' : 'danger'"
+                          outlined
                           label="Close"
                           icon="fas fa-times-circle"
                           @click="doneWithThisRun"

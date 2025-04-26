@@ -15,13 +15,14 @@
  */
 package skills.intTests.quiz
 
-import groovy.json.JsonOutput
 import groovy.util.logging.Slf4j
 import skills.intTests.utils.DefaultIntSpec
 import skills.intTests.utils.QuizDefFactory
 import skills.intTests.utils.SkillsClientException
 import skills.intTests.utils.SkillsService
 import skills.storage.model.auth.RoleName
+
+import static skills.intTests.utils.AdminGroupDefFactory.createAdminGroup
 
 @Slf4j
 class QuizRoleManagementSpecs extends DefaultIntSpec {
@@ -48,7 +49,6 @@ class QuizRoleManagementSpecs extends DefaultIntSpec {
         otherUser.createQuizQuestionDefs(questions[2..2])
         def questions_t1 = skillsService.getQuizQuestionDefs(quiz1.quizId)
 
-        println JsonOutput.prettyPrint(JsonOutput.toJson(questions_t1))
         then:
         roles_t0.userId == [skillsService.userName]
         roles_t0.roleName == [RoleName.ROLE_QUIZ_ADMIN.toString()]
@@ -116,6 +116,27 @@ class QuizRoleManagementSpecs extends DefaultIntSpec {
         then:
         SkillsClientException skillsClientException = thrown()
         skillsClientException.message.contains("Cannot add roles to myself")
+    }
+
+    def "cannot add user that belongs to admin group as local admin for this quiz"() {
+        def quiz1 = QuizDefFactory.createQuiz(1)
+        skillsService.createQuizDef(quiz1)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 3, 2)
+        skillsService.createQuizQuestionDefs(questions[0..1])
+
+        def otherUserId = getRandomUsers(1, true, ['skills@skills.org', DEFAULT_ROOT_USER_ID])[0]
+        createService(otherUserId)
+        def adminGroup = createAdminGroup(1)
+        skillsService.createAdminGroupDef(adminGroup)
+        skillsService.addAdminGroupMember(adminGroup.adminGroupId, otherUserId)
+        skillsService.addQuizToAdminGroup(adminGroup.adminGroupId, quiz1.quizId)
+
+        when:
+        skillsService.addQuizUserRole(quiz1.quizId, otherUserId, RoleName.ROLE_QUIZ_ADMIN.toString())
+
+        then:
+        SkillsClientException skillsClientException = thrown()
+        skillsClientException.message.contains("User is already part of an Admin Group and cannot be added as a local admin")
     }
 
     def "user already have the role"() {

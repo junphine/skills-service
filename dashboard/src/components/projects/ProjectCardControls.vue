@@ -21,18 +21,17 @@ import { useAdminProjectsState } from '@/stores/UseAdminProjectsState.js'
 const accessState = useAccessState()
 const projectsState = useAdminProjectsState()
 
-defineProps(['project', 'readOnlyProject'])
+const props = defineProps(['project', 'readOnlyProject'])
 const emit = defineEmits(['edit-project', 'unpin-project', 'copy-project', 'delete-project'])
 
 const isRootUser = computed(() => accessState.isRoot)
-
 </script>
 
 <template>
   <div class="flex flex-wrap gap-2"
     :class="{
-      'flex-column justify-content-center align-items-center': projectsState.shouldTileProjectsCards,
-      'justify-content-end': !projectsState.shouldTileProjectsCards
+      'flex-col justify-center items-center': projectsState.shouldTileProjectsCards,
+      'justify-end': !projectsState.shouldTileProjectsCards
     }">
     <div class="flex gap-2">
       <router-link :to="{ name:'Subjects', params: { projectId: project.projectId }}" tabindex="-1">
@@ -60,7 +59,7 @@ const isRootUser = computed(() => accessState.isRoot)
         :aria-pressed="project.pinned">
     </SkillsButton>
     </div>
-    <ButtonGroup class="mr-2 p-0 flex" v-if="!readOnlyProject">
+    <ButtonGroup class="mr-4 p-0 flex" v-if="!readOnlyProject">
       <SkillsButton
         :id="`editProjBtn${project.projectId}`"
         :track-for-focus="true"
@@ -92,6 +91,7 @@ const isRootUser = computed(() => accessState.isRoot)
 
       <SkillsButton
         :id="`deleteProjBtn${project.projectId}`"
+        v-if="!project.isDeleteProtected"
         outlined
         severity="info"
         ref="deleteBtn"
@@ -110,9 +110,4 @@ const isRootUser = computed(() => accessState.isRoot)
 </template>
 
 <style scoped>
-.last-right-group-btn {
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  border-left: none;
-}
 </style>

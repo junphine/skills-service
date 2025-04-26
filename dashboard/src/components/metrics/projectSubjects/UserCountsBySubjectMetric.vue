@@ -16,11 +16,24 @@ limitations under the License.
 <script setup>
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router';
+import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js';
+import { useThemesHelper } from '@/components/header/UseThemesHelper.js';
 import MetricsService from "@/components/metrics/MetricsService.js";
 import MetricsOverlay from '@/components/metrics/utils/MetricsOverlay.vue'
 import NumberFormatter from '@/components/utils/NumberFormatter.js'
+import {useLayoutSizesState} from "@/stores/UseLayoutSizesState.js";
 
 const route = useRoute();
+const themeState = useSkillsDisplayThemeState()
+const themeHelper = useThemesHelper()
+const layoutSizes = useLayoutSizesState()
+
+const chartAxisColor = () => {
+  if (themeState.theme.charts.axisLabelColor) {
+    return themeState.theme.charts.axisLabelColor
+  }
+  return themeHelper.isDarkTheme ? 'white' : undefined
+}
 
 onMounted(() => {
   MetricsService.loadChart(route.params.projectId, 'numUsersPerSubjectPerLevelChartBuilder')
@@ -40,7 +53,7 @@ const chartOptions = ref({
     toolbar: {
       show: true,
       offsetX: 0,
-      offsetY: -60,
+      offsetY: -85,
     },
   },
   plotOptions: {
@@ -68,6 +81,7 @@ const chartOptions = ref({
       style: {
         fontSize: '13px',
         fontWeight: 600,
+        colors: chartAxisColor(),
       },
     },
   },
@@ -79,6 +93,9 @@ const chartOptions = ref({
       formatter(val) {
         return NumberFormatter.format(val);
       },
+      style: {
+        colors: chartAxisColor()
+      },
     },
     min: 0,
     forceNiceScale: true,
@@ -87,6 +104,7 @@ const chartOptions = ref({
     opacity: 1,
   },
   tooltip: {
+    theme: themeHelper.isDarkTheme ? 'dark' : 'light',
     y: {
       formatter(val) {
         return `${val}`;
@@ -132,13 +150,13 @@ const hasData = computed(() => !loading.value && series.value && series.value?.l
 </script>
 
 <template>
-  <Card data-cy="userCountsBySubjectMetric">
+  <Card data-cy="userCountsBySubjectMetric" :style="`width: ${layoutSizes.tableMaxWidth}px;`">
     <template #header>
       <SkillsCardHeader title="Number of users for each level for each subject"></SkillsCardHeader>
     </template>
     <template #content>
-        <metrics-overlay :loading="loading" :has-data="hasData" no-data-msg="Users have not achieved any levels, yet..." class="mt-4">
-          <apexchart ref="chartRef" type="bar" height="350" :options="chartOptions" :series="series" class="mt-4"></apexchart>
+        <metrics-overlay :loading="loading" :has-data="hasData" no-data-msg="Users have not achieved any levels, yet..." class="mt-6">
+          <apexchart ref="chartRef" type="bar" width="100%" height="350" :options="chartOptions" :series="series" class="mt-6"></apexchart>
         </metrics-overlay>
     </template>
   </Card>

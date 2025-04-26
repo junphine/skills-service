@@ -25,6 +25,7 @@ import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
 import skills.controller.request.model.ActionPatchRequest
 import skills.controller.request.model.SubjectRequest
+import skills.controller.result.model.SubjectOrSkillGroupResult
 import skills.controller.result.model.SubjectResult
 import skills.services.*
 import skills.services.userActions.DashboardAction
@@ -34,7 +35,6 @@ import skills.services.userActions.UserActionsHistoryService
 import skills.storage.model.ProjDef
 import skills.storage.model.SkillCounts
 import skills.storage.model.SkillDef
-import skills.storage.model.SkillDefParent
 import skills.storage.model.SkillDefWithExtra
 import skills.storage.model.SkillRelDef
 import skills.storage.accessors.ProjDefAccessor
@@ -153,9 +153,9 @@ class SubjAdminService {
             }
             levelDefService.createDefault(projectId, null, skillDef)
 
-            attachmentService.updateAttachmentsFoundInMarkdown(subjectRequest?.description, projectId, null, subjectRequest.subjectId)
             log.debug("Created [{}]", res)
         }
+        attachmentService.updateAttachmentsAttrsBasedOnUuidsInMarkdown(res.description, res.projectId, null, res.skillId)
 
         userActionsHistoryService.saveUserAction(new UserActionInfo(
                 action: existing ? DashboardAction.Edit : DashboardAction.Create,
@@ -225,6 +225,18 @@ class SubjAdminService {
         return res?.sort({ it.displayOrder })
     }
 
+    @Transactional(readOnly = true)
+    List<SubjectOrSkillGroupResult> getSubjectsAndSkillGroups(String projectId) {
+        List<SkillDef> subjectsAndGroups = skillDefRepo.findAllByProjectIdAndTypeIn(projectId, [SkillDef.ContainerType.Subject, SkillDef.ContainerType.SkillsGroup])
+
+        return subjectsAndGroups?.collect({
+            new SubjectOrSkillGroupResult(
+                    skillId: it.skillId,
+                    name: InputSanitizer.unsanitizeName(it.name),
+                    type: it.type
+            )
+        })?.sort({ it.skillId })
+    }
 
     @Profile
     private SubjectResult convertToSubject(SkillDefWithExtra skillDef) {

@@ -51,8 +51,8 @@ const loadQuizInfo = () => {
       });
 }
 
-const navToProgressAndRanking = () => {
-  router.push({ name: 'MyProgressPage' });
+const navToQuizAttemptsPage = () => {
+  router.push({ name: 'MyQuizAttemptsPage' });
 }
 </script>
 
@@ -60,7 +60,7 @@ const navToProgressAndRanking = () => {
   <div>
     <SkillsSpinner :is-loading="loadingQuizInfo"/>
     <div v-if="!loadingQuizInfo">
-      <SubPageHeader :title="quizInfo.quizType" class="pt-4 pl-3">
+      <SubPageHeader :title="quizInfo.quizType" class="pt-6 pl-4">
       </SubPageHeader>
       <QuizRun v-if="quizId"
       :quiz-id="quizId"
@@ -68,9 +68,9 @@ const navToProgressAndRanking = () => {
       :skillId="skillId"
       :projectId="projectId"
       :multipleTakes="quizInfo.multipleTakes"
-      class="mb-5"
-      @testWasTaken="navToProgressAndRanking"
-      @cancelled="navToProgressAndRanking"/>
+      class="mb-8"
+      @testWasTaken="navToQuizAttemptsPage"
+      @cancelled="navToQuizAttemptsPage"/>
     </div>
   </div>
 </template>

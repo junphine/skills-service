@@ -57,7 +57,7 @@ const chartAxisColor = () => {
   return themeHelper.isDarkTheme ? 'white' : undefined
 }
 
-const chartOptions = {
+const chartOptions = ref({
   chart: {
     type: 'area',
     toolbar: {
@@ -107,7 +107,7 @@ const chartOptions = {
   stroke: {
     colors: lineColor()
   }
-}
+})
 
 onMounted(() => {
   loadPointsHistory()
@@ -124,16 +124,16 @@ const loadPointsHistory = () => {
         data: seriesData,
         name: 'Points'
       }]
-      chartOptions.xaxis.max = PointProgressHelper.calculateXAxisMaxTimestamp(pointHistoryRes)
-      if (chartOptions.xaxis.max) {
+      chartOptions.value.xaxis.max = PointProgressHelper.calculateXAxisMaxTimestamp(pointHistoryRes)
+      if (chartOptions.value.xaxis.max) {
         chartWasZoomed.value = true
       }
       let lastDay = -1
       let firstDay = -1
       if (seriesData && seriesData.length > 0) {
         lastDay = seriesData[seriesData.length - 1].x
-        if (chartOptions.xaxis.max) {
-          lastDay = chartOptions.xaxis.max
+        if (chartOptions.value.xaxis.max) {
+          lastDay = chartOptions.value.xaxis.max
         }
         firstDay = seriesData[0].x
       }
@@ -163,7 +163,7 @@ const loadPointsHistory = () => {
             }
           }
         })
-        chartOptions.annotations = {
+        chartOptions.value.annotations = {
           points: annotationPoints
         }
       }
@@ -250,7 +250,7 @@ const zoomed = (chartContext, { xaxis, yaxis }) => {
     </template>
     <template #content>
       <div class="text-center">
-        <div class="flex align-content-center justify-content-center">
+        <div class="flex content-center justify-center">
           <skills-spinner
             v-if="loading"
             :is-loading="loading"
@@ -264,14 +264,15 @@ const zoomed = (chartContext, { xaxis, yaxis }) => {
               <point-history-chart-placeholder v-if="!hasData" />
             </BlockUI>
             <chart-overlay-msg  style="top: 4rem;">
-              <div class="uppercase p-error"><i class="fa fa-lock"></i> Locked
+              <div class="uppercase text-red-800 dark:text-red-200"><i class="fa fa-lock"></i> Locked
               </div>
-              <small>*** <b>2 days</b> of usage will unlock this chart!
+              <small class="text-green-900 dark:text-green-100">*** <b>2 days</b> of usage will unlock this chart!
                 ***</small>
             </chart-overlay-msg>
           </div>
           <div v-if="hasData" data-cy="pointHistoryChartWithData">
-            <apexchart ref="ptChart" id="points-chart"
+            <apexchart v-if="chartOptions?.chart?.type"
+                       ref="ptChart" id="points-chart"
                        :options="chartOptions"
                        @animationEnd="animationEnded = true"
                        @zoomed="zoomed"

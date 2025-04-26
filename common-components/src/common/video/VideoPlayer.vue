@@ -14,29 +14,30 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { onBeforeUnmount, onMounted, onUnmounted, ref } from 'vue'
+import {computed, nextTick, onBeforeUnmount, onMounted, onUnmounted, ref} from 'vue'
 import videojs from 'video.js';
 import WatchedSegmentsUtil from '@/common-components/video/WatchedSegmentsUtil';
+import {useStorage} from "@vueuse/core";
+import {useSkillsAnnouncer} from "@/common-components/utilities/UseSkillsAnnouncer.js";
 
 const props = defineProps({
+  videoPlayerId: {
+    type: String,
+    required: true
+  },
   options: Object,
+  loadFromServer: {
+    type: Boolean,
+    default:  false,
+  },
+  storeAndRecoverSizeFromStorage: {
+    type: Boolean,
+    default: false
+  }
 })
-const emit = defineEmits(['player-destroyed', 'watched-progress'])
-const player = ref(null)
-const videoPlayer = ref(null)
-const videoOptions = ref({
-  autoplay: false,
-  controls: true,
-  responsive: true,
-  playbackRates: [0.5, 1, 1.5, 2],
-  sources: [
-    {
-      src: props.options.url,
-      type: props.options.videoType,
-    },
-  ],
-  captionsUrl: props.options.captionsUrl,
-})
+const announcer = useSkillsAnnouncer()
+const vidPlayerId = props.videoPlayerId
+const emit = defineEmits(['player-destroyed', 'watched-progress', 'on-resize'])
 const watchProgress = ref({
   watchSegments: [],
   currentStart: null,
@@ -46,34 +47,64 @@ const watchProgress = ref({
   percentWatched: 0,
   currentPosition: 0,
 })
+const videoPlayerSizeInStorage = props.storeAndRecoverSizeFromStorage ? useStorage(`${vidPlayerId}-playerSize`, {}) : null
 
+const playerContainer = { player: null }
+const playerWidth = ref(null);
+const playerHeight = ref(null);
+const isConfiguredVideoSize = computed(() => playerWidth.value && playerHeight.value)
+const resolution = computed(() => {
+  if (!playerWidth?.value || !playerHeight?.value) {
+    return ''
+  }
+  return `${playerWidth.value} x ${playerHeight.value}`
+})
+const isResizing = ref(false);
+
+const isPlaying = ref(false)
 onMounted(() => {
-  player.value = videojs(videoPlayer.value, videoOptions.value, () => {
-    const thePlayer = player.value;
-    thePlayer.on('durationchange', () => {
-      watchProgress.value.videoDuration = thePlayer.duration();
-      updateProgress(thePlayer.currentTime());
+  if (props.options.width && props.options.height) {
+    playerWidth.value = props.options.width;
+    playerHeight.value = props.options.height;
+  }
+  // override the default if configured
+  if (props.storeAndRecoverSizeFromStorage && videoPlayerSizeInStorage.value?.width) {
+    playerWidth.value = videoPlayerSizeInStorage.value.width;
+    playerHeight.value = videoPlayerSizeInStorage.value.height;
+  }
+  const player = videojs(vidPlayerId, {
+    playbackRates: [0.5, 1, 1.5, 2],
+    enableSmoothSeeking: true,
+    audioOnlyMode: props.options.isAudio,
+  }, () => {
+    player.on('durationchange', () => {
+      watchProgress.value.videoDuration = player.duration();
+      updateProgress(player.currentTime());
     });
-    thePlayer.on('loadedmetadata', () => {
-      watchProgress.value.videoDuration = thePlayer.duration();
+    player.on('loadedmetadata', () => {
+      watchProgress.value.videoDuration = player.duration();
       emit('watched-progress', watchProgress.value);
     });
-    thePlayer.on('timeupdate', () => {
-      updateProgress(thePlayer.currentTime());
+    player.on('timeupdate', () => {
+      updateProgress(player.currentTime());
     });
-    if (props.options.captionsUrl) {
-      thePlayer.addRemoteTextTrack({
-        src: props.options.captionsUrl,
-        kind: 'subtitles',
-        srclang: 'en',
-        label: 'English',
-      });
-    }
+    player.on('play', () => {
+      isPlaying.value = true
+    });
+    player.on('pause', () => {
+      isPlaying.value = false
+      nextTick(() => {
+        createResizeSupport()
+      })
+    });
+    playerContainer.player = player
   });
+
+  createResizeSupport()
 })
 onBeforeUnmount(() => {
-  if (player.value) {
-    player.value.dispose()
+  if (playerContainer.player) {
+    playerContainer.player.dispose()
   }
 })
 onUnmounted(() => {
@@ -83,14 +114,141 @@ const updateProgress = (currentTime) => {
   WatchedSegmentsUtil.updateProgress(watchProgress.value, currentTime)
   emit('watched-progress', watchProgress.value)
 }
+
+const getResizableElement = () => {
+  const resizableDiv = `#${vidPlayerId}Container`
+  return document.querySelector(resizableDiv)
+}
+
+const getResizableElementRect = () => {
+  const element = getResizableElement();
+  return element.getBoundingClientRect()
+}
+
+const resizePlayerSmaller = () => resizePlayer(-50)
+const resizePlayerBigger = () => resizePlayer(50)
+
+const resizePlayer = (resizeWidth) => {
+  const element = getResizableElement();
+  const clientRect = element.getBoundingClientRect()
+  element.style.width = (clientRect.width + resizeWidth) + 'px'
+  updateResizableInfo()
+  announcer.polite(`Resized the video player by ${resizeWidth} pixels`)
+}
+
+const updateResizableInfo = () => {
+  const clientRect = getResizableElementRect()
+  const width = Math.trunc(clientRect.width)
+  const height = Math.trunc(clientRect.height)
+  playerWidth.value = width;
+  playerHeight.value = height;
+  if (props.storeAndRecoverSizeFromStorage) {
+    videoPlayerSizeInStorage.value = { width, height }
+  }
+  emit('on-resize', width, height);
+}
+const createResizeSupport = () => {
+  if(props.options.isAudio) {
+    return
+  }
+  function makeResizableDiv() {
+    const handle = document.querySelectorAll( `#${vidPlayerId}ResizeHandle`)[0]
+
+    handle.addEventListener('mousedown', function (e) {
+      e.preventDefault()
+      window.addEventListener('mousemove', resize)
+      window.addEventListener('mouseup', stopResize)
+    })
+
+    function resize(e) {
+      isResizing.value = true
+      const element = getResizableElement();
+      const clientRect = element.getBoundingClientRect()
+      element.style.width = e.pageX - clientRect.left + 'px'
+      updateResizableInfo()
+    }
+
+    function stopResize() {
+      window.removeEventListener('mousemove', resize)
+      isResizing.value = false
+      if (playerWidth.value && playerHeight.value) {
+        announcer.polite(`Resized the video player to ${playerWidth.value} x ${playerHeight.value}`)
+      }
+    }
+  }
+
+  makeResizableDiv()
+}
+
+
 </script>
 
 <template>
-  <div data-cy="videoPlayer">
-    <video ref="videoPlayer" class="video-js vjs-fluid"></video>
+  <div class="flex justify-center mt-2">
+    <div :class="{ 'flex-1' : !isConfiguredVideoSize }">
+  <div :id="`${vidPlayerId}Container`" data-cy="videoPlayer"  :style="playerWidth ? `width: ${playerWidth}px;` : ''"
+       class="videoPlayerContainer p-0 border rounded border-surface-200 dark:border-surface-600">
+      <i v-if="!isPlaying && !options.isAudio"
+         class="fas fa-expand-alt fa-rotate-90 handle border border-surface-500 dark:border-surface-300 p-1 text-primary bg-primary-contrast rounded-border"
+         :id="`${vidPlayerId}ResizeHandle`"
+         data-cy="videoResizeHandle"
+         role="button"
+         aria-label="Resize video dimensions control. Press right or left to resize the video player."
+         @keyup.right="resizePlayerBigger"
+         @keyup.left="resizePlayerSmaller"
+         tabindex="0"></i>
+    <div v-if="isResizing" class="text-center flex items-center justify-center ">
+      <div class="absolute z-40 top-0 left-0 right-0 bottom-0 bg-gray-600 opacity-50 text-center flex items-center justify-center " >
+      </div>
+      <div class="absolute top-0 z-50 text-center text-primary bg-primary-contrast mt-8 border rounded-border" style="width: 100px;">
+        {{ resolution }}
+      </div>
+    </div>
+    <video :id="vidPlayerId"
+           class="video-js vjs-fluid"
+           data-setup='{}'
+           responsive
+           controls>
+      <source :src="options.url" :type="options.videoType">
+      <track v-if="props.options.captionsUrl" :src="props.options.captionsUrl" kind="captions" srclang="en" label="English">
+    </video>
+  </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.videoPlayerContainer {
+  //resize: horizontal;
+  overflow: hidden;
+  max-width: 100%;
+  min-width: 222px;
+  position: relative;
+}
+
+.handle{
+  font-size: 1.1rem;
+  right: 3px;
+  bottom: 0px;
+  position: absolute;
+  z-index: 500;
+}
+
+.handle:hover{
+  cursor: ew-resize;
+}
+
+.handle:active{
+  cursor: ew-resize;
+}
+
+.handle:focus{
+  cursor: ew-resize;
+}
+
+.handle:current{
+  cursor: ew-resize;
+}
+
 
 </style>

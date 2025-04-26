@@ -77,31 +77,31 @@ const activePointsColor = computed(() => {
   <div data-cy="subjectTile" class="h-full">
   <CardWithVericalSections class="h-full text-center" :data-cy="`subjectTile-${subject.subjectId}`">
     <template #content>
-      <div class="px-3 pt-4">
+      <div class="px-4 pt-4">
         <ribbon :color="ribbonColor" class="subject-tile-ribbon">
-          <div class="flex justify-content-center">
-            <div class="overflow-hidden text-overflow-ellipsis text-center" style="max-width:20rem">{{ subject.subject }}</div>
+          <div class="flex justify-center">
+            <div class="overflow-hidden text-ellipsis text-center max-w-[20rem]">{{ subject.subject }}</div>
           </div>
         </ribbon>
       </div>
     </template>
     <template #footer>
-      <div  class="px-3 pb-3">
-        <i :class="subject.iconClass" class="text-7xl text-400 sd-theme-subject-tile-icon" aria-hidden="true"/>
+      <div  class="px-4 pb-4 pt-2">
+        <i :class="subject.iconClass" class="text-7xl text-surface-500 dark:text-surface-300 sd-theme-subject-tile-icon" aria-hidden="true"/>
         <div class="text-xl pt-1 font-medium" data-cy="levelTitle">{{ attributes.levelDisplayName }} {{ subject.skillsLevel }}</div>
-        <div class="flex justify-content-center mt-2 subject-progress-stars-icons">
+        <div class="flex justify-center pt-2 pb-2 subject-progress-stars-icons">
           <LevelsProgress :level="subject.skillsLevel" :totalLevels="subject.totalLevels" data-cy="subjectStars"/>
         </div>
 
         <div class="flex mt-2">
           <div class="flex-1 text-left">
-            <label class="skill-label" style="min-width: 5rem;">Overall</label>
+            <div class="skill-label" style="min-width: 5rem;">Overall</div>
           </div>
           <div class="">
-            <label class="skill-label text-right" data-cy="pointsProgress">
+            <div class="skill-label text-right" data-cy="pointsProgress">
               <span :class="activePointsColor" class="font-medium sd-theme-primary-color">{{ numFormat.pretty(subject.points) }}</span> /
               {{ numFormat.pretty(subject.totalPoints) }}
-            </label>
+            </div>
           </div>
         </div>
         <div>
@@ -112,11 +112,11 @@ const activePointsColor = computed(() => {
           />
         </div>
 
-        <div class=" mt-4">
+        <div class=" mt-6">
           <div class="flex">
             <div v-if="!progress.allLevelsComplete" class="flex-1 text-left">
-              <label class="skill-label" style="min-width: 10rem;">Next {{ attributes.levelDisplayName
-                }}</label>
+              <div class="skill-label" style="min-width: 10rem;">Next {{ attributes.levelDisplayName
+                }}</div>
             </div>
             <div v-if="!progress.allLevelsComplete" data-cy="levelProgress">
                 <span :class="activePointsColor" class="font-medium sd-theme-primary-color">{{ numFormat.pretty(subject.levelPoints) }}</span> /
@@ -124,8 +124,8 @@ const activePointsColor = computed(() => {
             </div>
           </div>
           <div v-if="progress.allLevelsComplete" data-cy="allLevelsComplete">
-            <label class="skill-label text-center uppercase"><i class="fas fa-check text-green-800" /> All
-              {{ attributes.levelDisplayName.toLowerCase() }}s complete</label>
+            <div class="skill-label text-center uppercase"><i class="fas fa-check text-green-800" /> All
+              {{ attributes.levelDisplayName.toLowerCase() }}s complete</div>
           </div>
           <div class="">
             <vertical-progress-bar
@@ -133,20 +133,9 @@ const activePointsColor = computed(() => {
               :total-progress="progress.level || 0"
               :total-progress-before-today="progress.levelBeforeToday || 0"
             />
-            <!--          <progress-bar-->
-            <!--            v-if="progress.allLevelsComplete"-->
-            <!--            :val="progress.level"-->
-            <!--            :size="18"-->
-            <!--            :bar-color="completeColor"-->
-            <!--            class="progress-border"/>-->
-            <!--          <vertical-progress-bar v-else-->
-            <!--                                 :before-today-bar-color="beforeTodayColor"-->
-            <!--                                 :total-progress-bar-color="earnedTodayColor"-->
-            <!--                                 :total-progress="progress.level"-->
-            <!--                                 :total-progress-before-today="progress.levelBeforeToday"/>-->
           </div>
         </div>
-        <div class="pt-4" >
+        <div class="pt-6" >
           <router-link v-if="!attributes.isSummaryOnly"
             :to="{ name: skillsDisplayInfo.getContextSpecificRouteName('SubjectDetailsPage'), params: { subjectId: subject.subjectId } }"
             :aria-label="`Click to navigate to the ${subject.subject} subject page.`"

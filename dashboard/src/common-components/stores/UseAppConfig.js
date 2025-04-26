@@ -66,8 +66,10 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
 
   const maxBadgeBonusInMinutes = computed(() => config.value.maxBadgeBonusInMinutes)
   const minNameLength = computed(() => config.value.minNameLength)
+  const maxAdminGroupNameLength = computed(() => config.value.maxAdminGroupNameLength)
   const maxProjectNameLength = computed(() => config.value.maxProjectNameLength)
   const maxQuizNameLength = computed(() => config.value.maxQuizNameLength)
+  const maxQuizAnswerHintLength = computed(() => config.value.maxQuizAnswerHintLength)
   const nameValidationRegex = computed(() => config.value.nameValidationRegex)
   const minIdLength = computed(() => config.value.minIdLength)
   const maxIdLength = computed(() => config.value.maxIdLength)
@@ -99,6 +101,8 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const docsHost = computed(() => config.value.docsHost)
   const maxBadgesPerProject = computed(() => config.value.maxBadgesPerProject)
   const isPkiAuthenticated = computed(() => config.value.authMode === 'PKI')
+  const isSAML2Authenticated = computed(() => config.value.authMode === 'SAML2')
+  const saml2RegistrationId = computed(() => config.value.saml2RegistrationId)
   const expirationGracePeriod = computed(() => config.value.expirationGracePeriod)
   const expireUnusedProjectsOlderThan = computed(() => config.value.expireUnusedProjectsOlderThan)
   const minimumProjectPoints = computed(() => config.value.minimumProjectPoints)
@@ -147,7 +151,9 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const dbUpgradeInProgress = computed(() => isTrue(config.value.dbUpgradeInProgress))
   const exportHeaderAndFooter = computed(() => config.value.exportHeaderAndFooter)
   const limitAdminAccess = computed(() => config.value.limitAdminAccess)
-
+  const maxGraderFeedbackMessageLength = computed(() => config.value.maxGraderFeedbackMessageLength)
+  const maxTakeQuizInputTextAnswerLength = computed(() => config.value.maxTakeQuizInputTextAnswerLength)
+  const disableEncouragementsConfetti = computed(() => isTrue(config.value.disableEncouragementsConfetti))
   return {
     loadConfigState,
     refreshConfig,
@@ -157,8 +163,10 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     rankingAndProgressViewsEnabled,
     docsHost,
     minNameLength,
+    maxAdminGroupNameLength,
     maxProjectNameLength,
     maxQuizNameLength,
+    maxQuizAnswerHintLength,
     nameValidationRegex,
     minIdLength,
     maxIdLength,
@@ -187,6 +195,8 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     allowedAttachmentMimeTypes,
     maxBadgesPerProject,
     isPkiAuthenticated,
+    isSAML2Authenticated,
+    saml2RegistrationId,
     expirationGracePeriod,
     expireUnusedProjectsOlderThan,
     minimumProjectPoints,
@@ -236,5 +246,8 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     exportHeaderAndFooter,
     limitAdminAccess,
     maxHostLength,
+    maxGraderFeedbackMessageLength,
+    maxTakeQuizInputTextAnswerLength,
+    disableEncouragementsConfetti
   }
 })

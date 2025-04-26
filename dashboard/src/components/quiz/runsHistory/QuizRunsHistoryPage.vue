@@ -19,7 +19,7 @@ import { onMounted, ref } from 'vue'
 import { useSkillsAnnouncer } from '@/common-components/utilities/UseSkillsAnnouncer.js'
 import { useUserTagsUtils } from '@/components/utils/UseUserTagsUtils.js'
 import { useQuizSummaryState } from '@/stores/UseQuizSummaryState.js'
-import { FilterMatchMode } from 'primevue/api'
+import { FilterMatchMode } from '@primevue/core/api'
 import { useRoute } from 'vue-router'
 import { useUserInfo } from '@/components/utils/UseUserInfo.js'
 import { useTimeUtils } from '@/common-components/utilities/UseTimeUtils.js'
@@ -39,6 +39,7 @@ import InputText from 'primevue/inputtext'
 import QuizRunStatus from '@/components/quiz/runsHistory/QuizRunStatus.vue'
 import RemovalValidation from '@/components/utils/modal/RemovalValidation.vue'
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import {useLayoutSizesState} from "@/stores/UseLayoutSizesState.js";
 
 const route = useRoute()
 const userInfo = useUserInfo()
@@ -50,6 +51,7 @@ const announcer = useSkillsAnnouncer()
 const responsive = useResponsiveBreakpoints()
 const colors = useColors()
 const numberFormat = useNumberFormat()
+const layoutSizes = useLayoutSizesState()
 
 const quizType = ref('')
 const runsHistory = ref([])
@@ -183,14 +185,16 @@ const deleteRun = () => {
 </script>
 
 <template>
-  <div class="flex flex-column flex-wrap">
+  <div class="flex flex-col flex-wrap">
     <SubPageHeader title="Runs"
                    aria-label="Runs">
     </SubPageHeader>
-    <QuizAttemptsTimeChart class="flex-1 w-full my-3" />
-    <QuizUserTagsChart v-if="userTagsUtils.showUserTagColumn()" class="flex-1 w-full mb-3" />
+    <div :style="`width: ${layoutSizes.tableMaxWidth}px;`">
+      <QuizAttemptsTimeChart class="flex-1 w-full my-4"/>
+      <QuizUserTagsChart v-if="userTagsUtils.showUserTagColumn()" class="flex-1 w-full mb-4" :style="`width: ${layoutSizes.tableMaxWidth}px;`"/>
+    </div>
 
-    <Card :pt="{ body: { class: 'p-0' }, content: { class: 'p-0' } }">
+    <Card :pt="{ body: { class: '!p-0' } }">
       <template #content>
         <SkillsDataTable
           tableStoredStateId="quizRunHistory"
@@ -218,7 +222,7 @@ const deleteRun = () => {
                 <InputGroupAddon>
                   <i class="fas fa-search" aria-hidden="true" />
                 </InputGroupAddon>
-                <InputText class="flex flex-grow-1"
+                <InputText class="flex grow"
                            v-model="filters['global'].value"
                            v-on:keydown.enter="onFilter"
                            data-cy="userNameFilter"
@@ -226,7 +230,7 @@ const deleteRun = () => {
                            aria-label="User Name Filter" />
               </InputGroup>
             </div>
-            <div class="flex flex-wrap pt-3">
+            <div class="flex flex-wrap pt-4">
               <SkillsButton label="Filter"
                             icon="fa fa-filter"
                             size="small"
@@ -251,13 +255,13 @@ const deleteRun = () => {
           </template>
 
           <template #empty>
-            <div class="flex justify-content-center flex-wrap h-12rem">
-              <i class="flex align-items-center justify-content-center mr-1 fas fa-exclamation-circle fa-3x"
+            <div class="flex justify-center flex-wrap h-48">
+              <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle fa-3x"
                  aria-hidden="true"></i>
               <span class="w-full">
-                <span class="flex align-items-center justify-content-center">There are no records to show</span>
-                <span v-if="filtering" class="flex align-items-center justify-content-center">  Click
-                    <SkillsButton class="flex flex align-items-center justify-content-center px-1"
+                <span class="flex items-center justify-center">There are no records to show</span>
+                <span v-if="filtering" class="flex items-center justify-center">  Click
+                    <SkillsButton class="flex flex items-center justify-center px-1"
                                   label="Reset"
                                   link
                                   size="small"
@@ -277,11 +281,11 @@ const deleteRun = () => {
             <template #body="slotProps">
               <div v-if="slotProps.field === 'userIdForDisplay'" class="flex flex-row flex-wrap"
                    :data-cy="`row${slotProps.index}-userCell`">
-                <div class="flex align-items-start justify-content-start">
+                <div class="flex items-start justify-start">
                   <highlighted-value :value="userInfo.getUserDisplay(slotProps.data, true)"
                                      :filter="filters.global.value" />
                 </div>
-                <div class="flex flex-grow-1 align-items-start justify-content-end">
+                <div class="flex grow items-start justify-end">
                   <router-link :data-cy="`row${slotProps.index}-viewRun`" tabindex="-1"
                                :to="{ name: 'QuizSingleRunPage', params: { runId: slotProps.data.attemptId } }">
                     <SkillsButton icon="fas fa-list-ul"

@@ -65,18 +65,38 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
 
     List<UserAchievement> findAllByUserIdAndSkillId(String userId, @Nullable String skillId)
 
+    @Query(value='''
+    SELECT COUNT(distinct ua.userId)
+    FROM UserAchievement ua
+    WHERE ua.projectId =?1 AND
+          ua.skillId = ?2 AND
+          ua.level = ?3 AND
+          not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = ?1)
+    ''')
     Integer countByProjectIdAndSkillIdAndLevel(String projectId, @Nullable String skillId, int level)
 
     @Query(value='''
     SELECT COUNT(distinct ua.userId)
     FROM UserAchievement ua
-    INNER JOIN UserTag AS ut ON ua.userId = ut.userId
+    WHERE ua.projectId =?1 AND
+          ua.skillId is null AND
+          ua.level = ?2 AND
+          not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = ?1)
+    ''')
+    Integer countByProjectIdAndLevel(String projectId, int level)
+
+    @Query(value='''
+    SELECT COUNT(distinct ua.userId)
+    FROM UserAchievement ua
+        INNER JOIN UserTag AS ut ON ua.userId = ut.userId
     WHERE ua.projectId =?1 AND
           ua.level = ?2 AND
           ut.key = ?3 AND
-          ut.value = ?4
+          ut.value = ?4 AND
+          ua.skillId is null AND
+          not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = ?1)
     ''')
-    Integer countByProjectIdAndSkillIdAndLevelAndUserTag(String projectId, int level, String userTagKey, String userTagValue)
+    Integer countByProjectIdAndLevelAndUserTag(String projectId, int level, String userTagKey, String userTagValue)
 
     void deleteAllByProjectIdAndUserId(String projectId, String userId)
     void deleteByProjectIdAndSkillId(String projectId, String skillId)
@@ -175,6 +195,46 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
         skillDef.type=?3''')
     int countAchievedForUser(String userId, String projectId, SkillDef.ContainerType containerType)
 
+    static interface AchievementInfo {
+        String getName()
+        String getId()
+        Date getAchievedOn()
+        SkillDef.ContainerType getType()
+    }
+
+    @Query('''select skillDef.name as name, 
+        skillDef.skillId as id, 
+        ua.achievedOn as achievedOn,
+        skillDef.type as type
+      from SkillDef skillDef, UserAchievement ua 
+      where 
+        ua.level is null and 
+        ua.userId=?1 and
+        ua.achievedOn > ?4 and 
+        skillDef.skillId = ua.skillId and 
+        skillDef.projectId = ua.projectId and 
+        skillDef.projectId=?2 and 
+        skillDef.type in ?3''')
+    List<AchievementInfo> getUserAchievementsAfterDate(String userId, String projectId, List<SkillDef.ContainerType> containerTypes, Date mustBeAfterThisDate)
+
+    @Query('''select badgeDef.name as name, 
+        badgeDef.skillId as id, 
+        ua.achievedOn as achievedOn,
+        badgeDef.type as type
+      from SkillDef badgeDef, SkillDef skillDef, SkillRelDef rel, UserAchievement ua
+      where 
+        ua.level is null and 
+        ua.userId=?1 and
+        ua.achievedOn > ?3 and 
+        badgeDef = rel.parent and
+        skillDef = rel.child and 
+        rel.type = 'BadgeRequirement' and
+        ua.projectId is null and
+        ua.skillRefId = badgeDef.id and 
+        skillDef.projectId=?2 and 
+        badgeDef.type = 'GlobalBadge' ''')
+    List<AchievementInfo> getUserGlobalBadgeAchievementsAfterDate(String userId, String projectId, Date mustBeAfterThisDate)
+
     @Query('''select count(ua)
       from SkillDef skillDef, UserAchievement ua 
       where 
@@ -236,6 +296,15 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
       sdChild.projectId = ua.projectId and sdChild.skillId = ua.skillId and ua.userId=?1 and 
       sdParent.projectId=?2 and sdParent.skillId=?3 and srd.type=?4''')
     int countAchievedChildren(String userId, @Nullable String projectId, String skillId, SkillRelDef.RelationshipType type)
+
+    @Query('''select count(ua) 
+    from SkillDef sdParent, SkillRelDef srd, SkillDef sdChild, UserAchievement ua
+      where 
+      srd.parent.id = sdParent.id and  srd.child.id=sdChild.id and
+      sdChild.projectId = ua.projectId and sdChild.skillId = ua.skillId and ua.userId=?1 and 
+      sdChild.type = 'Skill' and sdChild.enabled = 'true' and
+      sdParent.projectId=?2 and sdParent.skillId=?3''')
+    int countAchievedChildSkills(String userId, @Nullable String projectId, String skillId)
 
     @Query('''select sum(ua.pointsWhenAchieved) 
     from SkillDef sdParent, SkillRelDef srd, SkillDef sdChild, UserAchievement ua
@@ -650,7 +719,8 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
 
     @Query('''select ua.achievedOn as achievedOn, ua.userId as userId, ua.level as level, ua.skillId as skillId,
             sd.name as name, sd.type as type, uAttrs.userIdForDisplay as userIdForDisplay, uAttrs.firstName as firstName, uAttrs.lastName as lastName, ut.value as userTag
-            from UserAttrs uAttrs, UserAchievement ua 
+            from UserAttrs uAttrs
+            JOIN  UserAchievement ua ON uAttrs.userId = ua.userId 
                 left join SkillDef sd on ua.skillRefId = sd.id 
             LEFT JOIN (SELECT ut.userId userId, max(ut.value) AS value FROM UserTag ut WHERE ut.key = :usersTableAdditionalUserTagKey group by ut.userId) ut ON ut.userId=ua.userId
             where 
@@ -663,7 +733,8 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
                 (lower(sd.name) like lower(CONCAT('%', :skillNameFilter, '%')) OR (:skillNameFilter = 'ALL')) and
                 (ua.level >= :level OR (:level = -1)) and
                 (sd.type in (:types) OR (:disableTypes = 'true') OR (ua.skillId is null AND (:includeOverallType = 'true'))) and 
-                (ua.skillId is not null OR (:includeOverallType = 'true'))
+                (ua.skillId is not null OR (:includeOverallType = 'true')) and
+                not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId)
                 ''')
     Stream<AchievementItem> findAllForAchievementNavigator(
             @Param("projectId") String projectId,
@@ -678,11 +749,12 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
             @Param("usersTableAdditionalUserTagKey") String usersTableAdditionalUserTagKey,
             @Param("pageable") Pageable pageable)
 
-    @Query('''select count(uAttrs) 
-            from UserAttrs uAttrs, 
-                UserAchievement ua left join SkillDef sd on ua.skillRefId = sd.id 
+    @Query('''
+            SELECT COUNT(uAttrs)
+            FROM  UserAttrs uAttrs
+            JOIN  UserAchievement ua ON uAttrs.userId = ua.userId
+            LEFT JOIN SkillDef sd ON ua.skillRefId = sd.id
             where 
-                ua.userId = uAttrs.userId and
                 ua.projectId = :projectId and
                 ua.achievedOn >= :fromDate and
                 ua.achievedOn <= :toDate and 
@@ -691,7 +763,8 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
                 (lower(sd.name) like lower(CONCAT('%', :skillNameFilter, '%')) OR (:skillNameFilter = 'ALL')) and
                 (ua.level >= :level OR (:level = -1)) and
                 (sd.type in (:types) OR (:disableTypes = 'true') OR (ua.skillId is null AND (:includeOverallType = 'true'))) and 
-                (ua.skillId is not null OR (:includeOverallType = 'true'))
+                (ua.skillId is not null OR (:includeOverallType = 'true')) and
+                 not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId)
                 ''')
     Integer countForAchievementNavigator(
             @Param("projectId") String projectId,
@@ -718,14 +791,12 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
         Long getNumberUsers()
     }
 
-    @Query('''select ua.skillId as skillId, ua.level as level, count(ua.id) as numberUsers 
-            from UserAchievement as ua, SkillDef as sd 
-            where 
-                ua.skillId = sd.skillId and
-                ua.projectId = :projectId and
-                sd.projectId = :projectId and
-                sd.type = :containerType
-            group by ua.skillId, ua.level    
+    @Query('''SELECT ua.skillId AS skillId, ua.level AS level, COUNT(ua.id) AS numberUsers
+            FROM UserAchievement AS ua
+            INNER JOIN SkillDef AS sd ON ua.skillId = sd.skillId AND ua.projectId = sd.projectId
+            WHERE ua.projectId = :projectId AND sd.type = :containerType AND 
+            not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId)
+            GROUP BY ua.skillId, ua.level   
            ''')
     List<SkillAndLevelUserCount> countNumUsersPerContainerTypeAndLevel(
             @Param("projectId") String projectId,
@@ -739,7 +810,8 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
                 ua.skillId = :subjectId and
                 ua.projectId = :projectId and
                 ut.key = :userTagKey and
-                ua.level is not null
+                ua.level is not null and
+                not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId)
             group by ua.skillId, ua.level, ut.value
            ''')
     List<LevelAndTagCount> countNumUsersPerSubjectTagAndLevel(
@@ -748,9 +820,12 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
             @Param("userTagKey") String userTagKey
     )
 
-    @Query('''select count(distinct ua.userId) from UserAchievement ua
-              where ua.projectId = :projectId and
-              ua.skillId = :skillId
+    @Query('''
+        select count(distinct ua.userId) 
+        from UserAchievement ua
+        where ua.projectId = :projectId and
+              ua.skillId = :skillId and
+              not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId)
     ''')
     Long countDistinctUsersAchievingSkill(@Param("projectId") String projectId, @Param("skillId") String skillId)
 
@@ -768,7 +843,8 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
             from UserAchievement as ua 
             where 
                 ua.skillId = :skillId and
-                ua.projectId = :projectId
+                ua.projectId = :projectId and
+                not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId)
             group by ua.achievedOn, ua.level     
            ''')
     List<SkillLevelDayUserCount> countNumUsersOverTimeAndLevelByProjectIdAndSkillId(
@@ -780,7 +856,8 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
             from UserAchievement as ua 
             where 
                 ua.skillId = :skillId and
-                ua.projectId = :projectId
+                ua.projectId = :projectId and
+                not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId)
             group by ua.achievedOn     
            ''')
     List<DayCountItem> countNumUsersOverTimeByProjectIdAndSkillId(
@@ -816,7 +893,11 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
                       skill.skill_id not like '%STREUSESKILLST%'
                 ) sd
             left join (
-                select skill_id, count(distinct user_id) as usersAchieved, max(achieved_on) as lastAchieved from user_achievement where project_id = :projectId group by skill_id
+                select ua.skill_id, count(distinct ua.user_id) as usersAchieved, max(ua.achieved_on) as lastAchieved 
+                from user_achievement ua
+                where ua.project_id = :projectId 
+                AND not exists (select 1 from archived_users au where au.user_id = ua.user_id and au.project_id = :projectId) 
+                group by ua.skill_id
             ) achievements
                 on achievements.skill_id = sd.skillId
             left join (
@@ -827,6 +908,7 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
                   and skill.type = 'Skill'
                   and skill.enabled = 'true'
                   and ups.skill_ref_id = case when skill.copied_from_skill_ref is not null then skill.copied_from_skill_ref else skill.id end
+                  and not exists (select 1 from archived_users au where au.user_id = ups.user_id and au.project_id = :projectId)
                 group by skill.skill_id
             ) performedSkills
                 on sd.skillId = performedSkills.skill_id order by sd.skillId
@@ -849,7 +931,9 @@ where ua.projectId = :projectId and ua.skillId = :skillId
 select count(distinct ua) as userCount, ut.value as tagValue
 from UserAchievement ua
 join UserTag ut on ut.userId = ua.userId
-where ua.projectId = :projectId and ua.skillId = :skillId and ut.key = :userTagKey group by ut.value
+where ua.projectId = :projectId and ua.skillId = :skillId and ut.key = :userTagKey
+and not exists (select 1 from ArchivedUser au where au.userId = ua.userId and au.projectId = :projectId) 
+group by ut.value
 ''')
     List<UserTagCount> countNumAchievedByUserTag(@Param("projectId") String projectId, @Param("skillId") String skillId, @Param("userTagKey") String userTagKey)
 
@@ -894,6 +978,17 @@ select count(distinct ua) from UserAchievement ua where ua.projectId = :projectI
                  skill_definition toDef
             WHERE toDef.copied_from_skill_ref = ua.skill_ref_id
               and ua.skill_ref_id in (:fromSkillRefIds)
+              and (not exists(
+                    select 1
+                    from settings s
+                    where s.project_id = toDef.project_id
+                      and s.setting = 'user_community' and s.value = 'true'
+                   ) or (exists(
+                    select 1
+                    from user_tags ut
+                    where ut.user_id = ua.user_id
+                      and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                   )))     
               and not exists(
                     select 1
                     from user_achievement innerTable
@@ -902,7 +997,7 @@ select count(distinct ua) from UserAchievement ua where ua.projectId = :projectI
                       and toDef.skill_id = innerTable.skill_id
                 )
             ''', nativeQuery = true)
-    void copySkillAchievementsToTheImportedProjects(@Param('fromSkillRefIds') List<Integer> fromSkillRefIds)
+    void copySkillAchievementsToTheImportedProjects(@Param('fromSkillRefIds') List<Integer> fromSkillRefIds, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''INSERT INTO user_achievement(user_id, project_id, skill_id, skill_ref_id, points_when_achieved, achieved_on)

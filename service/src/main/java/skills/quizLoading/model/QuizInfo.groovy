@@ -21,8 +21,6 @@ class QuizInfo {
     String description
     String quizType
 
-    List<QuizQuestionInfo> questions
-
     Integer minNumQuestionsToPass
 
     Boolean isAttemptAlreadyInProgress
@@ -35,4 +33,12 @@ class QuizInfo {
     Boolean multipleTakes
     Boolean canStartQuiz
     String errorMessage
+
+    Boolean needsGrading
+    Date needsGradingAttemptDate
+
+    Boolean onlyIncorrectQuestions
+    Integer numIncorrectQuestions
+
+    Boolean showDescriptionOnQuizPage
 }

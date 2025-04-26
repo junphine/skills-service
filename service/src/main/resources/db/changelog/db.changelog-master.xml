@@ -2669,5 +2669,162 @@
         </insert>
     </changeSet>
 
+    <changeSet id="47" author="skills team">
+        <createTable tableName="user_quiz_answer_graded">
+            <column name="id" type="int" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_quiz_answer_attempt_ref_id" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="grader_user_attrs_ref_id" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="feedback" type="text" />
+
+            <column name="created" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="index_user_quiz_answer_graded_user_quiz_answer_attempt_ref_id"
+                     tableName="user_quiz_answer_graded" unique="true">
+            <column name="user_quiz_answer_attempt_ref_id" type="int"/>
+        </createIndex>
+        <addForeignKeyConstraint baseColumnNames="user_quiz_answer_attempt_ref_id"
+                                 baseTableName="user_quiz_answer_graded"
+                                 constraintName="fk_user_quiz_answer_graded_user_quiz_answer_attempt_ref_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="id"
+                                 referencedTableName="user_quiz_answer_attempt"/>
+
+        <createIndex indexName="index_user_quiz_answer_graded_grader_user_attrs_ref_id"
+                     tableName="user_quiz_answer_graded">
+            <column name="grader_user_attrs_ref_id" type="int"/>
+        </createIndex>
+        <addForeignKeyConstraint baseColumnNames="grader_user_attrs_ref_id"
+                                 baseTableName="user_quiz_answer_graded"
+                                 constraintName="fk_user_quiz_answer_graded_grader_user_attrs_ref_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="id"
+                                 referencedTableName="user_attrs"/>
+
+    </changeSet>
+
+    <changeSet id="48" author="skills team">
+        <createTable tableName="admin_group_definition">
+            <column name="id" type="int" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="admin_group_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="name" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="protected_community_enabled" type="varchar(255)" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="created" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <insert tableName="skills_db_locks">
+            <column name="lock" type="varchar(255)" value="adminGroupDefs_lock"/>
+        </insert>
+
+        <createIndex indexName="index_admin_group_definition_admin_group_id"
+                     tableName="admin_group_definition" unique="true">
+            <column name="admin_group_id" type="varchar(255)"/>
+        </createIndex>
+        <createIndex indexName="index_admin_group_definition_name"
+                     tableName="admin_group_definition" unique="true">
+            <column name="name" type="varchar(255)"/>
+        </createIndex>
+
+        <addColumn tableName="user_roles">
+            <!-- optional -->
+            <column name="admin_group_id" type="varchar(255)"/>
+        </addColumn>
+        <addForeignKeyConstraint baseColumnNames="admin_group_id"
+                                 baseTableName="user_roles"
+                                 constraintName="fk_user_roles_admin_group_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="admin_group_id"
+                                 referencedTableName="admin_group_definition"/>
+
+        <dropIndex tableName="user_roles" indexName="index_user_roles_user_id_role_name_project_id" />
+
+        <createIndex indexName="index_user_roles_user_id_role_name_project_id_quiz_id_admin_group_id"
+                     tableName="user_roles" unique="true">
+            <column name="user_id" type="varchar(255)"/>
+            <column name="role_name" type="varchar(255)"/>
+            <column name="project_id" type="varchar(255)"/>
+            <column name="quiz_id" type="varchar(255)"/>
+            <column name="admin_group_id" type="varchar(255)"/>
+        </createIndex>
+
+    </changeSet>
+
+    <changeSet id="49" author="skills team">
+        <createTable tableName="archived_users">
+            <column name="id" type="int" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="project_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="index_archived_users_project_id"
+                     tableName="archived_users">
+            <column name="project_id" type="varchar(255)"/>
+        </createIndex>
+        <createIndex indexName="index_archived_users_project_id_user_id"
+                     tableName="archived_users" unique="true">
+            <column name="user_id" type="varchar(255)"/>
+            <column name="project_id" type="varchar(255)"/>
+        </createIndex>
+        <addForeignKeyConstraint baseColumnNames="project_id"
+                                 baseTableName="archived_users"
+                                 constraintName="fk_archived_users_project_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="project_id"
+                                 referencedTableName="project_definition"/>
+
+        <addForeignKeyConstraint baseColumnNames="user_id"
+                                 baseTableName="archived_users"
+                                 constraintName="fk_archived_users_user_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="user_id"
+                                 referencedTableName="user_attrs"/>
+    </changeSet>
+
+    <changeSet id="50" author="skills team">
+        <addColumn tableName="quiz_question_definition">
+            <column name="answer_hint" type="text"/>
+        </addColumn>
+    </changeSet>
 
 </databaseChangeLog>

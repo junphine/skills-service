@@ -31,7 +31,7 @@ const props = defineProps({
   showDragAndDropControls: Boolean
 })
 
-const emit = defineEmits(['editQuestion', 'deleteQuestion', 'sortChangeRequested'])
+const emit = defineEmits(['editQuestion', 'deleteQuestion', 'sortChangeRequested', 'copyQuestion'])
 
 const showDeleteDialog = ref(false)
 
@@ -53,6 +53,9 @@ const numberOfStars = computed(() => {
 const editQuestion = () => {
   emit('editQuestion', props.question)
 }
+const copyQuestion = () => {
+  emit('copyQuestion', props.question)
+}
 const deleteQuestion = () => {
   emit('deleteQuestion', props.question)
 }
@@ -63,12 +66,12 @@ const moveQuestion = (changeIndexBy) => {
 </script>
 
 <template>
-  <div class="border-1 border-300" data-cy="questionDisplayCard">
-    <div class="flex flex-column md:flex-row flex-wrap gap-0 mb-3" :data-cy="`questionDisplayCard-${questionNum}`">
-      <div class="flex flex-initial align-items-start">
+  <div class="border border-surface-300 dark:border-surface-500" data-cy="questionDisplayCard">
+    <div class="flex flex-col md:flex-row flex-wrap gap-0 mb-4" :data-cy="`questionDisplayCard-${questionNum}`">
+      <div class="flex flex-initial items-start">
         <div v-if="isDragAndDropControlsVisible"
              :id="`questionSortControl-${question.id}`"
-             class="sort-control mr-3 border-right-1 border-bottom-1 surface-border text-color-secondary border-round"
+             class="sort-control mr-4 border-r border-b border-surface text-muted-color rounded-border"
              @click.prevent.self
              tabindex="0"
              aria-label="Questions Sort Control. Press up or down to change the order of this question."
@@ -79,7 +82,7 @@ const moveQuestion = (changeIndexBy) => {
           <i class="fas fa-arrows-alt"/>
         </div>
       </div>
-      <div :class="{ 'ml-3' : !isDragAndDropControlsVisible }" class="flex-column flex-1 align-items-start px-2 py-1">
+      <div :class="{ 'ml-3' : !isDragAndDropControlsVisible }" class="flex-col flex-1 items-start px-2 py-1">
         <div class="flex flex-1">
           <markdown-text
               :text="question.question"
@@ -88,7 +91,7 @@ const moveQuestion = (changeIndexBy) => {
         </div>
         <div v-if="!isTextInputType && !isRatingType">
           <div v-for="(a, index) in question.answers" :key="a.id" class="flex flex-row flex-wrap mt-1 pl-1">
-            <div class="flex align-items-center justify-content-center pb-1" :data-cy="`answerDisplay-${index}`">
+            <div class="flex items-center justify-center pb-1" :data-cy="`answerDisplay-${index}`">
               <SelectCorrectAnswer v-model="a.isCorrect"
                                    :name="`answers[${index}].isCorrect`"
                                    :answer-number="index+1"
@@ -96,13 +99,13 @@ const moveQuestion = (changeIndexBy) => {
                                    :is-radio-icon="isSingleChoiceType"
                                    font-size="1.3rem"/>
             </div>
-            <div class="flex align-items-center justify-content-center ml-2 pb-1">
+            <div class="flex items-center justify-center ml-2 pb-1">
               <div class="answerText" :data-cy="`answer-${index}_displayText`">{{ a.answer }}</div>
             </div>
           </div>
         </div>
         <div v-if="isRatingType" class="flex">
-          <Rating class="flex-initial bg-gray-100 border-round py-3 px-4" :stars="numberOfStars" disabled :cancel="false"/>
+          <Rating class="flex-initial bg-surface-100 dark:bg-surface-700 rounded-border py-4 px-6" :stars="numberOfStars" disabled :cancel="false"/>
         </div>
         <div v-if="isTextInputType" class="flex">
           <label :for="`q${questionNum}textInputPlaceholder`" hidden>Text Input Answer Placeholder:</label>
@@ -116,9 +119,14 @@ const moveQuestion = (changeIndexBy) => {
               data-cy="textAreaPlaceHolder"
               rows="2"/>
         </div>
+        <div class="flex" v-if="question.answerHint">
+          <Message size="small" severity="warn" icon="fas fa-lightbulb" :closable="false" class="mt-2" data-cy="answerHintMsg">
+            <pre data-cy="answerHintMsgContent">{{ question.answerHint }}</pre>
+          </Message>
+        </div>
       </div>
-      <div v-if="!quizConfig.isReadOnlyQuiz" class="flex flex-none justify-content-center">
-        <ButtonGroup class="ml-1 mt-2 mr-3">
+      <div v-if="!quizConfig.isReadOnlyQuiz" class="flex flex-none justify-center items-start">
+        <ButtonGroup class="ml-1 mt-2 mr-4">
           <SkillsButton @click="editQuestion"
                         icon="fas fa-edit"
                         label="Edit"
@@ -130,6 +138,18 @@ const moveQuestion = (changeIndexBy) => {
                         :id="`editQuestion_${question.id}`"
                         :track-for-focus="true"
                         title="Edit Question">
+          </SkillsButton>
+          <SkillsButton @click="copyQuestion"
+                        icon="fas fa-copy"
+                        label="Copy"
+                        outlined
+                        size="small"
+                        :data-cy="`copyQuestionButton_${questionNum}`"
+                        :aria-label="`Copy Question Number ${questionNum}`"
+                        :ref="`copyQuestion_${question.id}`"
+                        :id="`copyQuestion_${question.id}`"
+                        :track-for-focus="true"
+                        title="Copy Question">
           </SkillsButton>
           <SkillsButton @click="showDeleteDialog = true"
                         icon="text-warning fas fa-trash"

@@ -19,6 +19,7 @@ import callStack.profiler.Profile
 import groovy.util.logging.Slf4j
 import org.apache.commons.lang3.StringUtils
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
@@ -37,10 +38,10 @@ import skills.services.*
 import skills.services.inception.InceptionProjectService
 import skills.services.settings.Settings
 import skills.services.settings.SettingsService
+import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionInfo
 import skills.services.userActions.UserActionsHistoryService
-import skills.services.userActions.DashboardAction
 import skills.storage.accessors.ProjDefAccessor
 import skills.storage.model.*
 import skills.storage.model.auth.RoleName
@@ -55,8 +56,8 @@ import skills.utils.Props
 class ProjAdminService {
 
     static final String rootUserPinnedProjectGroup = "pinned_project"
-    private static final String myProjectGroup = "my_projects"
-    private static final String myProjectSetting = "my_project"
+    static final String myProjectGroup = "my_projects"
+    static final String myProjectSetting = "my_project"
     public static final String PINNED = "pinned"
 
     @Autowired
@@ -134,6 +135,9 @@ class ProjAdminService {
     @Autowired
     UserActionsHistoryService userActionsHistoryService
 
+    @Autowired
+    ArchivedUsersRepo archivedUserRepo
+
     @Transactional()
     void saveProject(String originalProjectId, ProjectRequest projectRequest, String userIdParam = null) {
         assert projectRequest?.projectId
@@ -186,10 +190,10 @@ class ProjAdminService {
             accessSettingsStorageService.addUserRole(userId, projectRequest.projectId, RoleName.ROLE_PROJECT_ADMIN)
             log.debug("Added user role [{}] to [{}]", RoleName.ROLE_PROJECT_ADMIN, userId)
 
-            attachmentService.updateAttachmentsFoundInMarkdown(projectRequest.description, projectRequest.projectId, null, null)
-
             savedProjDef = projDef
         }
+        attachmentService.updateAttachmentsAttrsBasedOnUuidsInMarkdown(projectRequest.description, projectDefinition.projectId, null, null)
+
         userActionsHistoryService.saveUserAction(new UserActionInfo(
                 action: isEdit ? DashboardAction.Edit : DashboardAction.Create,
                 item: DashboardItem.Project,
@@ -219,7 +223,7 @@ class ProjAdminService {
                     throw new SkillException("User [${userId}] is not allowed to set [enableProtectedUserCommunity] to true", projId, null, ErrorCode.AccessDenied)
                 }
 
-                EnableProjValidationRes enableProjValidationRes = userCommunityService.validateProjectForCommunity(projId)
+                EnableUserCommunityValidationRes enableProjValidationRes = userCommunityService.validateProjectForCommunity(projId)
                 if (!enableProjValidationRes.isAllowed) {
                     String reasons = enableProjValidationRes.unmetRequirements.join("\n")
                     throw new SkillException("Not Allowed to set [enableProtectedUserCommunity] to true. Reasons are:\n${reasons}", projId, null, ErrorCode.AccessDenied)
@@ -239,6 +243,11 @@ class ProjAdminService {
 
         if (globalBadgesService.isProjectUsedInGlobalBadge(projectId)) {
             throw new SkillException("Project with id [${projectId}] cannot be deleted as it is currently referenced by one or more global badges")
+        }
+
+        SettingsResult isDeleteProtected = settingsService.getProjectSetting(projectId, "project-deletion-protection")
+        if (isDeleteProtected?.value == "true") {
+            throw new SkillException("Project [${projectId}] cannot be deleted as it has deletion protection enabled")
         }
 
         List<SkillDef> childSkills = skillDefRepo.findAllByProjectIdAndType(projectId, SkillDef.ContainerType.Skill)
@@ -373,6 +382,7 @@ class ProjAdminService {
     private  List<ProjectResult> loadProjectsForRoot(Map<String, Integer> projectIdSortOrder, String userId, Boolean isNotCommunityMember) {
         List<SettingsResult> pinnedProjectSettings = settingsService.getUserProjectSettingsForGroup(userId, rootUserPinnedProjectGroup)
         List<String> pinnedProjects = pinnedProjectSettings.collect { it.projectId }
+        List<SettingsResult> projectSettings = settingsService.getProjectSettingForAllProjectsInList("project-deletion-protection", pinnedProjects)
 
         List<ProjSummaryResult> projects = projDefRepo.getAllSummariesByProjectIdIn(pinnedProjects)
         if (isNotCommunityMember) {
@@ -383,6 +393,8 @@ class ProjAdminService {
         List<ProjectResult> finalRes = projects?.unique({ it.projectId })?.collect({
             ProjectResult res = convert(it, projectIdSortOrder, pinnedProjectIds)
             res.userRole = RoleName.ROLE_SUPER_DUPER_USER
+            SettingsResult isProtected = projectSettings.find{ setting -> setting.projectId == it.projectId}
+            res.isDeleteProtected = isProtected?.value == "true"
             if (isNotCommunityMember) {
                 res.userCommunity = null
             }
@@ -452,8 +464,12 @@ class ProjAdminService {
             if (isNotCommunityMember) {
                 projects = projects.findAll { !it.protectedCommunityEnabled}
             }
+            List<String> projectIds = projects.collect{ it.projectId }
+            List<SettingsResult> projectSettings = settingsService.getProjectSettingForAllProjectsInList("project-deletion-protection", projectIds)
             finalRes = projects?.unique({ it.projectId })?.collect({
                 ProjectResult res = convert(it, projectIdSortOrder)
+                SettingsResult isProtected = projectSettings.find{ setting -> setting.projectId == it.projectId }
+                res.isDeleteProtected = isProtected?.value == "true"
                 return res
             })
         }
@@ -639,7 +655,7 @@ class ProjAdminService {
                 numSkillsReused: definition.getNumSkillsReused() ?: 0,
                 totalPointsReused: definition.getTotalPointsReused() ?: 0,
                 userRole: definition.getUserRole(),
-                userCommunity: userCommunityService.getCommunityNameBasedProjConfStatus(definition.getProtectedCommunityEnabled())
+                userCommunity: userCommunityService.getCommunityNameBasedOnConfAndItemStatus(definition.getProtectedCommunityEnabled())
         )
         res.numBadges = definition.numBadges
         res.numSkills = definition.numSkills
@@ -670,7 +686,7 @@ class ProjAdminService {
     }
 
     @Transactional(readOnly = true)
-    EnableProjValidationRes validateProjectForEnablingCommunity(String projectId) {
+    EnableUserCommunityValidationRes validateProjectForEnablingCommunity(String projectId) {
         return userCommunityService.validateProjectForCommunity(projectId)
     }
 
@@ -678,4 +694,56 @@ class ProjAdminService {
     boolean isUserCommunityRestrictedProject(String projectId) {
         return userCommunityService.isUserCommunityOnlyProject(projectId)
     }
+
+    @Transactional
+    void archiveUsers(String projectId, ArchiveUsersRequest archiveUsersRequest) {
+        archivedUserRepo.saveAll(archiveUsersRequest.userIds.collect { new ArchivedUser(projectId: projectId, userId: it) })
+        userActionsHistoryService.saveUserActions(archiveUsersRequest.userIds.collect { userId ->
+            return new UserActionInfo(
+                action: DashboardAction.ArchiveUser,
+                item: DashboardItem.Project,
+                itemId: userId,
+                projectId: projectId,
+        )})
+    }
+
+    @Transactional
+    void restoreArchiveUser(String projectId, String userId) {
+        ArchivedUser archivedUser = archivedUserRepo.findByProjectIdAndUserId(projectId, userId)
+        assert archivedUser, "RESTORE FAILED -> no archived user found for projectId [$projectId], userId [$userId] and roleName [$roleName]"
+
+        archivedUserRepo.delete(archivedUser)
+        userActionsHistoryService.saveUserAction(new UserActionInfo(
+                    action: DashboardAction.RestoreArchivedUser,
+                    item: DashboardItem.Project,
+                    itemId: userId,
+                    projectId: projectId,
+        ))
+    }
+
+    @Transactional(readOnly = true)
+    boolean isUserArchived(String projectId, String userId) {
+        return archivedUserRepo.existsByProjectIdAndUserId(projectId, userId)
+    }
+
+    TableResult findAllArchivedUsers(String projectId, PageRequest pageRequest) {
+        Page<ArchivedUsersRepo.ArchivedUserWithAttrs> results = archivedUserRepo.findAllByProjectId(projectId, pageRequest)
+        def totalArchivedUsers = results.getTotalElements()
+        def data = results.getContent().collect { convert(it) };
+        return new TableResult(data: data, count: data.size(), totalCount: totalArchivedUsers)
+    }
+
+    private static ArchivedUserRes convert(ArchivedUsersRepo.ArchivedUserWithAttrs input) {
+        ArchivedUserRes res = new ArchivedUserRes(
+                userId: input.archivedUser.userId,
+                userIdForDisplay: input.attrs.userIdForDisplay,
+                projectId: input.archivedUser.projectId,
+                firstName: input.attrs.firstName,
+                lastName: input.attrs.lastName,
+                email: input.attrs.email,
+                dn: input.attrs.dn,
+        )
+        return res
+    }
+
 }

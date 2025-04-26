@@ -32,6 +32,7 @@ import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import {useUserInfo} from "@/components/utils/UseUserInfo.js";
 import SkillsSpinner from '@/components/utils/SkillsSpinner.vue';
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import { useProjConfig } from '@/stores/UseProjConfig.js';
 
 const route = useRoute()
 const announcer = useSkillsAnnouncer()
@@ -41,6 +42,7 @@ const appConfig = useAppConfig()
 const userInfo = useUserInfo()
 const exportUtil = useExportUtil()
 const numberFormat = useNumberFormat()
+const projConfig = useProjConfig()
 
 let filters = ref({
   user: '',
@@ -57,6 +59,7 @@ const totalRows = ref(1)
 const pageSize = ref(5)
 const possiblePageSizes = [5, 10, 15, 20]
 const sortInfo = ref({ sortOrder: -1, sortBy: 'lastUpdated' })
+const selectedRows = ref([])
 
 const showUserTagColumn = computed(() => {
  return !!(appConfig.usersTableAdditionalUserTagKey && appConfig.usersTableAdditionalUserTagLabel);
@@ -146,6 +149,7 @@ const loadData = () => {
     data.value = res.data
     totalRows.value = res.count
     totalPoints.value = res.totalPoints
+    selectedRows.value = []
     isLoading.value = false
   })
 }
@@ -184,12 +188,19 @@ const exportUsers = () => {
     isExporting.value = false
   })
 }
+
+const archiveUsers = () => {
+  const userIds = selectedRows.value.map((row) => row.userId)
+  UsersService.archiveUsers(route.params.projectId, userIds).then(() => {
+    loadData()
+  })
+}
 </script>
 
 <template>
   <div class="w-full">
-    <div class="px-4 py-3">
-      <div class="flex flex-column lg:flex-row gap-4 my-2">
+    <div class="px-6 py-4">
+      <div class="flex flex-col lg:flex-row gap-6 my-2">
         <div class="flex-1">
           <div>
             <label for="userFilter">User Filter</label>
@@ -202,25 +213,25 @@ const exportUsers = () => {
           <div class="flex gap-2">
             <div class="flex-1">
               <label for="minimumProgress">Minimum User Progress</label>
-              <div class="flex mt-3 align-items-center">
-                <span class="mr-3">0%</span>
-                <div class="flex flex-1 flex-column">
+              <div class="flex mt-4 items-center">
+                <span class="mr-4">0%</span>
+                <div class="flex flex-1 flex-col">
                   <Slider v-model="filters.progress" v-on:keydown.enter="applyFilters" :min="0" :max="100"
                           data-cy="users-progress-range" aria-label="user progress range filter" />
                 </div>
-                <span class="ml-3">100%</span>
+                <span class="ml-4">100%</span>
               </div>
             </div>
             <div class="flex">
               <InputText v-model.number="filters.progress" v-on:keydown.enter="applyFilters" :min="0" :max="100" id="minimumProgress"
                          data-cy="users-progress-input" aria-label="user progress input filter" inputId="minimumProgress"
-                         class="w-4rem" />
+                         class="w-16" />
             </div>
           </div>
         </div>
       </div>
 
-      <div class="flex gap-2 mt-2 mb-4">
+      <div class="flex gap-2 mt-2 mb-6">
         <SkillsButton icon="fa fa-filter" label="Filter" outlined @click="applyFilters" data-cy="users-filterBtn" size="small" />
         <SkillsButton icon="fa fa-times" label="Reset" outlined @click="reset" class="ml-1" data-cy="users-resetBtn" size="small" />
       </div>
@@ -234,7 +245,9 @@ const exportUsers = () => {
         :rowsPerPageOptions="possiblePageSizes"
         v-model:sort-field="sortInfo.sortBy"
         v-model:sort-order="sortInfo.sortOrder"
+        v-model:selection="selectedRows"
         @sort="sortField"
+        data-key="userId"
       >
         <template #loading>
           <div>
@@ -243,7 +256,16 @@ const exportUsers = () => {
           </div>
         </template>
         <template v-if="isProjectLevel" #header>
-          <div class="flex justify-content-end flex-wrap">
+          <div class="flex justify-end flex-wrap">
+            <SkillsButton
+                v-if="!projConfig.isReadOnlyProj"
+                class="mr-2"
+                :disabled="selectedRows <= 0"
+                size="small"
+                icon="fas fa-archive"
+                label="Archive"
+                @click="archiveUsers"
+                data-cy="archiveUsersTableBtn" />
             <SkillsButton
                 :disabled="totalRows <= 0"
                 size="small"
@@ -253,6 +275,11 @@ const exportUsers = () => {
                 data-cy="exportUsersTableBtn" />
           </div>
         </template>
+        <Column v-if="isProjectLevel && !projConfig.isReadOnlyProj" selectionMode="multiple" :class="{'flex': responsive.md.value }">
+          <template #header>
+            <span class="mr-1 lg:mr-0 lg:hidden"><i class="fas fa-check-double" aria-hidden="true"></i> Select Rows:</span>
+          </template>
+        </Column>
         <Column field="userId" header="User" :sortable="true" :class="{'flex': responsive.md.value }">
           <template #header>
             <i class="fas fa-user skills-color-users mr-1" :class="colors.getTextClass(1)" aria-hidden="true"></i>
@@ -298,25 +325,34 @@ const exportUsers = () => {
                         :aria-label="`${calcPercent(slotProps.data.totalPoints)} percent completed`"
                         data-cy="progressPercent">{{ calcPercent(slotProps.data.totalPoints) }}%</span>
                 </div>
-                <div class="flex flex-auto justify-content-end">
+                <div class="flex flex-auto justify-end">
                   <span class="text-primary font-weight-bold"
                         :aria-label="`${slotProps.data.totalPoints} out of ${totalPoints} total points`"
                         data-cy="progressCurrentPoints">{{ slotProps.data.totalPoints?.toLocaleString() }}</span> /
-                  <span class="font-italic" data-cy="progressTotalPoints">{{ totalPoints?.toLocaleString() }}</span>
+                  <span class="italic" data-cy="progressTotalPoints">{{ totalPoints?.toLocaleString() }}</span>
                 </div>
               </div>
               <ProgressBar style="height: 5px;" :value="calcPercent(slotProps.data.totalPoints)" :showValue="false"
+                           class="lg:min-w-[12rem] xl:min-w-[20rem]"
                            :aria-label="`Progress for ${slotProps.data.userId} user`" />
               <div v-if="slotProps.data.userMaxLevel || slotProps.data.userMaxLevel === 0" class="row"
                    data-cy="progressLevels">
                 <div class="col">
-                  <i class="fas fa-trophy skills-color-levels" aria-hidden="true" /> <span class="font-italic">Current Level: </span>
+                  <i class="fas fa-trophy skills-color-levels" aria-hidden="true" /> <span class="italic">Current Level: </span>
                   <span v-if="slotProps.data.userMaxLevel === 0" data-cy="progressCurrentLevel">None</span>
                   <span v-else class="font-weight-bold" data-cy="progressCurrentLevel">{{ slotProps.data.userMaxLevel
                     }}</span>
                 </div>
               </div>
             </div>
+          </template>
+        </Column>
+        <Column field="firstUpdated" header="Points First Earned" :sortable="true" :class="{'flex': responsive.md.value }">
+          <template #header>
+            <i class="far fa-clock mr-1" :class="colors.getTextClass(3)" aria-hidden="true"></i>
+          </template>
+          <template #body="slotProps">
+            <date-cell :value="slotProps.data.firstUpdated" />
           </template>
         </Column>
         <Column field="lastUpdated" header="Points Last Earned" :sortable="true" :class="{'flex': responsive.md.value }">
@@ -333,10 +369,10 @@ const exportUsers = () => {
         </template>
 
         <template #empty>
-          <div class="flex justify-content-center flex-wrap">
-            <i class="flex align-items-center justify-content-center mr-1 fas fa-exclamation-circle"
+          <div class="flex justify-center flex-wrap">
+            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle"
                aria-hidden="true"></i>
-            <span class="flex align-items-center justify-content-center">There are no records to show
+            <span class="flex items-center justify-center">There are no records to show
               </span>
           </div>
         </template>

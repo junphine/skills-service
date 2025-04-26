@@ -27,10 +27,6 @@ import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkil
 import { useRoute } from 'vue-router'
 import { useThemesHelper } from '@/components/header/UseThemesHelper.js'
 
-// subject: {
-//   type: Object,
-//     required: true
-// },
 const props = defineProps({
   showDescriptions: {
     type: Boolean,
@@ -211,7 +207,6 @@ const skillsToShow = computed(() => {
     })
     resultSkills = filteredRes
   }
-  // this.skillsInternal = resultSkills
   return resultSkills
 })
 
@@ -219,8 +214,39 @@ const showDescriptionsInternal = ref(false)
 const isLastViewedScrollSupported = computed(() => {
   return !parentFrame.parentFrame || parentFrame.isLastViewedScrollSupported
 })
-// this.lastViewedButtonDisabled = resultSkills.findIndex((i) => i.isLastViewed || (i.children && i.children.findIndex((c) => c.isLastViewed) >= 0)) < 0
 
+const expandGroups = ref(null)
+const hasGroups = computed(() => {
+  return !!skillsInternal.value.find(it => it.type === 'SkillsGroup')
+})
+
+const expandAllGroups = (() => {
+  expandGroups.value = true
+})
+const collapseAllGroups = (() => {
+  expandGroups.value = false
+})
+const resetGroupExpansion = (() => {
+  expandGroups.value = null
+})
+
+const items = [
+  {
+    label: 'Collapse All',
+    icon: 'fas fa-minus',
+    command: collapseAllGroups
+  },
+  {
+    label: 'Expand All',
+    icon: 'fas fa-plus',
+    command: expandAllGroups
+  },
+]
+
+const menu = ref()
+const toggle = (event) => {
+  menu.value.toggle(event)
+}
 </script>
 
 <template>
@@ -228,11 +254,11 @@ const isLastViewedScrollSupported = computed(() => {
         :class="{'skills-display-test-link': skillsDisplayInfo.isLocalTestPath() && themeHelper.isDarkTheme.value }"
         v-if="(skillsInternal && skillsInternal.length > 0 || searchString || showNoDataMsg)">
     <template #header>
-      <div class="px-4 pt-3">
-        <div class=" flex flex-wrap gap-3 flex-column md:flex-row"
+      <div class="px-6 pt-4">
+        <div class=" flex flex-wrap gap-4 flex-col md:flex-row"
              v-if="skillsInternal && skillsInternal.length > 0">
           <div class="flex-1">
-            <div class="flex-column sm:flex-row flex gap-2">
+            <div class="flex-col sm:flex-row flex gap-2">
               <div class="">
                 <InputGroup class="p-0">
                   <InputText
@@ -241,7 +267,7 @@ const isLastViewedScrollSupported = computed(() => {
                     :aria-label="`Search ${attributes.skillDisplayName}s`"
                     data-cy="skillsSearchInput" />
                   <InputGroupAddon class="p-0 m-0">
-                    <SkillsButton
+                    <SkillsButton :pt="{ root: { class: '!border-0' } }"
                       icon="fas fa-times"
                       text
                       outlined
@@ -265,7 +291,6 @@ const isLastViewedScrollSupported = computed(() => {
                   @click.prevent="scrollToLastViewedSkill"
                   class="skills-theme-btn"
                   outlined
-                  size="small"
                   serverit="info"
                   :aria-label="`Jump to Last Viewed Skill`"
                   data-cy="jumpToLastViewedButton" />
@@ -275,33 +300,51 @@ const isLastViewedScrollSupported = computed(() => {
 
 
           <div class="" data-cy="skillDetailsToggle">
-            <div class="flex flex-row align-content-center">
-              <span class="text-muted pr-1 align-content-center">{{ attributes.skillDisplayName }} Details:</span>
-              <InputSwitch v-model="showDescriptionsInternal"
-                           @change="onDetailsToggle"
-                           :aria-label="`Show ${attributes.skillDisplayName} Details`"
-                           data-cy="toggleSkillDetails" />
+            <div class="flex flex-row flex-wrap content-center">
+              <div class="flex flex-wrap mr-4 gap-2" v-if="!route.params.badgeId && hasGroups">
+                <Button
+                    outlined
+                    raised
+                    size="small"
+                    @click="toggle"
+                    aria-label="Group Controls"
+                    aria-haspopup="true"
+                    data-cy="groupToggle"
+                    aria-controls="group_control_menu">
+                  <i class="fas fa-list mr-1" aria-hidden="true"></i>
+                  <span>Groups</span>
+                  <i class="fas fa-caret-down ml-2"></i>
+                </Button>
+                <div id="group_control_menu">
+                  <Menu ref="menu" :model="items" :popup="true"></Menu>
+                </div>
+              </div>
+              <div class="flex">
+                <span class="text-muted pr-1 content-center">{{ attributes.skillDisplayName }} Details:</span>
+                <ToggleSwitch v-model="showDescriptionsInternal"
+                             @change="onDetailsToggle"
+                             :aria-label="`Show ${attributes.skillDisplayName} Details`"
+                             data-cy="toggleSkillDetails" />
+              </div>
             </div>
           </div>
 
         </div>
-        <div v-if="selectedTagFilters.length > 0" class="flex mt-2">
-          <div class="">
+        <div v-if="selectedTagFilters.length > 0" class="flex gap-2 mt-2">
             <Chip
               v-for="(tag, index) in selectedTagFilters"
               :label="tag.tagValue"
               icon="fas fa-tag"
               :data-cy="`skillTagFilter-${index}`"
               :key="tag.tagId"
-              class="py-0 pl-0 pr-3 mr-2"
+              :pt="{ root: { class: '!p-0'}}"
               @remove="removeTagFilter(tag)"
               outlined
               removable>
-              <span class="bg-primary border-circle w-2rem h-2rem flex align-items-center justify-content-center"><i
-                class="fas fa-tag" /></span>
-              <span class="ml-2 font-medium">{{ tag.tagValue }}</span>
+              <span class="bg-primary text-primary-contrast rounded-full w-7 h-7 flex items-center justify-center"><i
+                class="fas fa-tag" aria-hidden="true"/></span>
+              <span class="font-medium">{{ tag.tagValue }}</span>
             </Chip>
-          </div>
         </div>
       </div>
     </template>
@@ -314,7 +357,7 @@ const isLastViewedScrollSupported = computed(() => {
              :id="`skillRow-${skill.skillId}`"
              class="skills-theme-bottom-border-with-background-color"
         >
-          <div class="p-3 pt-4">
+          <div class="p-4 pt-6">
             <!--            :show-group-descriptions="showGroupDescriptions"-->
             <!--            @points-earned="onPointsEarned"-->
             <!--            @add-tag-filter="addTagFilter"-->
@@ -327,6 +370,8 @@ const isLastViewedScrollSupported = computed(() => {
               :ref="`skillProgress${skill.skillId}`"
               :skill="skill"
               :type="type"
+              :expand-groups="expandGroups"
+              @reset-group-expansion="resetGroupExpansion"
               :enable-drill-down="true"
               :show-description="showDescriptionsInternal"
               :data-cy="`skillProgress_index-${index}`"
@@ -341,7 +386,7 @@ const isLastViewedScrollSupported = computed(() => {
 
       <no-content-2
         v-if="!(skillsToShow && skillsToShow.length > 0) && (searchString || Boolean(selectedTagFilters.length))"
-        class="my-5"
+        class="my-8"
         icon="fas fa-search-minus" title="No results">
                       <span v-if="searchString">
                         Please refine [{{ searchString }}] search  <span

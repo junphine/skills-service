@@ -21,28 +21,29 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.data.domain.PageRequest
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
+import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.QuizValidator
+import skills.controller.exceptions.SkillQuizException
+import skills.controller.exceptions.SkillsValidator
 import skills.controller.request.model.ActionPatchRequest
 import skills.controller.request.model.QuizDefRequest
+import skills.controller.request.model.QuizPreference
 import skills.controller.request.model.QuizQuestionDefRequest
 import skills.controller.request.model.QuizSettingsRequest
 import skills.controller.result.model.*
 import skills.quizLoading.QuizRunService
-import skills.quizLoading.model.QuizAttemptStartResult
-import skills.quizLoading.model.QuizGradedResult
-import skills.quizLoading.model.QuizReportAnswerReq
-import skills.quizLoading.model.StartQuizAttemptReq
+import skills.quizLoading.QuizSettings
+import skills.quizLoading.model.*
+import skills.services.adminGroup.AdminGroupService
 import skills.services.quiz.QuizDefService
 import skills.services.quiz.QuizRoleService
 import skills.services.quiz.QuizSettingsService
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionsHistoryService
-import skills.storage.model.LabeledCount
-import skills.storage.model.SkillDef
-import skills.storage.model.SkillDefSkinny
+import skills.storage.model.UserQuizAttempt
 import skills.storage.model.auth.RoleName
-import skills.storage.repos.UserQuizAttemptRepo
+import skills.utils.TablePageUtil
 
 import java.nio.charset.StandardCharsets
 
@@ -70,17 +71,31 @@ class QuizController {
     @Autowired
     UserActionsHistoryService userActionsHistoryService
 
+    @Autowired
+    AdminGroupService adminGroupService
+
     @RequestMapping(value = "/{quizId}", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
     @ResponseBody
     QuizDefResult saveQuizDef(@PathVariable("quizId") String quizId, @RequestBody QuizDefRequest quizDefRequest) {
         return quizDefService.saveQuizDef(quizId, quizDefRequest.quizId, quizDefRequest)
     }
 
+    @RequestMapping(value = "/{quizId}/copy", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
+    @ResponseBody
+    QuizDefResult copyQuiz(@PathVariable("quizId") String quizId, @RequestBody QuizDefRequest quizDefRequest) {
+        return quizDefService.copyQuiz(quizId, quizDefRequest.quizId, quizDefRequest)
+    }
 
     @RequestMapping(value = "/{quizId}", method = RequestMethod.DELETE)
     void deleteQuiz(@PathVariable("quizId") String quizId) {
         QuizValidator.isNotBlank(quizId, "Quiz Id")
         quizDefService.deleteQuiz(quizId)
+    }
+
+    @RequestMapping(value = "/{quizId}/validateEnablingCommunity", method = RequestMethod.GET, produces = "application/json")
+    EnableUserCommunityValidationRes validateQuizForEnablingCommunity(@PathVariable("quizId") String quizId) {
+        QuizValidator.isNotBlank(quizId, "Quiz Id")
+        return quizDefService.validateQuizForEnablingCommunity(quizId)
     }
 
     @RequestMapping(value = "/{quizId}", method = RequestMethod.GET, produces = "application/json")
@@ -95,10 +110,10 @@ class QuizController {
         return quizDefService.countNumSkillsQuizAssignedTo(quizId)
     }
 
-    @RequestMapping(value = "/{quizId}/skills/", method = RequestMethod.GET, produces = "application/json")
+    @RequestMapping(value = "/{quizId}/skills", method = RequestMethod.GET, produces = "application/json")
     @ResponseBody
-    List<QuizSkillResult> getSkillsForQuiz(@PathVariable("quizId") String quizId, @RequestParam String userId) {
-        return quizDefService.getSkillsForQuiz(quizId, userId)
+    List<QuizSkillResult> getSkillsForQuiz(@PathVariable("quizId") String quizId) {
+        return quizDefService.getSkillsForQuiz(quizId)
     }
 
     @RequestMapping(value = "/{quizId}/summary", method = RequestMethod.GET, produces = "application/json")
@@ -130,7 +145,7 @@ class QuizController {
 
     @RequestMapping(value = "/{quizId}/questions/{questionId}", method = RequestMethod.PATCH)
     @ResponseBody
-    RequestResult updateSkillDisplayOrder(@PathVariable("quizId") String quizId,
+    RequestResult updateQuestionDisplayOrder(@PathVariable("quizId") String quizId,
                                           @PathVariable("questionId") Integer questionId,
                                           @RequestBody ActionPatchRequest patchRequest) {
         QuizValidator.isNotBlank(quizId, "Quiz Id", quizId)
@@ -163,11 +178,7 @@ class QuizController {
                                        @RequestParam int page,
                                        @RequestParam String orderBy,
                                        @RequestParam Boolean ascending) {
-        QuizValidator.isTrue(limit > 0, '[limit] must be > 0')
-        QuizValidator.isTrue(limit <= 500, '[limit] must be <= 500')
-        QuizValidator.isTrue(page >= 0, '[page] must be >= 0')
-        QuizValidator.isTrue(page < 10000, '[page] must be < 10000')
-        PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
+        PageRequest pageRequest = TablePageUtil.validateAndConstructQuizPageRequest(limit, page, orderBy, ascending)
         return quizDefService.getUserQuestionAnswers(quizId, answerDefId, pageRequest)
     }
 
@@ -181,16 +192,13 @@ class QuizController {
     @ResponseBody
     TableResult getQuizRuns(@PathVariable("quizId") String quizId,
                             @RequestParam String query,
+                            @RequestParam(required = false) UserQuizAttempt.QuizAttemptStatus quizAttemptStatus,
                             @RequestParam int limit,
                             @RequestParam int page,
                             @RequestParam String orderBy,
                             @RequestParam Boolean ascending) {
-        QuizValidator.isTrue(limit > 0, '[limit] must be > 0')
-        QuizValidator.isTrue(limit <= 500, '[limit] must be <= 500')
-        QuizValidator.isTrue(page >= 0, '[page] must be >= 0')
-        QuizValidator.isTrue(page < 10000, '[page] must be < 10000')
-        PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
-        return quizDefService.getQuizRuns(quizId, query, pageRequest);
+        PageRequest pageRequest = TablePageUtil.validateAndConstructQuizPageRequest(limit, page, orderBy, ascending)
+        return quizDefService.getQuizRuns(quizId, query, quizAttemptStatus, pageRequest);
     }
 
     @RequestMapping(value = "/{quizId}/runs/{attemptId}", method = RequestMethod.DELETE, produces = "application/json")
@@ -230,6 +238,17 @@ class QuizController {
         return RequestResult.success()
     }
 
+    @RequestMapping(value = "/{quizId}/users/{userId}/attempt/{attemptId}/gradeAnswer/{answerDefId}", method = [RequestMethod.POST, RequestMethod.PUT], produces = "application/json")
+    @ResponseBody
+    QuizAnswerGradingResult gradeQuizAnswer(@PathVariable("quizId") String quizId,
+                                            @PathVariable("userId") String userId,
+                                            @PathVariable("attemptId") Integer attemptId,
+                                            @PathVariable("answerDefId") Integer answerDefId,
+                                            @RequestBody QuizGradeAnswerReq quizGradeAnswerReq) {
+        return quizRunService.gradeQuestionAnswer(userId, quizId, attemptId, answerDefId, quizGradeAnswerReq);
+    }
+
+
     @RequestMapping(value = "/{quizId}/users/{userId}/attempt/{quizAttempId}/fail", method = [RequestMethod.POST, RequestMethod.PUT], produces = "application/json")
     @ResponseBody
     QuizGradedResult failQuizAttempt(@PathVariable("quizId") String quizId,
@@ -251,6 +270,9 @@ class QuizController {
         QuizValidator.isNotBlank(quizId, "Quiz Id")
         QuizValidator.isNotNull(values, "Settings")
 
+        if (values?.find {it.setting?.equalsIgnoreCase(QuizSettings.UserCommunityOnlyQuiz.setting) }) {
+            throw new SkillQuizException("Not allowed to save [${QuizSettings.UserCommunityOnlyQuiz.setting}] setting using this endpoint", quizId, ErrorCode.BadParam)
+        }
         quizSettingsService.saveSettings(quizId, values)
 
         return RequestResult.success()
@@ -261,6 +283,23 @@ class QuizController {
     List<QuizSettingsRes> getQuizSettings(@PathVariable("quizId") String quizId) {
         QuizValidator.isNotNull(quizId, "QuizId")
         return quizSettingsService.getSettings(quizId)
+    }
+
+    @RequestMapping(value = "/{quizId}/preferences/{preferenceKey}", method = [RequestMethod.PUT, RequestMethod.POST], produces = MediaType.APPLICATION_JSON_VALUE)
+    RequestResult saveQuizAdminPreference(@PathVariable("quizId") String quizId, @PathVariable("preferenceKey") String preferenceKey, @RequestBody QuizPreference quizPreference) {
+        QuizValidator.isNotBlank(quizId, "Quiz Id")
+        QuizValidator.isNotBlank(preferenceKey, "Quiz Preference")
+        QuizValidator.isNotBlank(quizPreference?.value, "Quiz Preference Value")
+
+        quizSettingsService.saveUserPreference(quizId, preferenceKey, quizPreference)
+
+        return RequestResult.success()
+    }
+
+    @RequestMapping(value = "/{quizId}/preferences", method = [RequestMethod.GET], produces = MediaType.APPLICATION_JSON_VALUE)
+    List<QuizPreferenceRes> getQuizAdminPreferences(@PathVariable("quizId") String quizId) {
+        QuizValidator.isNotNull(quizId, "QuizId")
+        return quizSettingsService.getCurrentUserQuizPreferences(quizId)
     }
 
     @RequestMapping(value = "/{quizId}/users/{userKey}/roles/{roleName}", method = [RequestMethod.PUT, RequestMethod.POST], produces = MediaType.APPLICATION_JSON_VALUE)
@@ -345,5 +384,12 @@ class QuizController {
     @CompileStatic
     Map getDashboardActionAttributes(@PathVariable("quizId") String quizId, @PathVariable("actionId") Long actionId) {
         return userActionsHistoryService.getActionAttributes(actionId, null, quizId)
+    }
+
+    @RequestMapping(value = "/{quizId}/adminGroups", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    List<AdminGroupDefResult> getAdminGroupsForQuiz(@PathVariable("quizId") String quizId) {
+        SkillsValidator.isNotBlank(quizId, "Quiz Id")
+        return adminGroupService.getAdminGroupsForQuiz(quizId)
     }
 }

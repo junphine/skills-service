@@ -80,11 +80,11 @@ const numUsersBehindMe = computed(() => {
 
 <template>
   <div>
-    <skills-spinner v-if="loading" :is-loading="loading" class="mt-5" />
+    <skills-spinner v-if="loading" :is-loading="loading" class="mt-8" />
     <div v-if="!loading">
       <skills-title>My Rank</skills-title>
 
-      <div class='flex flex-wrap gap-3 mt-3'>
+      <div class='flex flex-wrap gap-4 mt-4'>
 
         <div class="flex-1">
           <media-info-card
@@ -106,7 +106,7 @@ const numUsersBehindMe = computed(() => {
           </media-info-card>
         </div>
 
-        <div class="w-min-13rem flex-1">
+        <div class="flex-1">
           <media-info-card
             :title="`${numFormat.pretty(rankingDistribution.myPoints)}`"
             class="h-full text-center font-bold"
@@ -116,7 +116,7 @@ const numUsersBehindMe = computed(() => {
           </media-info-card>
         </div>
 
-        <div class="w-min-13rem flex-1">
+        <div class="flex-1">
           <media-info-card
             :title="`${numFormat.pretty(totalNumUsers)}`"
             class="h-full  text-center font-bold"
@@ -127,15 +127,15 @@ const numUsersBehindMe = computed(() => {
         </div>
       </div>
 
-      <div class="flex-column md:flex-row flex gap-3 flex-wrap mt-3">
-        <div class="flex-1 h-full">
+      <div class="flex-col md:flex-row flex gap-4 flex-wrap mt-4">
+        <div class="flex-1">
           <levels-breakdown-chart :my-level="rankingDistribution.myLevel" />
         </div>
 
         <div class="flex-1" data-cy="encouragementCards">
 
           <div class="h-full">
-            <div class="flex flex-column gap-3 h-full">
+            <div class="flex flex-col gap-4 h-full">
               <div class="flex-1">
                 <media-info-card v-if="rankingDistribution.pointsToPassNextUser === -1"
                                  title="You are in the lead!"
@@ -194,7 +194,7 @@ const numUsersBehindMe = computed(() => {
         </div>
       </div>
 
-      <leaderboard class="mt-3"/>
+      <leaderboard class="mt-4"/>
     </div>
   </div>
 </template>

@@ -32,8 +32,8 @@ const scrollToTop = () => {
 </script>
 
 <template>
-  <Button type="button" class="skills-theme-btn border-circle text-xl" v-if="scrollDistance > 200" id="returnToTopButton" @click="scrollToTop"
-    tabindex="-1" aria-hidden="true">
+  <Button type="button" class="skills-theme-btn rounded-full text-xl" v-if="scrollDistance > 200"
+          id="returnToTopButton" @click="scrollToTop" aria-label="Jump to the top of the page">
     <i class="fas fa-arrow-up" aria-hidden="true"></i>
   </Button>
 </template>

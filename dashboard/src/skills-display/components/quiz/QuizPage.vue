@@ -100,6 +100,7 @@ const loadQuizInfo = () => {
       });
 }
 
+const associatedSkillNotCompleted = computed(() => skillInternal.value.points < skillInternal.value.totalPoints)
 </script>
 
 <template>
@@ -107,7 +108,7 @@ const loadQuizInfo = () => {
     <SkillsSpinner :is-loading="isLoading"/>
     <div v-if="!isLoading">
       <SkillsTitle>{{ quizInfo.quizType }}</SkillsTitle>
-      <div class="text-left mt-3">
+      <div class="text-left mt-4">
         <QuizRun :quiz-id="quizId"
                  :quiz="quizInfo"
                  :skillId="skillId"
@@ -115,21 +116,21 @@ const loadQuizInfo = () => {
                  :multipleTakes="quizInfo.multipleTakes || (skillInternal.expirationDate && skillInternal.daysOfInactivityBeforeExp <= 1)"
                  @testWasTaken="done"
                  @cancelled="done">
-          <template #splashPageTitle>
-            <div class="mb-4">
+          <template #splashPageTitle v-if="associatedSkillNotCompleted">
+            <div class="mb-6">
               <i class="fas fa-glass-cheers text-info skills-theme-quiz-correct-answer" style="font-size: 1.5rem;"></i> You will earn <Tag severity="success">
               <AnimatedNumber :num="skillInternal.pointIncrement"></AnimatedNumber></Tag> points for
               <span class="font-bold text-primary" style="font-size: 1.2rem">{{ skillInternal.skill }}</span>
               skill by <span v-if="isSurveySkill">completing this survey</span><span v-else>passing this quiz</span>.
             </div>
           </template>
-          <template #completeAboveTitle>
-            <div class="mb-4">
-              <i class="fas fa-glass-cheers text-info skills-theme-quiz-correct-answer" style="font-size: 1.5rem;"></i> Congrats!! You just earned <Tag severity="success">
+          <template #aboveTitleWhenPassed>
+            <Message class="mb-6" severity="success" :closable="false" icon="fas fa-glass-cheers">
+              Congrats!! You just earned <Tag severity="success">
               <AnimatedNumber :num="skillInternal.pointIncrement"></AnimatedNumber></Tag> points for
-              <span class="font-bold text-primary" style="font-size: 1.2rem">{{ skillInternal.skill }}</span>
+              <span class="font-bold" style="font-size: 1.2rem">{{ skillInternal.skill }}</span>
               skill by <span v-if="isSurveySkill">completing the survey</span><span v-else>passing the quiz</span>.
-            </div>
+            </Message>
           </template>
         </QuizRun>
       </div>

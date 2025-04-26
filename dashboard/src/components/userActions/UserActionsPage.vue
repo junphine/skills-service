@@ -15,10 +15,10 @@ limitations under the License.
 */
 <script setup>
 
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserInfo } from '@/components/utils/UseUserInfo.js'
-import { FilterMatchMode } from 'primevue/api'
+import { FilterMatchMode } from '@primevue/core/api'
 import SubPageHeader from '@/components/utils/pages/SubPageHeader.vue'
 import UserActionsService from '@/components/userActions/UserActionsService.js'
 import InputText from 'primevue/inputtext'
@@ -175,6 +175,7 @@ const clearFilter = () => {
   loadData().then(() => filtering.value = false)
 }
 const onFilter = (filterEvent) => {
+  tableOptions.value.pagination.currentPage = 1
   loadData().then(() => filtering.value = true)
 }
 const pageChanged = (pagingInfo) => {
@@ -197,17 +198,18 @@ const tableFilters = ref({
   quizId: { value: null, matchMode: FilterMatchMode.EQUALS }
 })
 
+const pageAwareTitleLevel = computed(() => route.params.projectId ? 2 : 1)
 </script>
 
 <template>
   <div>
-    <SubPageHeader title="Admin Activity History">
+    <SubPageHeader title="Admin Activity History" :title-level="pageAwareTitleLevel">
       <template #underTitle v-if="!isAllEvents">
           <StartRecordingUserActionsDateWarning />
       </template>
     </SubPageHeader>
 
-    <Card :pt="{ body: { class: 'p-0' }, content: { class: 'p-0' } }">
+    <Card :pt="{ body: { class: '!p-0' } }">
       <template #content>
         <div :style="contentMaxWidthState.main2ContentMaxWidthStyleObj">
             <SkillsDataTable
@@ -238,13 +240,13 @@ const tableFilters = ref({
           </template>
 
           <template #empty>
-            <div class="flex justify-content-center flex-wrap h-12rem">
-              <i class="flex align-items-center justify-content-center mr-1 fas fa-exclamation-circle fa-3x"
+            <div class="flex justify-center flex-wrap h-48">
+              <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle fa-3x"
                  aria-hidden="true"></i>
               <span class="w-full">
-                <span class="flex align-items-center justify-content-center">There are no records to show</span>
-                <span v-if="filtering" class="flex align-items-center justify-content-center">  Click
-                    <SkillsButton class="flex flex align-items-center justify-content-center px-1"
+                <span class="flex items-center justify-center">There are no records to show</span>
+                <span v-if="filtering" class="flex items-center justify-center">  Click
+                    <SkillsButton class="flex flex items-center justify-center px-1"
                                   label="Reset"
                                   link
                                   size="small"
@@ -289,7 +291,7 @@ const tableFilters = ref({
               <span :data-cy="`row${slotProps.index}-${slotProps.field}`">{{ formatLabel(slotProps.data.action) }}</span>
             </template>
             <template #filter="{ filterModel, filterCallback }">
-              <Dropdown v-model="filterModel.value"
+              <Select v-model="filterModel.value"
                         @change="filterCallback()"
                         :options="filterOptions.actions"
                         data-cy="actionFilter"
@@ -299,7 +301,7 @@ const tableFilters = ref({
                         class="p-column-filter"
                         style="min-width: 10rem"
                         :showClear="true">
-              </Dropdown>
+              </Select>
             </template>
           </Column>
           <Column field="item" header="Item" :showFilterMenu="false" :sortable="true" :class="{'flex': responsive.md.value }">
@@ -310,7 +312,7 @@ const tableFilters = ref({
               <span :data-cy="`row${slotProps.index}-${slotProps.field}`">{{ formatLabel(slotProps.data.item) }}</span>
             </template>
             <template #filter="{ filterModel, filterCallback }">
-              <Dropdown v-model="filterModel.value"
+              <Select v-model="filterModel.value"
                         @change="filterCallback()"
                         :options="filterOptions.items"
                         data-cy="itemFilter"
@@ -320,7 +322,7 @@ const tableFilters = ref({
                         class="p-column-filter"
                         style="min-width: 10rem"
                         :showClear="true">
-              </Dropdown>
+              </Select>
             </template>
           </Column>
           <Column field="itemId" header="Item ID" :showFilterMenu="false" :sortable="true" :class="{'flex': responsive.md.value }">

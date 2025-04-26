@@ -22,12 +22,14 @@ import org.springframework.core.io.Resource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.ResponseEntity
 import org.springframework.util.StreamUtils
-import org.springframework.web.bind.annotation.GetMapping
 import skills.controller.request.model.ActionPatchRequest
+import skills.controller.request.model.CopyToAnotherProjectRequestType
 import skills.services.settings.Settings
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
+import skills.settings.EmailSettingsService
 import skills.storage.model.auth.RoleName
+import skills.utils.GroovyToJavaByteUtils
 
 @Slf4j
 class SkillsService {
@@ -78,6 +80,10 @@ class SkillsService {
         wsHelper.adminPost("/projects/${projectId}/resetClientSecret".toString(), null)
     }
 
+    void verifyEmail(String email, String verificationCode) {
+        wsHelper.rawPost('verifyEmail', [email: email, token: verificationCode])
+    }
+
     String getUserName() {
         wsHelper.username
     }
@@ -120,14 +126,51 @@ class SkillsService {
     def createProject(Map props, String originalProjectId = null) {
         wsHelper.appPost(getProjectUrl(originalProjectId ?: props.projectId), props)
     }
-
+    @Profile
     def validateProjectForEnablingCommunity(String projectId) {
         wsHelper.adminGet(getProjectUrl(projectId) + "/validateEnablingCommunity")
+    }
+    @Profile
+    def validateQuizForEnablingCommunity(String quizId) {
+        wsHelper.adminGet("/quiz-definitions/${quizId}/validateEnablingCommunity")
+    }
+    @Profile
+    def validateAdminGroupForEnablingCommunity(String adminGroupId) {
+        wsHelper.adminGet("/admin-group-definitions/${adminGroupId}/validateEnablingCommunity")
     }
 
     @Profile
     def copyProject(String fromProjId, Map toProjProps) {
         wsHelper.adminPost("/projects/${fromProjId}/copy".toString(), toProjProps)
+    }
+
+    @Profile
+    def copySkillDefsIntoAnotherProjectSubject(String fromProjId, List<String> skillIds, String toProjectId, String toSubjId) {
+        def request = [copyType: CopyToAnotherProjectRequestType.SelectSkills, skillIds: skillIds, toSubjectId: toSubjId]
+        wsHelper.adminPost("/projects/${fromProjId}/copy/projects/${toProjectId}".toString(), request)
+    }
+
+    @Profile
+    def copySkillDefsIntoAnotherProjectSkillGroup(String fromProjId, List<String> skillIds, String toProjectId, String toSubjId, String otherGroupId) {
+        def request = [copyType: CopyToAnotherProjectRequestType.SelectSkills, skillIds: skillIds, toSubjectId: toSubjId, toGroupId: otherGroupId]
+        wsHelper.adminPost("/projects/${fromProjId}/copy/projects/${toProjectId}".toString(), request)
+    }
+
+    @Profile
+    def validateCopySkillDefsIntoAnotherProject(String fromProjId, List<String> skillIds, String toProjectId, String toSubjId, String otherGroupId = null) {
+        def request = [copyType: CopyToAnotherProjectRequestType.SelectSkills, skillIds: skillIds, toSubjectId: toSubjId, toGroupId: otherGroupId]
+        wsHelper.adminPost("/projects/${fromProjId}/copy/projects/${toProjectId}/validateCopy".toString(), request)?.body
+    }
+
+    @Profile
+    def copySubjectDefIntoAnotherProject(String fromProjId, String fromSubjectId, String toProjectId) {
+        def request = [copyType: CopyToAnotherProjectRequestType.EntireSubject, fromSubjectId: fromSubjectId]
+        wsHelper.adminPost("/projects/${fromProjId}/copy/projects/${toProjectId}".toString(), request)
+    }
+    @Profile
+    def validateCopySubjectDefIntoAnotherProject(String fromProjId, String fromSubjectId, String toProjectId) {
+        def request = [copyType: CopyToAnotherProjectRequestType.EntireSubject, fromSubjectId: fromSubjectId]
+        wsHelper.adminPost("/projects/${fromProjId}/copy/projects/${toProjectId}/validateCopy".toString(), request).body
     }
 
     static String PROD_MODE = Settings.PRODUCTION_MODE.settingName
@@ -262,6 +305,10 @@ class SkillsService {
         wsHelper.adminGet(getProjectUrl(projectId))
     }
 
+    def getProjectUsersCount(String projectId) {
+        wsHelper.adminGet("${getProjectUrl(projectId)}/users/count")
+    }
+
     def deleteProjectIfExist(String projectId) {
         def res = wsHelper.appPost("/projectExist", [projectId: projectId])
         Boolean exists = res.body
@@ -318,6 +365,10 @@ class SkillsService {
 
     def getSubjects(String projectId) {
         wsHelper.adminGet(getProjectUrl(projectId) + "/subjects")
+    }
+
+    def getSubjectsAndSkillGroups(String projectId) {
+        wsHelper.adminGet(getProjectUrl(projectId) + "/subjectsAndSkillsGroups")
     }
 
     def subjectNameExists(Map props){
@@ -582,8 +633,8 @@ class SkillsService {
     }
 
 
-    def approve(String projectId, List<Integer> approvalId) {
-        return wsHelper.adminPost("/projects/${projectId}/approvals/approve", [skillApprovalIds: approvalId])
+    def approve(String projectId, List<Integer> approvalId, String msg = null) {
+        return wsHelper.adminPost("/projects/${projectId}/approvals/approve", [skillApprovalIds: approvalId, approvalMessage: msg])
     }
 
     def configureApproverForUser(String projectId, String approverUserId, String userId) {
@@ -592,6 +643,10 @@ class SkillsService {
 
     def getApproverConf(String projectId) {
         return wsHelper.adminGet("/projects/${projectId}/approverConf")
+    }
+
+    def countApproverConf(String projectId) {
+        return wsHelper.adminGet("/projects/${projectId}/approverConf/count")
     }
 
     def deleteApproverConf(String projectId, Integer approverRefId) {
@@ -843,6 +898,15 @@ class SkillsService {
         wsHelper.apiGet(url)
     }
 
+    def getSubjectSummaryForUser(String userId, String projId, String subjectId, int version = -1) {
+        userId = getUserId(userId)
+        String url = "/projects/${projId}/subjects/${subjectId}/summary?userId=${userId}"
+        if (version >= 0) {
+            url += "&version=${version}"
+        }
+        wsHelper.apiGet(url)
+    }
+
     def getSubjectSummaryForCurrentUser(String projId, String subjectId, int version = -1) {
         String url = "/projects/${projId}/subjects/${subjectId}/summary"
         if (version >= 0) {
@@ -918,6 +982,10 @@ class SkillsService {
         body.put("customIcon", icon)
         wsHelper.supervisorUpload("/icons/upload", body)
     }
+    def uploadAttachment(String fileName, String fileContents, String projectId=null, String skillId=null, String quizId=null){
+        Resource resource = GroovyToJavaByteUtils.toByteArrayResource(fileContents, fileName)
+        return uploadAttachment(resource, projectId, skillId, quizId)
+    }
     def uploadAttachment(Resource attachment, String projectId=null, String skillId=null, String quizId=null){
         Map body = [:]
         body.put("file", attachment)
@@ -939,6 +1007,12 @@ class SkillsService {
     static class FileAndHeaders {
         File file
         HttpHeaders headers
+    }
+
+    String downloadAttachmentAsText(String downloadUrl, Map params=null) {
+        FileAndHeaders fileAndHeaders = downloadAttachment(downloadUrl, params)
+        File file = fileAndHeaders.file
+        return file.text
     }
 
     FileAndHeaders downloadAttachment(String downloadUrl, Map params=null) {
@@ -1065,6 +1139,10 @@ class SkillsService {
 
     def getBadgeUsers(String projectId, String badgeId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0) {
         return wsHelper.adminGet("${getBadgeUrl(projectId, badgeId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    }
+
+    def getUserTagUsers(String projectId, String tagKey, String tagValue, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0) {
+        return wsHelper.adminGet("${getProjectUrl(projectId)}/userTags/${tagKey}/${tagValue}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
     }
 
     def getLevels(String projectId, String subjectId = null) {
@@ -1261,6 +1339,12 @@ class SkillsService {
         return wsHelper.rootPut("/global/settings/${setting}", value)
     }
 
+    def configuredProjectAsInviteOnly(String projectId){
+        return changeSetting(projectId, "invite_only", [
+                projectId: projectId, setting: Settings.INVITE_ONLY_PROJECT.settingName,
+                value: Boolean.TRUE.toString().toLowerCase()
+        ])
+    }
 
     def changeSetting(String project, String setting, Map value){
         return wsHelper.adminPost(getSettingUrl(project, setting), value)
@@ -1278,8 +1362,12 @@ class SkillsService {
         return wsHelper.adminPost("${getProjectUrl(project)}/settings/checkValidity".toString(), settings)
     }
 
-    def checkCustomDescriptionValidation(String description, String projectId = null, Boolean useProtectedCommunityValidator = null){
-        return wsHelper.apiPost("/validation/description", [value: description, projectId: projectId, useProtectedCommunityValidator: useProtectedCommunityValidator])
+    def checkCustomDescriptionValidationWithQuizId(String description, String quizId,  Boolean useProtectedCommunityValidator = null){
+        return checkCustomDescriptionValidation(description, null, useProtectedCommunityValidator, quizId)
+    }
+
+    def checkCustomDescriptionValidation(String description, String projectId = null, Boolean useProtectedCommunityValidator = null, String quizId = null){
+        return wsHelper.apiPost("/validation/description", [value: description, projectId: projectId, useProtectedCommunityValidator: useProtectedCommunityValidator, quizId: quizId])
     }
 
     def checkCustomNameValidation(String description){
@@ -1352,6 +1440,27 @@ class SkillsService {
                 username: username,
                 password: password
         ])
+    }
+
+    def saveEmailHeaderAndFooterSettings(String htmlHeader, String htmlFooter, String plaintextHeader, String plaintextFooter) {
+        Map settingRequest = [
+                settingGroup : EmailSettingsService.settingsGroup,
+                setting : EmailSettingsService.htmlHeader,
+                value : htmlHeader
+        ]
+        addOrUpdateGlobalSetting(settingRequest.setting, settingRequest)
+
+        settingRequest.setting = EmailSettingsService.plaintextHeader
+        settingRequest.value = plaintextHeader
+        addOrUpdateGlobalSetting(settingRequest.setting, settingRequest)
+
+        settingRequest.setting = EmailSettingsService.htmlFooter
+        settingRequest.value = htmlFooter
+        addOrUpdateGlobalSetting(settingRequest.setting, settingRequest)
+
+        settingRequest.setting = EmailSettingsService.plaintextFooter
+        settingRequest.value = plaintextFooter
+        addOrUpdateGlobalSetting(settingRequest.setting, settingRequest)
     }
 
     def addOrUpdateUserSetting(String setting, String value) {
@@ -1706,6 +1815,11 @@ class SkillsService {
         return resp
     }
 
+    def getSkillDescription(String projectId, String skillId) {
+        def resp = wsHelper.apiGet("/projects/${projectId}/skills/${skillId}/description")
+        return resp
+    }
+
     def getPendingProjectInvites(String projectId, int limit, int page, String orderBy, Boolean ascending) {
         def resp = wsHelper.adminGet("/projects/${projectId}/invites/status?limit=${limit}&page=${page}&orderBy=${orderBy}&ascending=${ascending}")
         return resp
@@ -1734,6 +1848,9 @@ class SkillsService {
     }
     def countSkillsForQuiz(String quizId) {
         wsHelper.adminGet("${getQuizDefUrl(quizId)}/skills-count")
+    }
+    def getSkillsForQuiz(String quizId) {
+        wsHelper.adminGet("${getQuizDefUrl(quizId)}/skills")
     }
     def getQuizDefSummary(String quizId) {
         wsHelper.adminGet("${getQuizDefUrl(quizId)}/summary")
@@ -1776,6 +1893,10 @@ class SkillsService {
         String url = "${getQuizDefUrl(quizId)}/questions/${questionRefId}"
         return wsHelper.adminDelete(url)
     }
+    def copyQuiz(String quizId, Map props) {
+         String url = "${getQuizDefUrl(quizId)}/copy"
+         wsHelper.adminPost(url, props)
+    }
 
     def changeQuizQuestionDisplayOrder(String quizId, Integer questionId, Integer newDisplayOrderIndex){
         assert quizId
@@ -1802,7 +1923,6 @@ class SkillsService {
         return wsHelper.adminGet(url)
     }
 
-
     def getQuizQuestionDefs(String quizId) {
         String url = "${getQuizDefUrl(quizId)}/questions"
         return wsHelper.adminGet(url)
@@ -1828,10 +1948,31 @@ class SkillsService {
         return wsHelper.adminGet(url)
     }
 
+    def saveQuizUserPreference(String quizId, String preferenceKey, Object value) {
+        String url = "${getQuizDefUrl(quizId)}/preferences/${preferenceKey}"
+        return wsHelper.adminPost(url, [value: value])
+    }
+    def getCurrentUserQuizPreferences(String quizId) {
+        String url = "${getQuizDefUrl(quizId)}/preferences"
+        return wsHelper.adminGet(url)
+    }
+
     def getQuizInfo(String quizId, String userId = null) {
         String url = "/quizzes/${quizId}"
         return wsHelper.apiGet(url, userId ? [userId: userId] : null)
     }
+
+    def getCurrentUserQuizAttempts(String quizNameQuery = '', int limit=10,
+                                   int page=1,
+                                   String orderBy='started',
+                                   Boolean ascending=true) {
+        return wsHelper.apiGet("/quizAttempts", [quizNameQuery: quizNameQuery, limit: limit, page: page, orderBy: orderBy, ascending: ascending])
+    }
+
+    def getCurrentUserSingleQuizAttempt(Integer quizAttempt) {
+        return wsHelper.apiGet("/quizAttempts/${quizAttempt}")
+    }
+
 
     def getQuizAttemptResult(String quizId, Integer attemptId) {
         String url = "${getQuizDefUrl(quizId)}/runs/${attemptId}"
@@ -1843,12 +1984,12 @@ class SkillsService {
         return wsHelper.adminGet("${url}?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}".toString())
     }
 
-    def getUserTagCounts(String quizId, String userTagKey) {
+    def getQuizUserTagCounts(String quizId, String userTagKey) {
         String url = "${getQuizDefUrl(quizId)}/userTagCounts?userTagKey=${userTagKey}"
         return wsHelper.adminGet(url.toString())
     }
 
-    def getUsageOverTime(String quizId) {
+    def getQuizUsageOverTime(String quizId) {
         String url = "${getQuizDefUrl(quizId)}/usageOverTime"
         return wsHelper.adminGet(url.toString())
     }
@@ -1869,9 +2010,18 @@ class SkillsService {
         return wsHelper.apiPost(url, quizAttemptReq)
     }
 
-    def startQuizAttempt(String quizId, String userId = null) {
+    def startQuizAttempt(String quizId, String userId = null, Map additionalParams = null) {
+        assert quizId
         String url = "/quizzes/${quizId}/attempt"
-        return wsHelper.apiPost(url, userId ? [userId : userId] : null)
+        def combinedParams = [:]
+        if (userId) {
+            combinedParams.userId = userId
+        }
+        if (additionalParams) {
+            combinedParams.putAll(additionalParams)
+        }
+
+        return wsHelper.apiPost(url, combinedParams)
     }
     def reportQuizAnswer(String quizId, Integer attemptId, Integer answerId, Map params = [isSelected:true]) {
         String url = "/quizzes/${quizId}/attempt/${attemptId}/answers/${answerId}"
@@ -1881,6 +2031,12 @@ class SkillsService {
         String url = "/quizzes/${quizId}/attempt/${attemptId}/complete"
         return wsHelper.apiPost(url, userId ? [userId : userId] : null)
     }
+
+    def gradeAnswer( String userId, String quizId,Integer attemptId, Integer answerDefId, Boolean isCorrect, String feedback = null) {
+        String url = "/quiz-definitions/${quizId}/users/${userId}/attempt/${attemptId}/gradeAnswer/${answerDefId}"
+        return wsHelper.adminPost(url, [isCorrect: isCorrect, feedback: feedback])
+    }
+
     def failQuizAttempt(String quizId, Integer attemptId, String userId = null) {
         String url = "/quizzes/${quizId}/attempt/${attemptId}/fail"
         return wsHelper.apiPost(url, userId ? [userId : userId] : null)
@@ -1910,6 +2066,8 @@ class SkillsService {
         if (videoAttrs.isAlreadyHosted != null) { body.put("isAlreadyHosted", videoAttrs.isAlreadyHosted)}
         if (videoAttrs.captions) { body.put("captions", videoAttrs.captions)}
         if (videoAttrs.transcript) { body.put("transcript", videoAttrs.transcript)}
+        if (videoAttrs.height) { body.put("height", videoAttrs.height)}
+        if (videoAttrs.width) { body.put("width", videoAttrs.width)}
 
         String url = "/projects/${projectId}/skills/${skillId}/video"
         return wsHelper.adminUpload(url, body, true)
@@ -1943,20 +2101,84 @@ class SkillsService {
         String url = "/projects/${projectId}/skills/${skillId}/expiration"
         return wsHelper.adminDelete(url)
     }
+    def getAdminGroupDefs() {
+        wsHelper.appGet("/admin-group-definitions")
+    }
+    def createAdminGroupDef(Map props) {
+        return wsHelper.appPost(getAdminGroupDefUrl(props.adminGroupId), props)
+    }
+    def updateAdminGroupDef(Map props) {
+        return wsHelper.adminPost(getAdminGroupDefUrl(props.adminGroupId), props)
+    }
+    def getAdminGroupDef(String adminGroupId) {
+        wsHelper.adminGet(getAdminGroupDefUrl(adminGroupId))
+    }
+    def removeAdminGroupDef(String adminGroupId) {
+        wsHelper.adminDelete(getAdminGroupDefUrl(adminGroupId))
+    }
+    def getAdminGroupMembers(String adminGroupId) {
+        wsHelper.adminGet("${getAdminGroupDefUrl(adminGroupId)}/members")
+    }
+    def addAdminGroupOwner(String adminGroupId, String userId) {
+        return wsHelper.adminPut("${getAdminGroupDefUrl(adminGroupId)}/users/${userId}/roles/${RoleName.ROLE_ADMIN_GROUP_OWNER.toString()}")
+    }
+    def addAdminGroupMember(String adminGroupId, String userId) {
+        return wsHelper.adminPut("${getAdminGroupDefUrl(adminGroupId)}/users/${userId}/roles/${RoleName.ROLE_ADMIN_GROUP_MEMBER.toString()}")
+    }
+    def deleteAdminGroupOwner(String adminGroupId, String userId) {
+        return wsHelper.adminDelete("${getAdminGroupDefUrl(adminGroupId)}/users/${userId}/roles/${RoleName.ROLE_ADMIN_GROUP_OWNER.toString()}")
+    }
+    def deleteAdminGroupMember(String adminGroupId, String userId) {
+        return wsHelper.adminDelete("${getAdminGroupDefUrl(adminGroupId)}/users/${userId}/roles/${RoleName.ROLE_ADMIN_GROUP_MEMBER.toString()}")
+    }
+    def getAdminGroupQuizzesAndSurveys(String adminGroupId) {
+        return wsHelper.adminGet("${getAdminGroupDefUrl(adminGroupId)}/quizzes")
+    }
+    def addQuizToAdminGroup(String adminGroupId, String quizId) {
+        return wsHelper.adminPut("${getAdminGroupDefUrl(adminGroupId)}/quizzes/${quizId}")
+    }
+    def deleteQuizFromAdminGroup(String adminGroupId, String quizId) {
+        return wsHelper.adminDelete("${getAdminGroupDefUrl(adminGroupId)}/quizzes/${quizId}")
+    }
+    def getAdminGroupProjects(String adminGroupId) {
+        return wsHelper.adminGet("${getAdminGroupDefUrl(adminGroupId)}/projects")
+    }
+    def addProjectToAdminGroup(String adminGroupId, String projectId) {
+        return wsHelper.adminPut("${getAdminGroupDefUrl(adminGroupId)}/projects/${projectId}")
+    }
+    def deleteProjectFromAdminGroup(String adminGroupId, String projectId) {
+        return wsHelper.adminDelete("${getAdminGroupDefUrl(adminGroupId)}/projects/${projectId}")
+    }
+    def getAdminGroupsForProject(String projectId) {
+        return wsHelper.adminGet("${getProjectUrl(projectId)}/adminGroups".toString())
+    }
+    def getAdminGroupsForQuiz(String quizId) {
+        return wsHelper.adminGet("${getQuizDefUrl(quizId)}/adminGroups".toString())
+    }
+    def archiveUsers(List<String> userIds, String projectId) {
+        return wsHelper.adminPost("/projects/${projectId}/users/archive", [userIds: userIds])
+    }
+    def restoreArchivedUser(String userId, String projectId) {
+        return wsHelper.adminPost("/projects/${projectId}/users/${userId}/restore", [:])
+    }
 
-    private String getQuizDefUrl(String quizId) {
+    static private String getAdminGroupDefUrl(String adminGroupId) {
+        return "/admin-group-definitions/${adminGroupId}".toString()
+    }
+
+    private static String getQuizDefUrl(String quizId) {
         return "/quiz-definitions/${quizId}".toString()
     }
 
-    private String getProjectUrl(String project) {
+    private static String getProjectUrl(String project) {
         return "/projects/${project}".toString()
     }
 
-    private String getSubjectUrl(String project, String subject) {
+    private static String getSubjectUrl(String project, String subject) {
         return "${getProjectUrl(project)}/subjects/${subject}".toString()
     }
 
-    private String getSkillUrl(String project, String subject, String skill) {
+    private static String getSkillUrl(String project, String subject, String skill) {
         if (subject) {
             return "${getSubjectUrl(project, subject)}/skills/${skill}".toString()
         } else {
@@ -1964,52 +2186,52 @@ class SkillsService {
         }
     }
 
-    private String getSyncSkillPointsUrl(String project, String subject, String groupId) {
+    private static String getSyncSkillPointsUrl(String project, String subject, String groupId) {
         return "${getSubjectUrl(project, subject)}/groups/${groupId}/skills".toString()
     }
 
-    private String getSkillEventUrl(String project, String skill) {
+    private static String getSkillEventUrl(String project, String skill) {
         // /projects/{projectId}/skills/{skillEventId}
         return "${getProjectUrl(project)}/skills/${skill}".toString()
     }
 
-    private String getBadgeUrl(String project, String badge) {
+    private static String getBadgeUrl(String project, String badge) {
         return "${getProjectUrl(project)}/badges/${badge}".toString()
     }
 
-    private String getGlobalBadgeUrl(String badge) {
+    private static String getGlobalBadgeUrl(String badge) {
         return "/badges/${badge}".toString()
     }
 
-    private String getAddSkillToSkillsGroupUrl(String project, String subjectId, String groupId, String skillId) {
+    private static String getAddSkillToSkillsGroupUrl(String project, String subjectId, String groupId, String skillId) {
         return "${getProjectUrl(project)}/subjects/${subjectId}/groups/${groupId}/skills/${skillId}".toString()
     }
 
-    private String getAddSkillToBadgeUrl(String project, String badge, String skillId) {
+    private static String getAddSkillToBadgeUrl(String project, String badge, String skillId) {
         return "${getProjectUrl(project)}/badge/${badge}/skills/${skillId}".toString()
     }
 
-    private String getAddSkillsToBadgeUrl(String project, String badge) {
+    private static String getAddSkillsToBadgeUrl(String project, String badge) {
         return "${getProjectUrl(project)}/badge/${badge}/skills/add".toString()
     }
 
-    private String getAddSkillToGlobalBadgeUrl(String badge, String project, String skillId) {
+    private static String getAddSkillToGlobalBadgeUrl(String badge, String project, String skillId) {
         return "/badges/${badge}/projects/${project}/skills/${skillId}".toString()
     }
 
-    private String getAddProjectLevelToGlobalBadgeUrl(String badge, String project, String level) {
+    private static String getAddProjectLevelToGlobalBadgeUrl(String badge, String project, String level) {
         return "/badges/${badge}/projects/${project}/level/${level}".toString()
     }
 
-    private String getchangeProjectLevelOnGlobalBadgeUrl(String badge, String project, String currentLevel, String newLevel) {
+    private static String getchangeProjectLevelOnGlobalBadgeUrl(String badge, String project, String currentLevel, String newLevel) {
         return "/badges/${badge}/projects/${project}/level/${currentLevel}/${newLevel}"
     }
 
-    private String getSaveIconUrl(String project){
+    private static String getSaveIconUrl(String project){
         return "/icons/upload/${project}"
     }
 
-    private String getLevelsUrl(String project, String subject){
+    private static String getLevelsUrl(String project, String subject){
         if(subject){
             return "${getSubjectUrl(project, subject)}/levels".toString()
         }else {
@@ -2018,7 +2240,7 @@ class SkillsService {
     }
 
 
-    private String getUserLevelForProjectUrl(String project, String userId){
+    private static String getUserLevelForProjectUrl(String project, String userId){
         if (userId) {
             return "${getProjectUrl(project)}/level?userId=${userId}".toString()
         } else {
@@ -2026,35 +2248,35 @@ class SkillsService {
         }
     }
 
-    private String getDeleteLevelUrl(String project, String subject){
+    private static String getDeleteLevelUrl(String project, String subject){
         return "${getLevelsUrl(project, subject)}/last".toString()
     }
 
-    private String getDeleteLevelUrl(String project){
+    private static String getDeleteLevelUrl(String project){
         return "${getLevelsUrl(project ,'')}/last".toString()
     }
 
-    private String getAddLevelUrl(String project, String subject){
+    private static String getAddLevelUrl(String project, String subject){
         return "${getLevelsUrl(project, subject)}/next".toString()
     }
 
-    private String getEditLevelUrl(String project, String subject, String level){
+    private static String getEditLevelUrl(String project, String subject, String level){
         return "${getLevelsUrl(project, subject)}/edit/${level}".toString()
     }
 
-    private String getSettingsUrl(String project){
+    private static String getSettingsUrl(String project){
         return "${getProjectUrl(project)}/settings"
     }
 
-    private String getSettingUrl(String project, String setting){
+    private static String getSettingUrl(String project, String setting){
         return "${getProjectUrl(project)}/settings/${setting}"
     }
 
-    private String getUserSettingsUrl(){
+    private static String getUserSettingsUrl(){
         return "/userInfo/settings"
     }
 
-    private String getAddProjectAdminUrl(String project, String userId) {
+    private static String getAddProjectAdminUrl(String project, String userId) {
         return "/projects/${project}/users/${userId}/roles/ROLE_PROJECT_ADMIN"
     }
 

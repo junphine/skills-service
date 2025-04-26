@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import { createRouter, createWebHistory } from 'vue-router'
+import { createMemoryHistory, createRouter, createWebHistory } from 'vue-router'
 import Login from '@/components/access/Login.vue'
 import MyProgress from '@/components/myProgress/MyProgress.vue'
 import createAdminRoutes from './AdminRoutes.js'
@@ -84,8 +84,16 @@ import UserAgreement from '@/components/access/UserAgreement.vue'
 import EmailVerificationSent from "@/components/access/EmailVerificationSent.vue";
 import EmailVerifiedConfirmation from "@/components/access/EmailVerifiedConfirmation.vue";
 import RequestEmailVerification from "@/components/access/RequestEmailVerification.vue";
+import AdminGroupPage from '@/components/access/groups/AdminGroupPage.vue';
+import AdminGroupMembers from '@/components/access/groups/AdminGroupMembers.vue';
+import AdminGroupProjects from '@/components/access/groups/AdminGroupProjects.vue';
+import AdminGroupQuizzes from '@/components/access/groups/AdminGroupQuizzes.vue';
 import RedirectPage from "@/components/utils/RedirectPage.vue";
 import UpgradeInProgressPage from '@/components/utils/errors/UpgradeInProgressPage.vue'
+import SkillsClientPath from '@/router/SkillsClientPath.js'
+import log from 'loglevel'
+import UserArchivePage from '@/components/users/UserArchivePage.vue';
+import UsersTablePage from '@/components/users/UsersTablePage.vue';
 
 const routes = [
   {
@@ -388,16 +396,31 @@ const routes = [
         },
       },
     }, {
-      name: 'ProjectUsers',
       path: 'users',
       component: Users,
-      meta: {
-        requiresAuth: true,
-        reportSkillId: 'VisitProjectUsers',
-        announcer: {
-          message: 'Project Users',
+      meta: { requiresAuth: true },
+      children: [{
+        component: UsersTablePage,
+        name: 'ProjectUsers',
+        path: '',
+        meta: {
+          requiresAuth: true,
+          reportSkillId: 'VisitProjectUsers',
+          announcer: {
+            message: 'Project Users',
+          },
         },
-      },
+      }, {
+        component: UserArchivePage,
+        name: 'UserArchivePage',
+        path: 'user-archive',
+        meta: {
+          requiresAuth: true,
+          announcer: {
+            message: 'User Archive Page',
+          },
+        },
+      }],
     }, {
       path: '/administrator/projects/:projectId/self-report',
       component: SelfReportPageNav,
@@ -603,16 +626,21 @@ const routes = [
         },
       },
     }, {
-      name: 'SkillUsers',
       path: 'users',
       component: Users,
-      meta: {
-        requiresAuth: true,
-        reportSkillId: 'VisitSkillUsers',
-        announcer: {
-          message: 'Skill Users',
+      meta: { requiresAuth: true },
+      children: [{
+        component: UsersTablePage,
+        name: 'SkillUsers',
+        path: '',
+        meta: {
+          requiresAuth: true,
+          reportSkillId: 'VisitSkillUsers',
+          announcer: {
+            message: 'Skill Users',
+          },
         },
-      },
+      }],
     }, {
       name: 'ConfigureVideo',
       path: 'config-video',
@@ -620,7 +648,7 @@ const routes = [
       meta: {
         requiresAuth: true,
         announcer: {
-          message: 'Configure Video',
+          message: 'Configure Audio/Video',
         },
       },
       props: true,
@@ -687,16 +715,21 @@ const routes = [
         },
       },
     }, {
-      name: 'SubjectUsers',
       path: 'users',
       component: Users,
-      meta: {
-        requiresAuth: true,
-        reportSkillId: 'VisitSubjectUsers',
-        announcer: {
-          message: 'Subject Users',
+      meta: { requiresAuth: true },
+      children: [{
+        component: UsersTablePage,
+        name: 'SubjectUsers',
+        path: '',
+        meta: {
+          requiresAuth: true,
+          reportSkillId: 'VisitSubjectUsers',
+          announcer: {
+            message: 'Subject Users',
+          },
         },
-      },
+      }],
     }, {
       name: 'SubjectMetrics',
       path: 'metrics',
@@ -726,16 +759,21 @@ const routes = [
         },
       },
     }, {
-      name: 'BadgeUsers',
       path: 'users',
       component: Users,
-      meta: {
-        requiresAuth: true,
-        reportSkillId: 'VisitBadgeUsers',
-        announcer: {
-          message: 'Badge Users',
+      meta: { requiresAuth: true },
+      children: [{
+        component: UsersTablePage,
+        name: 'BadgeUsers',
+        path: '',
+        meta: {
+          requiresAuth: true,
+          reportSkillId: 'VisitBadgeUsers',
+          announcer: {
+            message: 'Badge Users',
+          },
         },
-      },
+      }],
     }],
   }, {
     path: '/join-project/:pid/:inviteToken',
@@ -798,6 +836,47 @@ const routes = [
     }],
   },
   {
+    path: '/administrator/adminGroups/:adminGroupId',
+    component: AdminGroupPage,
+    meta: {
+      requiresAuth: true,
+      announcer: {
+        message: 'Manage Admin Group',
+      },
+    },
+    children: [{
+      name: 'AdminGroupMembers',
+      path: '',
+      component: AdminGroupMembers,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Admin Group Members',
+        },
+      },
+    }, {
+      name: 'AdminGroupProjects',
+      path: 'group-projects',
+      component: AdminGroupProjects,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Admin Group Projects',
+        },
+      },
+    }, {
+      name: 'AdminGroupQuizzes',
+      path: 'group-quizzes',
+      component: AdminGroupQuizzes,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Admin Group Quizzes and Surveys',
+        },
+      },
+    }],
+  },
+  {
     path: '/redirect',
     name: 'Redirect',
     component: RedirectPage,
@@ -832,7 +911,7 @@ const routes = [
         message: 'Page Not Found',
       },
     },
-  },
+  }, 
   {
     path: '/user-agreement',
     component: UserAgreement,
@@ -893,9 +972,22 @@ routes.push({
   children: createSkillsDisplayChildRoutes(PathAppendValues.LocalTest)
 })
 
-const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
-  routes
-})
+const isSkillsClient = SkillsClientPath.isSkillsClientIframePath()
+const history = isSkillsClient ? createMemoryHistory(import.meta.env.BASE_URL) : createWebHistory(import.meta.env.BASE_URL)
+const actualRoutes = isSkillsClient ? [createSkillsClientRoutes(createSkillsDisplayChildRoutes(PathAppendValues.SkillsClient, true))] : routes
+const constructRouter = () => {
+  const router =  createRouter({
+    history,
+    routes: actualRoutes
+  })
 
-export default router
+  if (isSkillsClient) {
+    router.push('/')
+  }
+
+  log.trace(`Constructed router for path [${window?.location?.pathname}] isSkillsClient: [${isSkillsClient}]`)
+
+  return router
+}
+
+export default constructRouter

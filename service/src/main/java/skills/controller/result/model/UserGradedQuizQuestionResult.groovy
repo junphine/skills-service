@@ -19,9 +19,11 @@ import skills.services.quiz.QuizQuestionType
 
 class UserGradedQuizQuestionResult {
     Integer id
+    Integer questionNum
     String question
     QuizQuestionType questionType
 
     List<UserGradedQuizAnswerResult> answers
     Boolean isCorrect
+    Boolean needsGrading = false
 }

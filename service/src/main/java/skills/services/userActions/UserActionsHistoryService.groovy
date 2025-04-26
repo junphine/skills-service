@@ -86,6 +86,25 @@ class UserActionsHistoryService {
     }
 
     @Transactional
+    void saveUserActions(List<UserActionInfo> userActionInfos) {
+        List<UserActionsHistory> userActionsHistoryList = userActionInfos.findAll {
+            it.projectId != InceptionProjectService.inceptionProjectId }.collect { UserActionInfo userActionInfo ->
+                String actionAttributesAsStr = userActionInfo.actionAttributes ? mapper.writeValueAsString(userActionInfo.actionAttributes) : null
+                return new UserActionsHistory(
+                        action: userActionInfo.action,
+                        item: userActionInfo.item,
+                        itemId: userActionInfo.itemId,
+                        itemRefId: userActionInfo.itemRefId,
+                        userId: userInfoService.currentUserId,
+                        projectId: userActionInfo.projectId,
+                        quizId: userActionInfo.quizId,
+                        actionAttributes: actionAttributesAsStr,
+                )
+        }
+        userActionsHistoryRepo.saveAll(userActionsHistoryList)
+    }
+
+    @Transactional
     TableResult getUsersActions(PageRequest pageRequest,
                                 String projectId,
                                 String quizId,
@@ -95,13 +114,27 @@ class UserActionsHistoryService {
                                 String quizFilter,
                                 String itemIdFilter,
                                 DashboardAction actionFilter) {
+        // xxxNotProvided variables/params are a workaround for an issues introduced in
+        // spring-boot:3.4.3 where usage of the same named parameter in query such as
+        //    `(:projectIdFilter is null OR lower(action.projectId) like :projectIdFilter)`
+        // yields `org.hibernate.QueryParameterException: No argument for named parameter ':projectIdFilter_1'
+
         String projectIdFilterQuery = projectIdFilter ? '%' + projectIdFilter.toLowerCase() + '%' : null
+        String projectIdFilterQueryNotProvided = projectIdFilter ? "false" : "true"
         String userFilterQuery = userFilter ? '%' + userFilter.toLowerCase() + '%' : null
+        String userFilterQueryNotProvided = userFilter ? "false" : "true"
         String quizFilterQuery = quizFilter ? '%' + quizFilter.toLowerCase() + '%' : null
+        String quizFilterQueryNotProvided = quizFilter ? "false" : "true"
         String itemIdFilterQuery = itemIdFilter ? '%' + itemIdFilter.toLowerCase() + '%' : null
+        String itemIdFilterQueryNotProvided = itemIdFilter ? "false" : "true"
         Page<UserActionsHistoryRepo.UserActionsPreview> userActionsPreviewFromDB = userActionsHistoryRepo.getActions(
                 projectId?.toLowerCase(), quizId?.toLowerCase(),
-                projectIdFilterQuery, itemFilter, userFilterQuery, quizFilterQuery, itemIdFilterQuery, actionFilter, pageRequest)
+                projectIdFilterQuery, projectIdFilterQueryNotProvided,
+                itemFilter,
+                userFilterQuery, userFilterQueryNotProvided,
+                quizFilterQuery, quizFilterQueryNotProvided,
+                itemIdFilterQuery, itemIdFilterQueryNotProvided,
+                actionFilter, pageRequest)
         Long totalRows = userActionsPreviewFromDB.getTotalElements()
         List<DashboardUserActionRes> actionResList = userActionsPreviewFromDB.getContent().collect {
             new DashboardUserActionRes(

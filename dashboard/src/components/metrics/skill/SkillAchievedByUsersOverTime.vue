@@ -16,20 +16,31 @@ limitations under the License.
 <script setup>
 import { ref, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js';
+import { useThemesHelper } from '@/components/header/UseThemesHelper.js';
 import MetricsService from "@/components/metrics/MetricsService.js";
 import MetricsOverlay from "@/components/metrics/utils/MetricsOverlay.vue";
 import NumberFormatter from '@/components/utils/NumberFormatter.js'
 
 const route = useRoute();
+const themeState = useSkillsDisplayThemeState()
+const themeHelper = useThemesHelper()
+
+const chartAxisColor = () => {
+  if (themeState.theme.charts.axisLabelColor) {
+    return themeState.theme.charts.axisLabelColor
+  }
+  return themeHelper.isDarkTheme ? 'white' : undefined
+}
 
 const series = ref([]);
-const chartOptions = {
+const chartOptions = ref ({
   chart: {
-    height: 250,
+    height: 350,
     type: 'area',
     toolbar: {
       show: true,
-      offsetY: -52,
+      offsetY: -85,
       autoSelected: 'zoom',
       tools: {
         pan: false,
@@ -70,6 +81,9 @@ const chartOptions = {
       formatter(val) {
         return NumberFormatter.format(val);
       },
+      style: {
+        colors: chartAxisColor()
+      }
     },
     title: {
       text: '# Users',
@@ -78,7 +92,10 @@ const chartOptions = {
   legend: {
     position: 'top',
   },
-};
+  tooltip: {
+    theme: themeHelper.isDarkTheme ? 'dark' : 'light',
+  },
+});
 const loading = ref(true);
 const hasData = ref(false);
 
@@ -114,7 +131,7 @@ const loadData = () => {
     </template>
     <template #content>
       <metrics-overlay :loading="loading" :has-data="hasData" no-data-msg="No achievements yet for this skill.">
-        <apexchart type="area" height="350" :options="chartOptions" :series="series" class="mt-4"></apexchart>
+        <apexchart v-if="chartOptions?.chart?.height" type="area" :height="chartOptions.chart.height" :options="chartOptions" :series="series" class="mt-6"></apexchart>
       </metrics-overlay>
     </template>
   </Card>

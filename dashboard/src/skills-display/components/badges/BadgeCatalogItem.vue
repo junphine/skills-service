@@ -59,6 +59,7 @@ const percent = computed(() => {
 const showHeader = computed(() => props.badge.gem || props.badge.global)
 const iconCardPt = computed(() => {
   return {
+    root: { class: '!border' },
     content:
       {
         class: showHeader.value ? 'p-0' : ''
@@ -93,8 +94,8 @@ const otherUsersAchieved = computed(() => {
 
 <template>
   <div  :data-cy="`badge_${badge.badgeId}`" class="badge-catalog-item">
-    <div class="md:flex gap-3">
-      <Card class="w-min-10rem mb-3 md:mb-0" :pt="iconCardPt" :data-cy="`badge_${badge.badgeId}`">
+    <div class="md:flex gap-4">
+      <Card class="w-min-10rem mb-4 md:mb-0" :pt="iconCardPt" :data-cy="`badge_${badge.badgeId}`">
         <template #header v-if="showHeader">
           <div class="pt-2 px-2">
             <badge-header-icons :badge="badge" />
@@ -104,8 +105,8 @@ const otherUsersAchieved = computed(() => {
           <div class="text-center">
             <i :class="iconCss" style="font-size: 5rem;" />
             <placement-badge :badge="badge" class="mt-2" />
-            <div v-if="badge.gem" class="text-muted text-orange-800">
-              <small aria-label="`This is a gem badge and it expires in ${timeUtils.relativeTime(badge.endDate)}`">Expires {{ timeUtils.relativeTime(badge.endDate) }}</small>
+            <div v-if="badge.gem" class="text-muted text-orange-800" :data-cy="`badge_${badge.badgeId}_gem`">
+              <small aria-label="`This is a gem badge and it ${timeUtils.isInThePast(badge.endDate) ? 'expired' : 'expires'} ${timeUtils.relativeTime(badge.endDate)}`">{{timeUtils.isInThePast(badge.endDate) ? 'Expired' : 'Expires'}} {{ timeUtils.relativeTime(badge.endDate) }}</small>
             </div>
             <div v-if="badge.global" class="text-muted">
               <small><b>Global Badge</b></small>
@@ -117,19 +118,19 @@ const otherUsersAchieved = computed(() => {
             <extra-badge-award v-if="badge.achievedWithinExpiration"
                                :icon-class="badge.awardAttrs.iconClass"
                                :name="badge.awardAttrs.name"
-                               class="mt-3"/>
+                               class="my-4"/>
           </div>
         </template>
       </Card>
       <div class="flex-1">
-        <div class="flex align-content-end">
+        <div class="flex content-end">
           <div class="flex-1 text-2xl font-medium" data-cy="badgeTitle">
-            <div v-if="badge.projectName" class="text-color-secondary text-base" data-cy="badgeProjectName">
-              <span class="font-italic">Project:</span> {{ badge.projectName}}
+            <div v-if="badge.projectName" class="text-muted-color text-base" data-cy="badgeProjectName">
+              <span class="italic">Project:</span> {{ badge.projectName}}
             </div>
             <highlighted-value :value="badge.badge" :filter="searchString" />
           </div>
-          <div class="align-content-end">
+          <div class="content-end">
             <div class="float-right text-navy" :class="{ 'text-success': percent === 100 }" data-cy="badgePercentCompleted">
               <i v-if="percent === 100" class="fa fa-check" /> {{ percent }}% Complete
             </div>
@@ -182,7 +183,7 @@ const otherUsersAchieved = computed(() => {
           <markdown-text :text="badge.description" :instance-id="badge.badgeId" />
         </p>
 
-        <div v-if="viewDetailsBtnTo" class="text-center md:text-left mt-3">
+        <div v-if="viewDetailsBtnTo" class="text-center md:text-left mt-4">
           <router-link
             :to="viewDetailsBtnTo"
             class="skills-theme-btn"

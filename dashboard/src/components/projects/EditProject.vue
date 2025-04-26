@@ -75,7 +75,7 @@ const checkDescription = useDebounceFn((value, testContext) => {
   if (!value || value.trim().length === 0 || !appConfig.paragraphValidationRegex) {
     return true
   }
-  return descriptionValidatorService.validateDescription(value, false, enableProtectedUserCommunity.value).then((result) => {
+  return descriptionValidatorService.validateDescription(value, false, enableProtectedUserCommunity.value, false).then((result) => {
     if (result.valid) {
       return true
     }
@@ -215,7 +215,7 @@ const onSavedProject = () => {
         :is-edit="isEdit"
         :is-copy="isCopy" />
       <markdown-editor
-        class="mt-5"
+        class="mt-8"
         :allow-attachments="isEdit || !communityLabels.showManageUserCommunity.value"
         name="description" />
 

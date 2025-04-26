@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useField } from 'vee-validate'
 import ToastUiEditor from '@/common-components/utilities/markdown/ToastUiEditor.vue'
 
@@ -27,8 +27,11 @@ import { useByteFormat } from '@/common-components/filter/UseByteFormat.js'
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import FileUploadService from '@/common-components/utilities/FileUploadService.js'
 import { useThemesHelper } from '@/components/header/UseThemesHelper.js'
+import { useDebounceFn } from '@vueuse/core'
+import {useLog} from "@/components/utils/misc/useLog.js";
 
 const appConfig = useAppConfig()
+const log = useLog()
 
 const props = defineProps({
   value: String,
@@ -36,11 +39,19 @@ const props = defineProps({
     type: String,
     required: true
   },
+  id: {
+    type: String,
+    required: false,
+  },
   resizable: {
     type: Boolean,
     default: false
   },
   allowAttachments: {
+    type: Boolean,
+    default: true
+  },
+  allowInsertImages: {
     type: Boolean,
     default: true
   },
@@ -85,14 +96,15 @@ const props = defineProps({
     default: false
   },
 })
+const emit = defineEmits(['value-changed'])
 const themeHelper = useThemesHelper()
-
+const idForToastUIEditor = props.id || props.name
 //  build editor options
 const toolbarItems = [
   ['heading', 'bold', 'italic', 'strike'],
   ['hr', 'quote'],
   ['ul', 'ol', 'indent', 'outdent'],
-  ['image', 'link'],
+  props.allowInsertImages ? ['image', 'link'] : ['link'],
   ['code', 'codeblock'],
   ['scrollSync']
 ]
@@ -111,7 +123,7 @@ const options = {
   autofocus: false,
   placeholder: props.placeholder,
   toolbarItems,
-  plugins: [fontSize]
+  plugins: [fontSize],
 }
 const announcer = useSkillsAnnouncer()
 const commonOptions = useCommonMarkdownOptions()
@@ -156,30 +168,71 @@ onMounted(() => {
   }
 })
 function onLoad() {
-  markdownAccessibilityFixes.fixAccessibilityIssues()
+  markdownAccessibilityFixes.fixAccessibilityIssues(idForToastUIEditor, props.allowInsertImages)
 }
 
-function onEditorChange() {
-  attachmentError.value = ''
-
-  // This looks for an image at the start of the description and adds a newline before it
-  // eslint-disable-next-line no-useless-escape
-  const imgMatch = /^\!\[.*\]\(.*\)/
-  const current = markdownText()
-  if (current.match(imgMatch)) {
-    moveCursorToStart()
-    insertText('\n')
-    moveCursorToStart()
-  }
-
+const updateValue = () => {
   if (props.useHtml) {
-    // emit('input', htmlText())
     value.value = htmlText()
   } else {
-    // emit('input', markdownText())
     value.value = markdownText()
   }
 }
+const imgMatch = /^\!\[.*\]\(.*\)/
+
+const handleOnChange = () => {
+  attachmentError.value = ''
+
+  const startTime = performance.now();
+  updateValue()
+  const endTime = performance.now();
+  const totalMs = endTime - startTime;
+
+  // This looks for an image at the start of the description and adds a newline before it
+  const maxLenToConsiderInsertingNewLine = 100000
+  if (value.value && value.value.length < maxLenToConsiderInsertingNewLine && value.value.match(imgMatch)) {
+    moveCursorToStart()
+    insertText('\n')
+    moveCursorToStart()
+    updateValue()
+  }
+
+  const minLenToConsiderDebounce = 10000
+  if (value.value?.length < minLenToConsiderDebounce) {
+    if (onChangeFunc.value !== withoutDebounce) {
+      log.info(`Message is too small, change handleOnChange back to default - no debounce`)
+      onChangeFunc.value = withoutDebounce
+    }
+  } else if ( value.value?.length > minLenToConsiderDebounce) {
+    const functionCandidate = debounceBasedOnRetrievingTextLatency(totalMs)
+    if (functionCandidate.func !== onChangeFunc.value) {
+      log.info(`Change handleOnChange function to ${functionCandidate.message}`)
+      onChangeFunc.value = functionCandidate.func
+    }
+  }
+  emit('value-changed', value.value)
+}
+const debounceBasedOnRetrievingTextLatency = (latencyInMs) => {
+  if (latencyInMs < 10) {
+    return { func: withoutDebounce, message: 'no debounce' }
+  } else if (latencyInMs < 30) {
+    return { func: debounce200, message: '200ms debounce' }
+  } else if (latencyInMs < 50) {
+    return { func: debounce400, message: '400ms debounce' }
+  } else if (latencyInMs < 80) {
+    return { func: debounce600, message: '600ms debounce' }
+  } else if (latencyInMs < 120) {
+    return { func: debounce800, message: '800ms debounce' }
+  }
+  return { func: debounce1000, message: '1s debounce' }
+}
+const withoutDebounce = handleOnChange
+const debounce200 = useDebounceFn(handleOnChange, 200)
+const debounce400 = useDebounceFn(handleOnChange, 400)
+const debounce600 = useDebounceFn(handleOnChange, 600)
+const debounce800 = useDebounceFn(handleOnChange, 800)
+const debounce1000 = useDebounceFn(handleOnChange, 1000)
+const onChangeFunc = ref(withoutDebounce)
 
 const editorFeatureLinkRef = ref(null)
 function onKeydown(mode, event) {
@@ -191,15 +244,15 @@ function onKeydown(mode, event) {
     }
   } else if (event.ctrlKey && event.altKey && !event.shiftKey) {
     if (event.key === 't') {
-      markdownAccessibilityFixes.clickOnHeaderToolbarButton()
+      markdownAccessibilityFixes.clickOnHeaderToolbarButton(idForToastUIEditor)
     } else if (event.key === 's') {
-      markdownAccessibilityFixes.clickOnFontSizeToolbarButton()
+      markdownAccessibilityFixes.clickOnFontSizeToolbarButton(idForToastUIEditor)
     } else if (event.key === 'i') {
-      markdownAccessibilityFixes.clickOnImageToolbarButton()
+      markdownAccessibilityFixes.clickOnImageToolbarButton(idForToastUIEditor)
     } else if (event.key === 'r') {
-      markdownAccessibilityFixes.clickOnLinkToolbarButton()
+      markdownAccessibilityFixes.clickOnLinkToolbarButton(idForToastUIEditor)
     } else if (event.key === 'a') {
-      markdownAccessibilityFixes.clickOnAttachmentToolbarButton()
+      markdownAccessibilityFixes.clickOnAttachmentToolbarButton(idForToastUIEditor)
     }
   }
 }
@@ -260,22 +313,30 @@ function attachFile(event) {
     }
   }
 }
-
+const editorStyle = computed(() => {
+  if (!props.resizable) {
+    return {}
+  }
+  return {
+    resize: 'vertical',
+    overflow: 'auto',
+    'min-height': '285px'
+  }
+})
 </script>
 
 <template>
-  <div id="markdown-editor" @drop="attachFile" class="field text-left" :data-cy="`${name}MarkdownEditor`">
+  <div id="markdown-editor" @drop="attachFile" class="flex flex-col gap-2 text-left" :data-cy="`${name}MarkdownEditor`">
     <label v-if="showLabel"
            data-cy="markdownEditorLabel"
-           class="mb-3"
            :class="`${labelClass}`"
            :for="name" @click="focusOnMarkdownEditor">{{ label }}</label>
     <BlockUI :blocked="disabled">
 
-      <toast-ui-editor :id="name"
-                       :style="resizable ? {resize: 'vertical', overflow: 'auto'} : {}"
-                       class="markdown"
-                       :class="{'editor-theme-dark' : themeHelper.isDarkTheme }"
+      <toast-ui-editor :id="idForToastUIEditor"
+                       :style="editorStyle"
+                       class="no-bottom-border"
+                       :class="{'editor-theme-dark' : themeHelper.isDarkTheme, 'is-resizable': resizable }"
                        data-cy="markdownEditorInput"
                        ref="toastuiEditor"
                        initialEditType="wysiwyg"
@@ -284,13 +345,13 @@ function attachFile(event) {
                        :options="editorOptions"
                        :height="markdownHeight"
                        :disabled="disabled"
-                       @change="onEditorChange"
+                       @change="onChangeFunc"
                        @keydown="onKeydown"
                        @focus="handleFocus"
                        @load="onLoad" />
-      <div class="border-1 surface-border surface-100 border-round-bottom px-2 py-2 sd-theme-tile-background">
-      <div class="flex text-xs">
-        <div class="">
+      <div class="border border-surface bg-surface-100 dark:bg-surface-700 rounded-b px-2 py-2 sd-theme-tile-background">
+      <div  class="flex text-xs">
+        <div v-if="allowInsertImages" class="">
           Insert images and attach files by pasting, dragging & dropping, or selecting from toolbar.
         </div>
         <div class="flex-1 text-right">
@@ -311,7 +372,12 @@ function attachFile(event) {
       </Message>
     </div>
     </BlockUI>
-    <small role="alert" class="p-error" :id="`${name}Error`" data-cy="descriptionError">{{ errorMessage || '' }}</small>
+    <Message severity="error"
+             variant="simple"
+             size="small"
+             :closable="false"
+             data-cy="descriptionError"
+             :id="`${name}Error`">{{ errorMessage || '' }}</Message>
 
     <input @change="attachFile"
            type="file"
@@ -339,6 +405,16 @@ function attachFile(event) {
 </style>
 
 <style>
+.is-resizable > div {
+  height: 100% !important;
+  min-height: 238px !important;
+}
+
+.is-resizable .toastui-editor-defaultUI > .toastui-editor-main,
+.is-resizable .toastui-editor-defaultUI > .toastui-editor-main > .toastui-editor-main-container,
+.is-resizable .toastui-editor-defaultUI > .toastui-editor-main > .toastui-editor-main-container > .toastui-editor-ww-container > .toastui-editor {
+  min-height: 238px !important;
+}
 
 .editor-theme-dark .toastui-editor-ww-container {
   background-color: #1f2937 !important;
@@ -355,6 +431,11 @@ function attachFile(event) {
 }
 .editor-theme-dark .toastui-editor-popup-body li:hover {
   background-color: #41444a !important;
+  color: #dadde6 !important;
+}
+.editor-theme-dark .toastui-editor-popup-body input,
+.editor-theme-dark .toastui-editor-popup-add-image .toastui-editor-file-name.has-file {
+  color: #dadde6 !important;
 }
 .editor-theme-dark .toastui-editor-contents p,
 .editor-theme-dark .toastui-editor-contents hr,
@@ -386,7 +467,7 @@ function attachFile(event) {
   border: 1px solid #424b57
 }
 
-.markdown .toastui-editor-defaultUI {
+.no-bottom-border .toastui-editor-defaultUI {
   border-bottom: none !important;
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
@@ -411,5 +492,9 @@ div.toastui-editor-contents {
 }
 .toastui-editor-defaultUI-toolbar {
   flex-wrap: wrap;
+}
+
+.toastui-editor .toastui-editor-contents  blockquote p {
+  color: #636363;
 }
 </style>

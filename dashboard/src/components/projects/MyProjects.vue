@@ -97,7 +97,6 @@ const loadProjects = () => {
     })
 }
 const projectRemoved = (project) => {
-  isLoading.value = true
   ProjectService.deleteProject(project.projectId)
     .then(() => {
       loadProjects()
@@ -237,11 +236,17 @@ const focusOnProjectCard = (projectId) => {
 const hasData = computed(() => {
   return !isLoading.value && projects.value && projects.value.length > 0
 })
+
+const createNewProject = () => {
+  newProject.value.isEdit = false
+  newProject.value.project = {}
+  newProject.value.show = true
+};
 </script>
 
 <template>
   <div>
-    <SubPageHeader title="Projects" action="Project">
+    <SubPageHeader title="Projects" action="Project" :title-level="1">
       <SkillsButton
         v-if="isRootUser"
         label="Pin"
@@ -254,14 +259,14 @@ const hasData = computed(() => {
         role="button"
         size="small"
         data-cy="pinProjectsButton"
-        class="mr-2 bg-primary-reverse" />
+        class="mr-2 text-primary bg-primary-contrast" />
       <SkillsButton
         label="Project"
         icon="fas fa-plus-circle"
         id="newProjectBtn"
         ref="newProjButton"
-        @click="newProject.show = true"
-        outlined class="bg-primary-reverse"
+        @click="createNewProject"
+        outlined class="text-primary bg-primary-contrast"
         size="small"
         :disabled="addProjectDisabled"
         data-cy="newProjectButton"
@@ -278,18 +283,18 @@ const hasData = computed(() => {
       </div>
     </SubPageHeader>
 
-    <SkillsSpinner :is-loading="isLoading" class="my-5" />
+    <SkillsSpinner :is-loading="isLoading" class="my-8" />
 
     <div v-if="hasData" id="projectCards"
          :class="{
-      'grid': projectsState.shouldTileProjectsCards,
+      'grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-4': projectsState.shouldTileProjectsCards,
       '': !projectsState.shouldTileProjectsCards
     }">
       <div v-for="project of projects"
            :key="project.projectId"
-           class="mb-3"
+           class="mb-4"
            :class="{
-            'col-12 xl:col-6 xlPlus:col-4 xlPlusPlus:col-3': projectsState.shouldTileProjectsCards,
+            '': projectsState.shouldTileProjectsCards,
             '': !projectsState.shouldTileProjectsCards
             }"
            :id="project.projectId">
@@ -316,7 +321,7 @@ const hasData = computed(() => {
     <NoContent2
       v-if="!hasData && !isLoading"
       title="No Projects Yet..."
-      class="my-5"
+      class="my-8"
       message="A Project represents a gamified training profile that consists of skills divided into subjects. Create as many Projects as you need."
       data-cy="noProjectsYet" />
     <edit-project
@@ -325,6 +330,7 @@ const hasData = computed(() => {
       :project="newProject.project"
       :is-edit="newProject.isEdit"
       @project-saved="saveProject"
+      @close="newProject.show = false"
       :enable-return-focus="true" />
     <pin-projects v-if="showSearchProjectModal" v-model="showSearchProjectModal"
                   @done="pinModalClosed" />

@@ -47,6 +47,17 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                     toDef.copied_from_skill_ref = up.skill_ref_id and
                     toDef.copied_from_skill_ref = fromDef.id and
                     up.skill_ref_id in (:fromSkillRefIds)
+                   and (not exists(
+                        select 1
+                        from settings s
+                        where s.project_id = toDef.project_id
+                          and s.setting = 'user_community' and s.value = 'true'
+                       ) or (exists(
+                        select 1
+                        from user_tags ut
+                        where ut.user_id = up.user_id
+                          and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                       )))     
                     and not exists(
                         select 1
                         from user_points innerUP
@@ -55,7 +66,7 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                           and toDef.skill_id = innerUP.skill_id
                     )
                 ''', nativeQuery = true)
-    void copySkillUserPointsToTheImportedProjects(@Param('toProjectId') String toProjectId, @Param('fromSkillRefIds') List<Integer> fromSkillRefIds)
+    void copySkillUserPointsToTheImportedProjects(@Param('toProjectId') String toProjectId, @Param('fromSkillRefIds') List<Integer> fromSkillRefIds, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''INSERT INTO user_points(user_id, project_id, skill_id, skill_ref_id, points)
@@ -90,17 +101,54 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                  quiz_to_skill_definition q_to_s,
                  skill_definition skill
             where q_attempt.status = 'PASSED'
+              and q_attempt.id = (select inner_attempt.id from user_quiz_attempt inner_attempt where inner_attempt.quiz_definition_ref_id = :quizRefId and q_attempt.user_id = inner_attempt.user_id order by inner_attempt.updated desc limit 1)
               and q_attempt.quiz_definition_ref_id = :quizRefId
               and skill.id = :skillRefId
               and q_to_s.quiz_ref_id = q_attempt.quiz_definition_ref_id
               and q_to_s.skill_ref_id = skill.id
+              and (not exists(
+                    select 1
+                    from settings s
+                    where s.project_id = skill.project_id
+                      and s.setting = 'user_community' and s.value = 'true'
+                   ) or (exists(
+                    select 1
+                    from user_tags ut
+                    where ut.user_id = q_attempt.user_id
+                      and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                   )))
+              and not exists (
+                  select 1
+                  FROM skill_definition sdParent,
+                       skill_relationship_definition srd,
+                       skill_definition sdChild
+                       LEFT JOIN user_achievement ua
+                         ON sdChild.project_id = ua.project_id AND sdChild.skill_id = ua.skill_id AND ua.user_id = q_attempt.user_id
+                  WHERE srd.parent_ref_id = sdParent.id
+                    AND srd.child_ref_id = sdChild.id
+                    AND srd.type = 'Dependence'
+                    AND (
+                      sdParent.id = :skillRefId
+                      OR sdParent.id IN (
+                        SELECT badge.id
+                        FROM skill_definition badge,
+                             skill_relationship_definition badge_to_skill,
+                             skill_definition skill
+                        WHERE badge_to_skill.parent_ref_id = badge.id
+                          AND badge_to_skill.child_ref_id = skill.id
+                          AND badge_to_skill.type = 'BadgeRequirement'
+                          AND skill.id = :skillRefId
+                      )
+                    )
+                    AND ua.skill_id IS NULL
+                )     
               and not exists(
                     select 1
                     from user_points innerUP
                     where skill.id = innerUP.skill_ref_id
                       and q_attempt.user_id = innerUP.user_id
                 )''', nativeQuery = true)
-    void createSkillUserPointsFromPassedQuizzes(@Param('quizRefId') Integer quizRefId, @Param('skillRefId') Integer skillRefId)
+    void createSkillUserPointsFromPassedQuizzes(@Param('quizRefId') Integer quizRefId, @Param('skillRefId') Integer skillRefId, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''insert into user_points (user_id, project_id, skill_ref_id, skill_id, points, created, updated)
@@ -118,13 +166,49 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
               and skill.project_id = :projectId
               and q_to_s.quiz_ref_id = q_attempt.quiz_definition_ref_id
               and q_to_s.skill_ref_id = skill.id
+              and (not exists(
+                    select 1
+                    from settings s
+                    where s.project_id = skill.project_id
+                      and s.setting = 'user_community' and s.value = 'true'
+                   ) or (exists(
+                    select 1
+                    from user_tags ut
+                    where ut.user_id = q_attempt.user_id
+                      and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                   )))
+              and not exists (
+                  select 1
+                  FROM skill_definition sdParent,
+                       skill_relationship_definition srd,
+                       skill_definition sdChild
+                       LEFT JOIN user_achievement ua
+                         ON sdChild.project_id = ua.project_id AND sdChild.skill_id = ua.skill_id AND ua.user_id = q_attempt.user_id
+                  WHERE srd.parent_ref_id = sdParent.id
+                    AND srd.child_ref_id = sdChild.id
+                    AND srd.type = 'Dependence'
+                    AND (
+                      sdParent.id = skill.id
+                      OR sdParent.id IN (
+                        SELECT badge.id
+                        FROM skill_definition badge,
+                             skill_relationship_definition badge_to_skill,
+                             skill_definition badgeSkill
+                        WHERE badge_to_skill.parent_ref_id = badge.id
+                          AND badge_to_skill.child_ref_id = badgeSkill.id
+                          AND badge_to_skill.type = 'BadgeRequirement'
+                          AND skill.id = skill.id
+                      )
+                    )
+                    AND ua.skill_id IS NULL
+                )
               and not exists(
                     select 1
                     from user_points innerUP
                     where skill.id = innerUP.skill_ref_id
                       and q_attempt.user_id = innerUP.user_id
                 )''', nativeQuery = true)
-    void createSkillUserPointsFromPassedQuizzesForProject(@Param('projectId') String projectId)
+    void createSkillUserPointsFromPassedQuizzesForProject(@Param('projectId') String projectId, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''insert into user_performed_skill (user_id, project_id, skill_ref_id, skill_id, performed_on)
@@ -137,17 +221,54 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                  quiz_to_skill_definition q_to_s,
                  skill_definition skill
             where q_attempt.status = 'PASSED'
+              and q_attempt.id = (select inner_attempt.id from user_quiz_attempt inner_attempt where inner_attempt.quiz_definition_ref_id = :quizRefId and q_attempt.user_id = inner_attempt.user_id order by inner_attempt.updated desc limit 1)
               and q_attempt.quiz_definition_ref_id = :quizRefId
               and skill.id = :skillRefId
               and q_to_s.quiz_ref_id = q_attempt.quiz_definition_ref_id
               and q_to_s.skill_ref_id = skill.id
+              and (not exists(
+                    select 1
+                    from settings s
+                    where s.project_id = skill.project_id
+                      and s.setting = 'user_community' and s.value = 'true'
+                   ) or (exists(
+                    select 1
+                    from user_tags ut
+                    where ut.user_id = q_attempt.user_id
+                      and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                   )))
+              and not exists (
+                  select 1
+                  FROM skill_definition sdParent,
+                       skill_relationship_definition srd,
+                       skill_definition sdChild
+                       LEFT JOIN user_achievement ua
+                         ON sdChild.project_id = ua.project_id AND sdChild.skill_id = ua.skill_id AND ua.user_id = q_attempt.user_id
+                  WHERE srd.parent_ref_id = sdParent.id
+                    AND srd.child_ref_id = sdChild.id
+                    AND srd.type = 'Dependence'
+                    AND (
+                      sdParent.id = :skillRefId
+                      OR sdParent.id IN (
+                        SELECT badge.id
+                        FROM skill_definition badge,
+                             skill_relationship_definition badge_to_skill,
+                             skill_definition skill
+                        WHERE badge_to_skill.parent_ref_id = badge.id
+                          AND badge_to_skill.child_ref_id = skill.id
+                          AND badge_to_skill.type = 'BadgeRequirement'
+                          AND skill.id = :skillRefId
+                      )
+                    )
+                    AND ua.skill_id IS NULL
+                )
               and not exists(
                     select 1
                     from user_performed_skill innerUP
                     where skill.id = innerUP.skill_ref_id
                       and q_attempt.user_id = innerUP.user_id
                 );''', nativeQuery = true)
-    void createUserPerformedEntriesFromPassedQuizzes(@Param('quizRefId') Integer quizRefId, @Param('skillRefId') Integer skillRefId)
+    void createUserPerformedEntriesFromPassedQuizzes(@Param('quizRefId') Integer quizRefId, @Param('skillRefId') Integer skillRefId, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''insert into user_performed_skill (user_id, project_id, skill_ref_id, skill_id, performed_on)
@@ -163,13 +284,49 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
               and skill.project_id = :projectId
               and q_to_s.quiz_ref_id = q_attempt.quiz_definition_ref_id
               and q_to_s.skill_ref_id = skill.id
+              and (not exists(
+                    select 1
+                    from settings s
+                    where s.project_id = skill.project_id
+                      and s.setting = 'user_community' and s.value = 'true'
+                   ) or (exists(
+                    select 1
+                    from user_tags ut
+                    where ut.user_id = q_attempt.user_id
+                      and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                   )))
+              and not exists (
+                  select 1
+                  FROM skill_definition sdParent,
+                       skill_relationship_definition srd,
+                       skill_definition sdChild
+                       LEFT JOIN user_achievement ua
+                         ON sdChild.project_id = ua.project_id AND sdChild.skill_id = ua.skill_id AND ua.user_id = q_attempt.user_id
+                  WHERE srd.parent_ref_id = sdParent.id
+                    AND srd.child_ref_id = sdChild.id
+                    AND srd.type = 'Dependence'
+                    AND (
+                      sdParent.id = skill.id
+                      OR sdParent.id IN (
+                        SELECT badge.id
+                        FROM skill_definition badge,
+                             skill_relationship_definition badge_to_skill,
+                             skill_definition badgeSkill
+                        WHERE badge_to_skill.parent_ref_id = badge.id
+                          AND badge_to_skill.child_ref_id = badgeSkill.id
+                          AND badge_to_skill.type = 'BadgeRequirement'
+                          AND skill.id = skill.id
+                      )
+                    )
+                    AND ua.skill_id IS NULL
+                )
               and not exists(
                     select 1
                     from user_performed_skill innerUP
                     where skill.id = innerUP.skill_ref_id
                       and q_attempt.user_id = innerUP.user_id
                 );''', nativeQuery = true)
-    void createUserPerformedEntriesFromPassedQuizzesForProject(@Param('projectId') String projectId)
+    void createUserPerformedEntriesFromPassedQuizzesForProject(@Param('projectId') String projectId, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''insert into user_achievement (user_id, project_id, skill_ref_id, skill_id, points_when_achieved, notified, achieved_on)
@@ -184,17 +341,54 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                  quiz_to_skill_definition q_to_s,
                  skill_definition skill
             where q_attempt.status = 'PASSED'
+              and q_attempt.id = (select inner_attempt.id from user_quiz_attempt inner_attempt where inner_attempt.quiz_definition_ref_id = :quizRefId and q_attempt.user_id = inner_attempt.user_id order by inner_attempt.updated desc limit 1)
               and q_attempt.quiz_definition_ref_id = :quizRefId
               and skill.id = :skillRefId
               and q_to_s.quiz_ref_id = q_attempt.quiz_definition_ref_id
               and q_to_s.skill_ref_id = skill.id
+              and (not exists(
+                    select 1
+                    from settings s
+                    where s.project_id = skill.project_id
+                      and s.setting = 'user_community' and s.value = 'true'
+                   ) or (exists(
+                    select 1
+                    from user_tags ut
+                    where ut.user_id = q_attempt.user_id
+                      and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                   )))
+              and not exists (
+                  select 1
+                  FROM skill_definition sdParent,
+                       skill_relationship_definition srd,
+                       skill_definition sdChild
+                       LEFT JOIN user_achievement ua
+                         ON sdChild.project_id = ua.project_id AND sdChild.skill_id = ua.skill_id AND ua.user_id = q_attempt.user_id
+                  WHERE srd.parent_ref_id = sdParent.id
+                    AND srd.child_ref_id = sdChild.id
+                    AND srd.type = 'Dependence'
+                    AND (
+                      sdParent.id = :skillRefId
+                      OR sdParent.id IN (
+                        SELECT badge.id
+                        FROM skill_definition badge,
+                             skill_relationship_definition badge_to_skill,
+                             skill_definition skill
+                        WHERE badge_to_skill.parent_ref_id = badge.id
+                          AND badge_to_skill.child_ref_id = skill.id
+                          AND badge_to_skill.type = 'BadgeRequirement'
+                          AND skill.id = :skillRefId
+                      )
+                    )
+                    AND ua.skill_id IS NULL
+                )
               and not exists(
                     select 1
                     from user_achievement innerUP
                     where skill.id = innerUP.skill_ref_id
                       and q_attempt.user_id = innerUP.user_id
                 );''', nativeQuery = true)
-    void createUserAchievementsFromPassedQuizzes(@Param('quizRefId') Integer quizRefId, @Param('skillRefId') Integer skillRefId)
+    void createUserAchievementsFromPassedQuizzes(@Param('quizRefId') Integer quizRefId, @Param('skillRefId') Integer skillRefId, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''insert into user_achievement (user_id, project_id, skill_ref_id, skill_id, points_when_achieved, notified, achieved_on)
@@ -212,13 +406,49 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
               and skill.project_id = :projectId
               and q_to_s.quiz_ref_id = q_attempt.quiz_definition_ref_id
               and q_to_s.skill_ref_id = skill.id
+              and (not exists(
+                    select 1
+                    from settings s
+                    where s.project_id = skill.project_id
+                      and s.setting = 'user_community' and s.value = 'true'
+                   ) or (exists(
+                    select 1
+                    from user_tags ut
+                    where ut.user_id = q_attempt.user_id
+                      and ut.key = :userCommunityUserTagKey and ut.value = :userCommunityUserTagValue
+                   )))
+              and not exists (
+                  select 1
+                  FROM skill_definition sdParent,
+                       skill_relationship_definition srd,
+                       skill_definition sdChild
+                       LEFT JOIN user_achievement ua
+                         ON sdChild.project_id = ua.project_id AND sdChild.skill_id = ua.skill_id AND ua.user_id = q_attempt.user_id
+                  WHERE srd.parent_ref_id = sdParent.id
+                    AND srd.child_ref_id = sdChild.id
+                    AND srd.type = 'Dependence'
+                    AND (
+                      sdParent.id = skill.id
+                      OR sdParent.id IN (
+                        SELECT badge.id
+                        FROM skill_definition badge,
+                             skill_relationship_definition badge_to_skill,
+                             skill_definition badgeSkill
+                        WHERE badge_to_skill.parent_ref_id = badge.id
+                          AND badge_to_skill.child_ref_id = badgeSkill.id
+                          AND badge_to_skill.type = 'BadgeRequirement'
+                          AND skill.id = skill.id
+                      )
+                    )
+                    AND ua.skill_id IS NULL
+                )
               and not exists(
                     select 1
                     from user_achievement innerUP
                     where skill.id = innerUP.skill_ref_id
                       and q_attempt.user_id = innerUP.user_id
                 );''', nativeQuery = true)
-    void createUserAchievementsFromPassedQuizzesForProject(@Param('projectId') String projectId)
+    void createUserAchievementsFromPassedQuizzesForProject(@Param('projectId') String projectId, @Param('userCommunityUserTagKey') String userCommunityUserTagKey, @Param('userCommunityUserTagValue') String userCommunityUserTagValue)
 
     @Modifying
     @Query(value = '''INSERT INTO user_points(user_id, points, project_id)
@@ -534,20 +764,21 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
      *  the reason for duplication is that when null is provided for the 'day' parameter JPA doesn't properly generate SQL statement, I am guessing the bug is because
      *      *  the parameter is withing left join clause and they didn't handle that properly
      */
-    @Query('''select sdChild, attributes, userPoints, pd.name, approval
+    @Query('''select sdChild, attributes, userPoints, pd.name, approval, ua.userIdForDisplay
     from SkillDef sdParent, SkillRelDef srd, SkillDef sdChild
     left join SkillAttributesDef attributes on sdChild.id = attributes.skillRefId
     left join UserPoints userPoints on sdChild.projectId = userPoints.projectId and sdChild.skillId = userPoints.skillId and userPoints.userId=?1
     left join ProjDef pd on sdChild.copiedFromProjectId = pd.projectId
-    left join SkillApproval approval on (
-            (sdChild.id = approval.skillRefId OR sdChild.copiedFrom = approval.skillRefId)
-            and approval.userId=?1
-            and (approval.approverUserId is null OR (approval.rejectedOn is not null AND approval.rejectionAcknowledgedOn is null))
-      )
+    left join SkillApproval approval on approval.id = (
+        select approval.id from SkillApproval approval where 
+        (sdChild.id = approval.skillRefId OR sdChild.copiedFrom = approval.skillRefId)
+        and approval.userId=?1
+        order by approval.updated desc limit 1
+    )
+    left join UserAttrs ua on ua.userId = approval.approverUserId
       where srd.parent=sdParent and  srd.child=sdChild and (sdChild.enabled = 'true' or sdChild.type = 'SkillsGroup') and
-      sdParent.projectId=?2 and sdParent.skillId=?3 and srd.type in ?4 and sdChild.version<=?5 ''')
+      sdParent.projectId=?2 and sdParent.skillId=?3 and srd.type in ?4 and sdChild.version<=?5''')
     List<Object []> findChildrenAndTheirUserPoints(String userId, String projectId, String skillId, List<SkillRelDef.RelationshipType> types, Integer version)
-
 
     /**
      *  NOTE: this is query is identical to the above query the only difference is 'userPoints.day is null', if you change this query you MUST change the one above
@@ -589,19 +820,26 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
         Integer getChildId()
         Integer getAchievementId()
     }
-    @Query(value = '''SELECT COUNT(distinct user_id) from user_points where project_id = ?1 and skill_id is null''', nativeQuery = true)
+    @Query(value = '''SELECT COUNT(distinct up.user_id) 
+        from user_points up
+        where up.project_id = ?1 and 
+              up.skill_id is null and
+              not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = ?1)''',
+            nativeQuery = true)
     Long countDistinctUserIdByProjectId(String projectId)
 
     @Query(value = '''SELECT COUNT(*)
         FROM (SELECT DISTINCT usattr.user_id 
-                FROM user_points usr, user_attrs usattr 
-                where usr.user_id = usattr.user_id and 
+                FROM user_points usr
+                 JOIN user_attrs usattr ON (usr.user_id = usattr.user_id) 
+                where
                     usr.project_id = ?1 and 
                     usr.skill_id is null and 
                     usr.points >= ?3 and
                     (lower(CONCAT(usattr.first_name, ' ', usattr.last_name, ' (', usattr.user_id_for_display, ')')) like lower(CONCAT('%', ?2, '%')) OR
                     (lower(CONCAT(usattr.user_id_for_display, ' (', usattr.last_name, ', ', usattr.first_name,  ')')) like lower(CONCAT('%', ?2, '%'))) OR
-                     lower(usattr.user_id_for_display) like lower(CONCAT('%', ?2, '%')))) 
+                     lower(usattr.user_id_for_display) like lower(CONCAT('%', ?2, '%')))
+                     AND not exists (select 1 from archived_users au where au.user_id = usr.user_id and au.project_id = ?1)) 
                 AS temp''',
             nativeQuery = true)
     Long countDistinctUserIdByProjectIdAndUserIdLike(String projectId, String userId, int minimumPoints)
@@ -612,7 +850,8 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
           AND up.project_id = ?1
           AND up.skill_id IS NULL
           AND ut.key = ?2
-          AND ut.value = ?3''', nativeQuery = true)
+          AND ut.value = ?3
+          AND not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = ?1)''', nativeQuery = true)
     Long countDistinctUserIdByProjectIdAndUserTag(String projectId, String userTagKey, String userTagValue)
 
     @Query(value = '''SELECT COUNT(*)
@@ -625,7 +864,9 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                       usr.project_id = ?1 and 
                       usr.skill_id is null and 
                       (lower(CONCAT(usattr.first_name, ' ', usattr.last_name, ' (', usattr.user_id_for_display, ')')) like lower(CONCAT('%', ?4, '%')) OR
-                       lower(usattr.user_id_for_display) like lower(CONCAT('%', ?4, '%')))) 
+                       lower(usattr.user_id_for_display) like lower(CONCAT('%', ?4, '%')))
+                      AND not exists (select 1 from archived_users au where au.user_id = usr.user_id and au.project_id = ?1)
+                ) 
                 AS temp''',
             nativeQuery = true)
     Long countDistinctUserIdByProjectIdAndUserTagAndUserIdLike(String projectId, String userTagKey, String userTagValue, String userId)
@@ -673,12 +914,18 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                  (lower(ua.user_id_for_display) like lower(CONCAT('%', ?3, '%')))
                 ) and 
                 up.skill_id is null and
-                up.points >= ?4
+                up.points >= ?4 and
+                not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = ?1)
             GROUP BY up.user_id''', nativeQuery = true)
     Stream<ProjectUser> findDistinctProjectUsersAndUserIdLike(String projectId, String usersTableAdditionalUserTagKey, String query, int minimumPoints, Pageable pageable)
 
     @Query(value='''SELECT COUNT(*)
-        FROM (SELECT DISTINCT up.user_id from user_points up where up.project_id=?1 and up.skill_id in (?2)) AS temp''',
+        FROM (SELECT DISTINCT up.user_id 
+              from user_points up 
+              where up.project_id=?1 
+                and up.skill_id in (?2)
+                and not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = ?1)
+              ) AS temp''',
             nativeQuery = true)
     Long countDistinctUserIdByProjectIdAndSkillIdIn(String projectId, List<String> skillIds)
 
@@ -699,12 +946,14 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
         SELECT COUNT(*)
         FROM (
             SELECT up.user_id, SUM(up.points) as total_points
-            from user_points up, user_attrs usattr 
+            from user_points up
+            INNER JOIN user_attrs usattr ON up.user_id = usattr.user_id 
             where 
                 up.user_id = usattr.user_id and
                 up.skill_ref_id in (select id from subj_skills) and 
                 (lower(CONCAT(usattr.first_name, ' ', usattr.last_name, ' (', usattr.user_id_for_display, ')')) like lower(CONCAT('%', :userId, '%')) OR
-                 lower(usattr.user_id_for_display) like lower(CONCAT('%', :userId, '%')))
+                 lower(usattr.user_id_for_display) like lower(CONCAT('%', :userId, '%'))) AND
+                not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = :projectId)
             group by up.user_id
         ) AS temp  WHERE total_points >= :minimumPoints
     ''', nativeQuery = true)
@@ -724,27 +973,34 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
               and child.type = 'Skill'
               and child.enabled = 'true'
         )
-        SELECT COUNT(DISTINCT up.user_id) from user_points up where up.skill_ref_id in (select id from skills);
+        SELECT COUNT(DISTINCT up.user_id) 
+        from user_points up 
+        WHERE
+            not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = :projectId) AND 
+            up.skill_ref_id in (select id from skills);
     ''', nativeQuery = true)
     Long countDistinctUsersByProjectIdAndSubjectId(@Param("projectId") String projectId, @Param("subjectId") String subjectId)
 
     @Query(value='''SELECT COUNT(*)
         FROM (SELECT DISTINCT up.user_id 
-            from user_points up, user_attrs usattr 
+            from user_points up
+            INNER JOIN user_attrs usattr ON up.user_id = usattr.user_id 
             where 
                 up.user_id = usattr.user_id and
                 up.project_id=?1 and 
                 up.skill_id in (?2) and 
                 up.points >= ?4 and
                 (lower(CONCAT(usattr.first_name, ' ', usattr.last_name, ' (', usattr.user_id_for_display, ')')) like lower(CONCAT('%', ?3, '%')) OR
-                 lower(usattr.user_id_for_display) like lower(CONCAT('%', ?3, '%')))) 
+                 lower(usattr.user_id_for_display) like lower(CONCAT('%', ?3, '%'))) AND
+                not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = ?1)) 
             AS temp''',
             nativeQuery = true)
     Long countDistinctUserIdByProjectIdAndSkillIdInAndUserIdLike(String projectId, List<String> skillIds, String query, int minimumPoints)
 
     @Query(value = '''SELECT 
-                up.user_id as userId, 
-                max(upa.performedOn) as lastUpdated, 
+                up.user_id as userId,
+                max(upa.firstPerformedOn) as firstUpdated, 
+                max(upa.lastPerformedOn) as lastUpdated, 
                 sum(up.points) as totalPoints,
                 max(ua.first_name) as firstName,
                 max(ua.last_name) as lastName,
@@ -755,7 +1011,8 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
             FROM user_points up
             LEFT JOIN (
                 SELECT upa.user_id, 
-                max(upa.performed_on) AS performedOn 
+                min(upa.performed_on) AS firstPerformedOn,
+                max(upa.performed_on) AS lastPerformedOn 
                 FROM user_performed_skill upa 
                 WHERE upa.skill_ref_id in (
                     select case when copied_from_skill_ref is not null then copied_from_skill_ref else id end as id from skill_definition sd where type = 'Skill' and sd.project_id = ?1 and sd.skill_id in (?3)
@@ -770,13 +1027,15 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                 up.points >= ?5 and
                 (lower(CONCAT(ua.first_name, ' ', ua.last_name, ' (',  ua.user_id_for_display, ')')) like lower(CONCAT('%', ?4, '%'))  OR
                  lower(ua.user_id_for_display) like lower(CONCAT('%', ?4, '%'))
-                ) 
+                ) AND 
+                not exists (select 1 from archived_users au where au.user_id = ua.user_id and au.project_id = $1)
             GROUP BY up.user_id''', nativeQuery = true)
     List<ProjectUser> findDistinctProjectUsersByProjectIdAndSkillIdInAndUserIdLike(String projectId, String usersTableAdditionalUserTagKey, List<String> skillIds, String userId, int minimumPoints, Pageable pageable)
 
     @Query(value = '''SELECT 
                 up.user_id as userId, 
-                max(upa.performedOn) as lastUpdated, 
+                min(upa.firstPerformedOn) as firstUpdated,
+                max(upa.lastPerformedOn) as lastUpdated, 
                 sum(up.points) as totalPoints,
                 max(ua.first_name) as firstName,
                 max(ua.last_name) as lastName,
@@ -787,7 +1046,8 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
             FROM user_points up
             LEFT JOIN (
                 SELECT upa.user_id, 
-                max(upa.performed_on) AS performedOn 
+                min(upa.performed_on) AS firstPerformedOn,
+                max(upa.performed_on) AS lastPerformedOn 
                 FROM user_performed_skill upa 
                 WHERE upa.skill_ref_id in (
                     select case when copied_from_skill_ref is not null then copied_from_skill_ref else id end as id from skill_definition where type = 'Skill' and project_id = ?1 and enabled = 'true'
@@ -805,6 +1065,7 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
                  lower(ua.user_id_for_display) like lower(CONCAT('%', ?5, '%'))
                 ) and 
                 up.skill_id is null 
+                AND not exists (select 1 from archived_users au where au.user_id = up.user_id and au.project_id = ?1)
             GROUP BY up.user_id''', nativeQuery = true)
     List<ProjectUser> findDistinctProjectUsersByProjectIdAndUserTagAndUserIdLike(String projectId, String usersTableAdditionalUserTagKey, String userTagKey, String userTagValue, String userId, Pageable pageable)
 
@@ -826,7 +1087,8 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
         )
         SELECT 
             up.user_id as userId, 
-            max(upa.performedOn) as lastUpdated, 
+            min(upa.firstPerformedOn) as firstUpdated,
+            max(upa.lastPerformedOn) as lastUpdated, 
             sum(up.points) as totalPoints,
             max(ua.first_name) as firstName,
             max(ua.last_name) as lastName,
@@ -838,10 +1100,12 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
         FROM user_points up
         LEFT JOIN (
             SELECT upa.user_id, 
-            max(upa.performed_on) AS performedOn 
+            min(upa.performed_on) AS firstPerformedOn,
+            max(upa.performed_on) AS lastPerformedOn 
             FROM user_performed_skill upa 
             WHERE upa.skill_ref_id in (
-                select case when copied_from_skill_ref is not null then copied_from_skill_ref else id end as id from skill_definition where type = 'Skill' and project_id = :projectId and exists (select 1 from subj_skills s_s where s_s.id = id)
+                select case when copied_from_skill_ref is not null then copied_from_skill_ref else id end as id from skill_definition
+                where type = 'Skill' and project_id = :projectId and id in (select s_s.id from subj_skills s_s where s_s.id = id)
             )
             GROUP BY upa.user_id
         ) upa ON upa.user_id = up.user_id
@@ -859,7 +1123,7 @@ interface UserPointsRepo extends CrudRepository<UserPoints, Integer> {
             up.skill_ref_id in (select s_s.id from subj_skills s_s) and 
             (lower(CONCAT(ua.first_name, ' ', ua.last_name, ' (',  ua.user_id_for_display, ')')) like lower(CONCAT('%', :userId, '%'))  OR
              lower(ua.user_id_for_display) like lower(CONCAT('%', :userId, '%'))
-            ) 
+            ) AND not exists (select 1 from archived_users au where au.user_id = ua.user_id and au.project_id = :projectId)
         GROUP BY up.user_id) AS projectUser WHERE projectUser.totalPoints >= :minimumPoints
     ''', nativeQuery = true)
     List<ProjectUser> findDistinctProjectUsersByProjectIdAndSubjectIdAndUserIdLike(@Param("projectId") String projectId,

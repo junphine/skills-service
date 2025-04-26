@@ -19,12 +19,14 @@ import { computed, onMounted, ref } from 'vue'
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js'
 import Avatar from 'primevue/avatar'
-import { useField } from 'vee-validate'
+import {useField, useIsValidating} from 'vee-validate'
 import { syncRef } from '@vueuse/core'
+import SkillsSpinner from "@/components/utils/SkillsSpinner.vue";
 
 const props = defineProps({
   project: {
     type: Object,
+    default: null,
   },
   isCopy: {
     type: Boolean,
@@ -33,22 +35,43 @@ const props = defineProps({
   isEdit: {
     type: Boolean,
     default: false
-  }
+  },
+  adminGroup: {
+    type: Object,
+    default: null
+  },
+  quiz: {
+    type: Object,
+    default: null
+  },
 })
+if (!props.project && !props.adminGroup && !props.quiz) {
+  throw new Error('Either project, adminGroup or quiz must be provided')
+}
 const authState = useAuthState()
 const appConfig = useAppConfig()
 const communityLabels = useCommunityLabels()
 
+const isValidating = useIsValidating()
 const { value, errors } = useField('enableProtectedUserCommunity')
 
 const initialValueForEnableProtectedUserCommunity = ref(null)
 const enableProtectedUserCommunity = defineModel('enableProtectedUserCommunity')
 const enableProtectedUserCommunitySynced = syncRef(enableProtectedUserCommunity, value)
-const invalid = ref(false)
-const pending = ref(false)
+const typeLabel = computed(() => {
+  if(props.project) {
+    return 'a project'
+  } else if (props.quiz) {
+    return 'a quiz'
+  } else if (props.adminGroup) {
+    return 'an admin group'
+  }
+})
 
 onMounted(() => {
-  initialValueForEnableProtectedUserCommunity.value = communityLabels.isRestrictedUserCommunity(props.project.userCommunity)
+  initialValueForEnableProtectedUserCommunity.value = communityLabels.isRestrictedUserCommunity(props.project?.userCommunity)
+      || communityLabels.isRestrictedUserCommunity(props.adminGroup?.userCommunity)
+      || communityLabels.isRestrictedUserCommunity(props.quiz?.userCommunity)
   enableProtectedUserCommunitySynced.value = initialValueForEnableProtectedUserCommunity.value
 
   // enableProtectedUserCommunity.value = this.isRestrictedUserCommunity(this.project.userCommunity);
@@ -76,9 +99,9 @@ const userCommunityRestrictedDescriptor = computed(() => {
         :pt="{ body: { class: 'p-0' }, content: { class: 'py-3 px-3' } }"
         data-cy="restrictCommunityControls">
     <template #content>
-      <div v-if="isCopyAndCommunityProtected" severity="error" :closable="false">
+      <div v-if="isCopyAndCommunityProtected" severity="error" :closable="false" data-cy="protectedCopyMessage">
         <Avatar icon="fas fa-shield-alt" class="text-red-500"></Avatar>
-        Copying project whose access is restricted to <b
+        Copying {{typeLabel}} whose access is restricted to <b
         class="text-primary">{{ userCommunityRestrictedDescriptor }}</b> users only and <b>cannot</b> be lifted/disabled
       </div>
       <div v-if="isEditAndCommunityProtected" severity="error" :closable="false">
@@ -87,10 +110,10 @@ const userCommunityRestrictedDescriptor = computed(() => {
         }}</b> users only and <b>cannot</b> be lifted/disabled
       </div>
       <div v-if="!isEditAndCommunityProtected && !isCopyAndCommunityProtected">
-        <div class="flex align-items-center align-content-center">
-          <div class="flex-1 flex align-items-center align-content-center">
+        <div class="flex items-center content-center">
+          <div class="flex-1 flex items-center content-center">
 
-            <InputSwitch
+            <ToggleSwitch
               data-cy="restrictCommunity"
               :aria-label="`Restrict Access to ${userCommunityRestrictedDescriptor} Users Only`"
               class="mr-2"
@@ -105,9 +128,9 @@ const userCommunityRestrictedDescriptor = computed(() => {
                style="text-decoration: underline">{{ appConfig.userCommunityDocsLabel }}</a>
             <i class="fas fa-external-link-alt ml-1" aria-hidden="true" style="font-size: 0.9rem;" />
           </div>
-        </div
-        >
-        <div v-if="!pending">
+        </div>
+        <SkillsSpinner v-if="isValidating && enableProtectedUserCommunity" :is-loading="true" class="my-0"/>
+        <div v-if="!isValidating">
           <Message v-if="enableProtectedUserCommunity && !(errors && errors.length > 0)"
                    :closable="false"
                    severity="warn"

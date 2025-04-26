@@ -203,12 +203,12 @@ class SettingsService {
         return request instanceof UserSettingsRequest || request instanceof UserProjectSettingsRequest
     }
 
-    private Integer getUserRefId(String userId) {
+    private Integer getUserRefId(String userId, boolean failIfNotFound = true) {
         User user = userRepo.findByUserId(userId.toLowerCase())
-        if (!user) {
+        if (failIfNotFound && !user) {
             throw new SkillException("Failed to find user with id [${userId.toLowerCase()}]")
         }
-        return user.id
+        return user?.id
     }
 
     private UserInfo loadCurrentUser(boolean failIfNoCurrentUser=true) {
@@ -258,7 +258,7 @@ class SettingsService {
             res.add(new SettingsResult(
                     setting: Settings.PROJECT_COMMUNITY_VALUE.settingName,
                     projectId: projectId,
-                    value: userCommunityService.getCommunityNameBasedProjConfStatus(isUserCommunityProtectedProject),
+                    value: userCommunityService.getCommunityNameBasedOnConfAndItemStatus(isUserCommunityProtectedProject),
                     userId: currentUser.username?.toLowerCase()
             ))
         }
@@ -327,6 +327,12 @@ class SettingsService {
         return convertToResList(settings)
     }
 
+    @Transactional()
+    List<SettingsResult> getProjectSettingForAllProjectsInList(String setting, List<String> projectIds){
+        List<Setting> settings = settingsDataAccessor.getProjectSettingForAllProjectsInList(setting, projectIds)
+        return convertToResList(settings)
+    }
+
     @Transactional(readOnly = true)
     SettingsResult getUserProjectSetting(String userId, String projectId, String setting, String settingGroup){
         Setting settingDB = settingsDataAccessor.getUserProjectSetting(getUserRefId(userId), projectId, setting, settingGroup)
@@ -339,13 +345,13 @@ class SettingsService {
     }
 
     @Transactional(readOnly = true)
-    SettingsResult getUserSetting(String userId, String setting, String settingGroup){
-        Setting settingDB = settingsDataAccessor.getUserSetting(getUserRefId(userId), setting, settingGroup)
+    SettingsResult getUserSetting(String userId, String setting, String settingGroup, boolean failIfNotFound = true){
+        Setting settingDB = settingsDataAccessor.getUserSetting(getUserRefId(userId, failIfNotFound), setting, settingGroup)
         if (settingDB != null) {
             return convertToRes(settingDB, userId)
-        } else {
-            log.debug("User Setting is null for userId [{}], setting [{}], settingGroup [{}], settingDB [{}]", userId, setting, settingGroup, settingDB)
         }
+        log.debug("User Setting is null for userId [{}], setting [{}], settingGroup [{}], settingDB [{}]", userId, setting, settingGroup, settingDB)
+        return null
     }
 
     @Transactional(readOnly = true)

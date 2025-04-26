@@ -24,12 +24,14 @@ import ProjectCardFooter from '@/components/projects/ProjectCardFooter.vue'
 import ProjectCardControls from '@/components/projects/ProjectCardControls.vue'
 import UserRolesUtil from '@/components/utils/UserRolesUtil'
 import EditProject from '@/components/projects/EditProject.vue'
-import RemovalValidation from '@/components/utils/modal/RemovalValidation.vue'
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
 import ProjectExpirationWarning from '@/components/projects/ProjectExpirationWarning.vue'
 import { useAdminProjectsState } from '@/stores/UseAdminProjectsState.js'
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
+import ProjectRemovalValidation from "@/components/utils/modal/ProjectRemovalValidation.vue";
+import projectService from "@/components/projects/ProjectService";
+import AccessService from "@/components/access/AccessService.js";
 
 const dialogMessages = useDialogMessages()
 const props = defineProps(['project', 'disableSortControl'])
@@ -149,6 +151,10 @@ const focusSortControl = () => {
   sortControl.value.focus();
 };
 
+const showDeleteModal = () => {
+  showDeleteValidation.value = true
+};
+
 defineExpose({
   focusSortControl
 });
@@ -158,7 +164,7 @@ defineExpose({
   <div data-cy="projectCard" class="h-full">
     <Card :data-cy="`projectCard_${projectInternal.projectId}`" class="relative h-full">
       <template #content>
-        <div class="flex flex-column"
+        <div class="flex flex-col"
              :class="{
             'gap-1 justify-content-left': projectsState.shouldTileProjectsCards,
             'gap-2 sm:flex-row flex-wrap': !projectsState.shouldTileProjectsCards
@@ -182,9 +188,9 @@ defineExpose({
             <div v-if="projectInternal.userCommunity" class="my-2" data-cy="userCommunity">
               <Avatar icon="fas fa-shield-alt" class="text-red-500"></Avatar>
               <span
-                class="text-secondary font-italic ml-1">{{ appConfig.userCommunityBeforeLabel }}</span> <span
-                class="font-weight-bold text-primary">{{ projectInternal.userCommunity }}</span> <span
-                class="text-secondary font-italic">{{ appConfig.userCommunityAfterLabel }}</span>
+                class="text-secondary italic ml-1">{{ appConfig.userCommunityBeforeLabel }}</span> <span
+                class="text-primary">{{ projectInternal.userCommunity }}</span> <span
+                class="text-secondary italic">{{ appConfig.userCommunityAfterLabel }}</span>
             </div>
           </div>
           <div class="flex-1">
@@ -194,15 +200,17 @@ defineExpose({
                 :project="projectInternal"
                 @edit-project="createOrUpdateProject(project, true)"
                 @copy-project="copyProject"
-                @delete-project="showDeleteValidation = true"
+                @delete-project="showDeleteModal"
                 @unpin-project="unpin"
                 :read-only-project="isReadOnlyProj"/>
           </div>
         </div>
 
-        <div class="grid text-center justify-content-center mt-2">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-center justify-center mt-2" :class="{
+          'lg:grid-cols-4' : !projectsState.shouldTileProjectsCards,
+        }">
           <div v-for="(stat) in stats" :key="stat.label" class="col mt-1" style="min-width: 10rem;">
-            <div :data-cy="`pagePreviewCardStat_${stat.label}`" class="h-full border-round border-1 border-300 stat-card surface-100">
+            <div :data-cy="`pagePreviewCardStat_${stat.label}`" class="h-full rounded-border border border-surface-300 dark:border-surface-500 stat-card bg-surface-100 dark:bg-surface-700">
               <i :class="stat.icon" aria-hidden="true" class="text-xl text-primary"/>
               <div class="uppercase">{{ stat.label }}</div>
               <div class="text-2xl mt-1 font-semibold" data-cy="statNum">{{ numberFormat.pretty(stat.count) }}</div>
@@ -225,7 +233,7 @@ defineExpose({
         </div>
 
         <div class="text-center mt-1">
-          <ProjectCardFooter class="mt-4" :project="projectInternal"/>
+          <ProjectCardFooter class="mt-6" :project="projectInternal"/>
         </div>
 
         <project-expiration-warning :project="projectInternal" @extended="projectInternal.expiring = false" />
@@ -238,7 +246,7 @@ defineExpose({
              @keyup.down="moveDown"
              @keyup.up="moveUp"
              @click.prevent.self
-             class="absolute text-secondary px-2 py-1 sort-control border-left-1 border-bottom-1 surface-border text-color-secondary"
+             class="absolute text-secondary px-2 py-1 sort-control border-l border-b border-surface text-muted-color"
              tabindex="0"
              :aria-label="`Project Sort Control. Current position for ${project.name} project is ${project.displayOrder}. Press up or down to change the order of the project.`"
              role="button"
@@ -254,15 +262,14 @@ defineExpose({
                   @project-saved="projectCopied"
                   :enable-return-focus="true" />
 
-    <removal-validation
+    <project-removal-validation
       v-if="showDeleteValidation"
       v-model="showDeleteValidation"
+      :project="projectInternal"
       :item-name="projectInternal.name"
       item-type="project"
       @do-remove="doDeleteProject">
-        Deletion <b>cannot</b> be undone and permanently removes all skill subject definitions, skill
-        definitions and users' performed skills for this Project.
-    </removal-validation>
+    </project-removal-validation>
   </div>
 </template>
 
@@ -286,13 +293,13 @@ defineExpose({
 }
 
 .sort-control {
-  font-size: 1.3rem !important;
+  font-size: 1.1rem !important;
   top: 0rem;
   right: 0rem;
   border-bottom-left-radius:.25rem!important
 }
 
 .sort-control:hover, .sort-control i:hover {
-  font-size: 1.5rem;
+  font-size: 1.2rem;
 }
 </style>

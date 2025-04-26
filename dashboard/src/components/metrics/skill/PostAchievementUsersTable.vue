@@ -32,10 +32,6 @@ const userInfo = useUserInfo()
 const numberFormat = useNumberFormat()
 const responsive = useResponsiveBreakpoints()
 
-onMounted(() => {
-  loadData();
-})
-
 const postAchievementUsers = ref([]);
 const chartToLoad = ref('usagePostAchievementUsersBuilder');
 const modeSelectorOptions = ref([
@@ -114,7 +110,7 @@ const calculateClientDisplayRoute = (props) => {
 </script>
 
 <template>
-  <Card data-cy="postAchievementUserList" :no-padding="true" :pt="{ body: { class: 'p-0' }, content: { class: 'p-0' } }">
+  <Card data-cy="postAchievementUserList" :no-padding="true" :pt="{ body: { class: '!p-0' } }">
     <template #header>
       <SkillsCardHeader title="Users that Achieved this Skill">
         <template #headerContent>

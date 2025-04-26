@@ -22,20 +22,20 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import skills.UIConfigProperties
+import skills.controller.exceptions.QuizValidator
 import skills.controller.exceptions.SkillsValidator
-import skills.controller.result.model.EnableProjValidationRes
+import skills.controller.result.model.EnableUserCommunityValidationRes
+import skills.controller.result.model.UserRoleRes
+import skills.quizLoading.QuizSettings
+import skills.services.AccessSettingsStorageService
 import skills.services.settings.Settings
 import skills.services.settings.SettingsDataAccessor
+import skills.storage.model.AdminGroupDef
 import skills.storage.model.ProjDef
+import skills.storage.model.QuizDef
 import skills.storage.model.UserTag
 import skills.storage.model.auth.UserRole
-import skills.storage.repos.ExportedSkillRepo
-import skills.storage.repos.ProjDefRepo
-import skills.storage.repos.SkillRelDefRepo
-import skills.storage.repos.SkillShareDefRepo
-import skills.storage.repos.UserAttrsRepo
-import skills.storage.repos.UserRoleRepo
-import skills.storage.repos.UserTagRepo
+import skills.storage.repos.*
 
 import java.util.regex.Pattern
 
@@ -53,6 +53,9 @@ class UserCommunityService {
     SettingsDataAccessor settingsDataAccessor
 
     @Autowired
+    QuizSettingsRepo quizSettingsRepo
+
+    @Autowired
     UserRoleRepo userRoleRepo
 
     @Autowired
@@ -65,10 +68,22 @@ class UserCommunityService {
     ProjDefRepo projDefRepo
 
     @Autowired
+    QuizDefRepo quizDefRepo
+
+    @Autowired
+    QuizToSkillDefRepo quizToSkillDefRepo
+
+    @Autowired
     SkillShareDefRepo skillShareDefRepo
 
     @Autowired
     SkillRelDefRepo skillRelDefRepo
+
+    @Autowired
+    AdminGroupDefRepo adminGroupDefRepo
+
+    @Autowired
+    AccessSettingsStorageService accessSettingsStorageService
 
     String userCommunityUserTagKey
     String userCommunityUserTagValue
@@ -86,10 +101,12 @@ class UserCommunityService {
         this.restrictedUserCommunityName = uiConfigProperties.ui.userCommunityRestrictedDescriptor;
     }
 
+    @Transactional(readOnly = true)
     Boolean isUserCommunityConfigured() {
         return this.userCommunityUserTagKey && this.userCommunityUserTagValue
     }
 
+    @Transactional(readOnly = true)
     Boolean isUserCommunityMember(String userId) {
         Boolean belongsToUserCommunity = false
         if (isUserCommunityConfigured() && StringUtils.isNotBlank(userId)) {
@@ -99,24 +116,43 @@ class UserCommunityService {
         return belongsToUserCommunity as Boolean
     }
 
-    EnableProjValidationRes validateProjectForCommunity(String projId) {
-        EnableProjValidationRes res = new EnableProjValidationRes(isAllowed: true, unmetRequirements: [])
+    @Transactional(readOnly = true)
+    EnableUserCommunityValidationRes validateAdminGroupForCommunity(String adminGroupId) {
+        EnableUserCommunityValidationRes res = new EnableUserCommunityValidationRes(isAllowed: true, unmetRequirements: [])
+        userRoleRepo.findProjectIdsByAdminGroupId(adminGroupId).each { projectId ->
+            res = validateProjectForCommunity(projectId, res, true)
+        }
+        userRoleRepo.findQuizIdsByAdminGroupId(adminGroupId).each { quizId ->
+            res = validateQuizForCommunity(quizId, res, true)
+        }
+        List<UserRoleRes> allAdminGroupMembers = accessSettingsStorageService.findAllAdminGroupMembers(adminGroupId)
+        if (allAdminGroupMembers) {
+            List<UserRoleRes> unique = allAdminGroupMembers.unique { it.userId }
+            unique.each { UserRoleRes userWithRole ->
+                if (!isUserCommunityMember(userWithRole.userId)) {
+                    String userIdForDisplay = userWithRole.userIdForDisplay
+
+                    res.isAllowed = false
+                    String requirementString = "This admin group has the user ${userIdForDisplay} who is not authorized".toString()
+                    if(!res.unmetRequirements.contains(requirementString)) {
+                        res.unmetRequirements.add(requirementString)
+                    }
+                }
+            }
+        }
+
+        return res
+    }
+
+    @Transactional(readOnly = true)
+    EnableUserCommunityValidationRes validateProjectForCommunity(String projId, EnableUserCommunityValidationRes existingValidationRes = null, adminGroupView = false) {
+        EnableUserCommunityValidationRes res = existingValidationRes ? existingValidationRes : new EnableUserCommunityValidationRes(isAllowed: true, unmetRequirements: [])
 
         // only applicable if project already exist; also normalizes project ids case
         ProjDef projDef = projDefRepo.findByProjectIdIgnoreCase(projId)
         if (projDef) {
             List<UserRole> allRoles = userRoleRepo.findAllByProjectIdIgnoreCase(projDef.projectId)
-            if (allRoles) {
-                List<UserRole> unique = allRoles.unique { it.userId }
-                unique.each { UserRole userWithRole ->
-                    if (!isUserCommunityMember(userWithRole.userId)) {
-                        String userIdForDisplay = userAttrsRepo.findByUserIdIgnoreCase(userWithRole.userId).userIdForDisplay
-
-                        res.isAllowed = false
-                        res.unmetRequirements.add("Has existing ${userIdForDisplay} user that is not authorized".toString())
-                    }
-                }
-            }
+            checkAllUsersAreUCMembers(allRoles, res, adminGroupView ? "admin group" : "project")
 
             if (exportedSkillRepo.countSkillsExportedByProject(projDef.projectId) > 0) {
                 res.isAllowed = false
@@ -132,10 +168,74 @@ class UserCommunityService {
                 res.isAllowed = false
                 res.unmetRequirements.add("This project is part of one or more Global Badges")
             }
+
+            if(adminGroupDefRepo.doesAdminGroupContainNonUserCommunityProject(projDef.projectId)) {
+                res.isAllowed = false
+                if(!adminGroupView) {
+                    res.unmetRequirements.add("This project is part of one or more Admin Groups that has not enabled user community protection")
+                }
+                else {
+                    res.unmetRequirements.add("This Admin Group is connected to a project that is not compatible with user community protection")
+                }
+            }
         }
         return res;
     }
 
+    @Transactional(readOnly = true)
+    EnableUserCommunityValidationRes validateQuizForCommunity(String quizId, EnableUserCommunityValidationRes existingValidationRes = null, adminGroupView = false) {
+        EnableUserCommunityValidationRes res = existingValidationRes ? existingValidationRes : new EnableUserCommunityValidationRes(isAllowed: true, unmetRequirements: [])
+
+        // only applicable if quiz already exists; also normalizes quiz ids case
+        QuizDef quizDef = quizDefRepo.findByQuizIdIgnoreCase(quizId)
+        if (quizDef) {
+            List<UserRole> allRoles = userRoleRepo.findAllByQuizIdIgnoreCase(quizDef.quizId)
+            checkAllUsersAreUCMembers(allRoles, res, "quiz")
+            if(adminGroupDefRepo.doesAdminGroupContainNonUserCommunityQuiz(quizDef.quizId)) {
+                res.isAllowed = false
+                if(!adminGroupView) {
+                    res.unmetRequirements.add("This quiz is part of one or more Admin Groups that do no have ${getCommunityNameBasedOnConfAndItemStatus(true)} permission".toString())
+                }
+                else {
+                    res.unmetRequirements.add("This Admin Group is connected to a quiz that is not compatible with user community protection")
+                }
+            }
+
+            List<String> nonCommunityProjects = quizToSkillDefRepo.getNonCommunityProjectsThatThisQuizIsLinkedTo(quizDef.id)?.sort()
+            if (nonCommunityProjects) {
+                res.isAllowed = false
+                res.unmetRequirements.add("This quiz is linked to the following project(s) that do not have ${getCommunityNameBasedOnConfAndItemStatus(true)} permission: ${nonCommunityProjects.join(", ")}".toString())
+            }
+        }
+        return res;
+    }
+
+    private void checkAllUsersAreUCMembers(List<UserRole> roles, EnableUserCommunityValidationRes res, String type = "project") {
+        if (roles) {
+            List<UserRole> unique = roles.unique { it.userId }
+            unique.each { UserRole userWithRole ->
+                if (!isUserCommunityMember(userWithRole.userId)) {
+                    String userIdForDisplay = userAttrsRepo.findByUserIdIgnoreCase(userWithRole.userId).userIdForDisplay
+
+                    res.isAllowed = false
+                    res.unmetRequirements.add("This ${type} has the user ${userIdForDisplay} who is not authorized".toString())
+                }
+            }
+        }
+    }
+
+
+    /**
+     * Checks if the specified adminGroupId is configured as a user community only admin group
+     * @param adminGroupId - not null
+     * @return true if the adminGroupId exists and has been configured as a user community only admin group
+     */
+    @Transactional(readOnly = true)
+    boolean isUserCommunityOnlyAdminGroup(String adminGroupId) {
+        SkillsValidator.isNotBlank(adminGroupId, "adminGroupId")
+        AdminGroupDef adminGroupDef = adminGroupDefRepo.findByAdminGroupIdIgnoreCase(adminGroupId)
+        return adminGroupDef && adminGroupDef.protectedCommunityEnabled
+    }
 
     /**
      * Checks if the specified projectId is configured as a user community only project
@@ -148,17 +248,43 @@ class UserCommunityService {
         return settingsDataAccessor.getProjectSetting(projectId, Settings.USER_COMMUNITY_ONLY_PROJECT.settingName)?.isEnabled()
     }
 
+    /**
+     * Checks if the specified projectId is configured as a user community only project
+     * @param projectId - not null
+     * @return true if the quiz exists and has been configured as a user community only project
+     */
     @Transactional(readOnly = true)
-    String getProjectUserCommunity(String projectId) {
-       return getCommunityNameBasedProjConfStatus(isUserCommunityOnlyProject(projectId))
+    boolean isUserCommunityOnlyQuiz(String quizId) {
+        QuizValidator.isNotBlank(quizId, "quizId")
+        return quizSettingsRepo.findBySettingAndQuizId(QuizSettings.UserCommunityOnlyQuiz.setting, quizId)?.isEnabled()
     }
 
+    /**
+     * Checks if the specified quizId is configured as a user community only quiz
+     * @param quizId - not null
+     * @return true if the quiz exists and has been configured as a user community only project
+     */
+    @Transactional(readOnly = true)
+    boolean isUserCommunityOnlyQuiz(Integer quizRefId) {
+        SkillsValidator.isNotNull(quizRefId, "quizRefId")
+        return quizSettingsRepo.findBySettingAndQuizRefId(QuizSettings.UserCommunityOnlyQuiz.setting, quizRefId)?.isEnabled()
+    }
 
-    String getCommunityNameBasedProjConfStatus(Boolean isUserCommunityOnlyProject) {
-        if (!restrictedUserCommunityName || isUserCommunityOnlyProject == null) {
+    @Transactional(readOnly = true)
+    String getProjectUserCommunity(String projectId) {
+       return getCommunityNameBasedOnConfAndItemStatus(isUserCommunityOnlyProject(projectId))
+    }
+
+    @Transactional(readOnly = true)
+    String getQuizUserCommunity(String quizId) {
+        return getCommunityNameBasedOnConfAndItemStatus(isUserCommunityOnlyQuiz(quizId))
+    }
+
+    String getCommunityNameBasedOnConfAndItemStatus(Boolean isUserCommunityOnlyItem) {
+        if (!restrictedUserCommunityName || isUserCommunityOnlyItem == null) {
             return null
         }
-        return isUserCommunityOnlyProject ? restrictedUserCommunityName : defaultUserCommunityName;
+        return isUserCommunityOnlyItem ? restrictedUserCommunityName : defaultUserCommunityName;
     }
 
     Boolean containsProjectUserCommunityDescriptorVar(String text) {

@@ -201,6 +201,7 @@ class SkillsAdminService {
         final boolean isJustificationRequiredInRequest = Boolean.valueOf(skillRequest.justificationRequired)
         final boolean isSkillCatalogImport = skillRequest instanceof SkillImportRequest;
         final boolean isReplicationRequest = skillRequest instanceof ReplicatedSkillUpdateRequest
+        String description = skillRequest.description
 
         SkillDef subject = null
         SkillDef skillsGroupSkillDef = null
@@ -288,6 +289,14 @@ class SkillsAdminService {
                     throw new SkillException("[${groupId}] groupId was not found.".toString(), skillRequest.projectId, skillRequest.skillId, ErrorCode.BadParam)
                 }
             }
+
+            if (!isSkillCatalogImport) {
+                Closure<Boolean> alreadyExistLookup = { String uuid ->
+                    return skillDefWithExtraRepo.otherSkillsExistInProjectWithAttachmentUUID(skillRequest.projectId, skillRequest.skillId, uuid)
+                }
+                description = attachmentService.copyAttachmentsForIncomingDescription(description, skillRequest.projectId, skillRequest.skillId, null, alreadyExistLookup)
+            }
+
             skillDefinition = new SkillDefWithExtra(
                     skillId: skillRequest.skillId,
                     projectId: skillRequest.projectId,
@@ -296,7 +305,7 @@ class SkillsAdminService {
                     pointIncrementInterval: skillRequest.pointIncrementInterval,
                     numMaxOccurrencesIncrementInterval: skillRequest.numMaxOccurrencesIncrementInterval,
                     totalPoints: totalPointsRequested,
-                    description: skillRequest.description,
+                    description: description,
                     helpUrl: skillRequest.helpUrl,
                     displayOrder: displayOrder,
                     type: skillType,
@@ -335,7 +344,9 @@ class SkillsAdminService {
             } else {
                 assignToParent(skillRequest, savedSkill, subject)
             }
-            attachmentService.updateAttachmentsFoundInMarkdown(skillRequest.description, savedSkill.projectId, null, savedSkill.skillId)
+        }
+        if (!isSkillCatalogImport) {
+            attachmentService.updateAttachmentsAttrsBasedOnUuidsInMarkdown(description, savedSkill.projectId, null, savedSkill.skillId)
         }
 
         if (isSkillsGroupChild) {

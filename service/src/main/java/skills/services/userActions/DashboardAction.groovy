@@ -35,4 +35,6 @@ enum DashboardAction {
     Extend,
     Remind,
     CancelExpiration,
+    ArchiveUser,
+    RestoreArchivedUser,
 }

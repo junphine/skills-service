@@ -14,21 +14,14 @@
 
 name: Continuous Integration with OAuth
 
-#on:
-#  push:
-#    paths-ignore:
-#      - 'README.md'
-#  pull_request:
-#    paths-ignore:
-#      - 'README.md'
 on:
-  schedule:
-   - cron: '0 6 * * *'
   workflow_dispatch:
   push:
-#  pull_request:
-#    paths-ignore:
-#      - 'README.md'
+    paths-ignore:
+      - 'README.md'
+  pull_request:
+    paths-ignore:
+      - 'README.md'
 
 jobs:
   build-skills-service-for-ui-tests:
@@ -39,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.11.0'
+          node-version: '20.17.0'
 
       - uses: actions/setup-java@v4
         with:
@@ -115,7 +108,7 @@ jobs:
 
     - uses: actions/setup-node@v4
       with:
-        node-version: '20.11.0'
+        node-version: '20.17.0'
 
     - uses: actions/setup-java@v4
       with:

@@ -14,9 +14,9 @@
  * limitations under the License.
  */
 import axios from 'axios'
-import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
-import { useRoute } from 'vue-router'
-import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
+import {useSkillsDisplayAttributesState} from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
+import {useRoute} from 'vue-router'
+import {useAppConfig} from '@/common-components/stores/UseAppConfig.js'
 
 export const useSkillsDisplayService = () => {
   const servicePath = '/api/projects'
@@ -25,15 +25,15 @@ export const useSkillsDisplayService = () => {
   const appConfig = useAppConfig()
 
   const getUserIdAndVersionParams = () => {
-    // const params = this.getUserIdParams();
-    // params.version = this.version;
-    //
     let config = {}
     if (attributes.userId) {
       config.userId = attributes.userId
     }
     if (appConfig.isPkiAuthenticated) {
       config.idType = 'ID'
+    }
+    if (attributes.version) {
+      config.version = attributes.version
     }
     return config
   }
@@ -115,6 +115,10 @@ export const useSkillsDisplayService = () => {
 
 
   const updateSkillHistory = (projectId, skillId) => {
+    if (appConfig.dbUpgradeInProgress) {
+      return Promise.resolve({})
+    }
+
     return axios.post(`${attributes.serviceUrl}${servicePath}/${encodeURIComponent(projectId)}/skills/visited/${encodeURIComponent(skillId)}`).then((res) => res.data)
   }
 
@@ -139,6 +143,16 @@ export const useSkillsDisplayService = () => {
     return axios.get(`${attributes.serviceUrl}${servicePath}/${encodeURIComponent(attributes.projectId)}/skills`, {
       params: ({ ...getUserIdAndVersionParams(), query, limit: 5 })
     }).then((result) => result.data)
+  }
+
+  const getDescriptionForSkill = (skillId) => {
+    let url = `${attributes.serviceUrl}${servicePath}/${encodeURIComponent(attributes.projectId)}/skills/${encodeURIComponent(skillId)}/description`
+    const response = axios.get(url, {
+      params: {
+        ...getUserIdAndVersionParams(),
+      }
+    }).then((result) => result.data)
+    return response
   }
 
   const getDescriptions = (parentId, type = 'subject') => {
@@ -244,6 +258,10 @@ export const useSkillsDisplayService = () => {
       .then((result) => result.data);
   }
 
+  const getLoggedInUserInfo = () => {
+    return axios.get('/app/userInfo').then((response) => response.data)
+  }
+
   return {
     loadUserProjectSummary,
     loadSubjectSummary,
@@ -252,6 +270,7 @@ export const useSkillsDisplayService = () => {
     getSkillSummary,
     searchSkills,
     getDescriptions,
+    getDescriptionForSkill,
     reportSkill,
     removeApprovalRejection,
     getBadgeSummaries,
@@ -261,6 +280,7 @@ export const useSkillsDisplayService = () => {
     getUserSkillsRankingDistribution,
     getRankingDistributionUsersPerLevel,
     getLeaderboard,
-    getVideoTranscript
+    getVideoTranscript,
+    getLoggedInUserInfo
   }
 }

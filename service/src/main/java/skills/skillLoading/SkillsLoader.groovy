@@ -41,7 +41,6 @@ import skills.services.GlobalBadgesService
 import skills.services.LevelDefinitionStorageService
 import skills.services.admin.SkillTagService
 import skills.services.admin.SkillsGroupAdminService
-import skills.services.admin.UserAchievementExpirationService
 import skills.services.admin.UserCommunityService
 import skills.services.admin.skillReuse.SkillReuseIdUtil
 import skills.services.attributes.BonusAwardAttrs
@@ -54,6 +53,7 @@ import skills.services.settings.SettingsService
 import skills.settings.CommonSettings
 import skills.skillLoading.model.*
 import skills.storage.model.*
+import skills.storage.model.auth.RoleName
 import skills.storage.repos.*
 import skills.storage.repos.nativeSql.GraphRelWithAchievement
 import skills.storage.repos.nativeSql.PostgresQlNativeRepo
@@ -63,7 +63,7 @@ import skills.utils.InputSanitizer
 import java.util.stream.Stream
 
 import static skills.services.LevelDefinitionStorageService.LevelInfo
-import static skills.storage.model.SkillDef.ContainerType
+import static skills.storage.model.SkillDef.*
 
 @Component
 @CompileStatic
@@ -122,6 +122,9 @@ class SkillsLoader {
     QuizToSkillDefRepo quizToSkillDefRepo
 
     @Autowired
+    UserQuizAttemptRepo userQuizAttemptRepo
+
+    @Autowired
     PostgresQlNativeRepo postgresQlNativeRepo
 
     @Autowired
@@ -158,6 +161,9 @@ class SkillsLoader {
     UserCommunityService userCommunityService
 
     @Autowired
+    UserRoleRepo userRoleRepo
+
+    @Autowired
     SkillAttributesDefRepo skillAttributesDefRepo
 
     @Autowired
@@ -168,6 +174,9 @@ class SkillsLoader {
 
     @Autowired
     TaskConfig taskConfig
+
+    @Autowired
+    ApprovalHistoryLoader approvalHistoryLoader
 
     private static String PROP_HELP_URL_ROOT = CommonSettings.HELP_URL_ROOT
 
@@ -227,6 +236,12 @@ class SkillsLoader {
         if (!userCommunityService.isUserCommunityMember(userId)) {
             projectSummaries = projectSummaries.findAll { !it.protectedCommunityEnabled }
         }
+        List<ProjectSummaryResult> inviteOnlyProjects = projectSummaries?.findAll { it.getInviteOnlyEnabled() }
+        if (inviteOnlyProjects) {
+            List<String> inviteOnlyProjectIds = inviteOnlyProjects.collect { it.projectId }
+            List<String> inviteOnlyAuthorizedProjectIds = userRoleRepo.findProjectIdsByUserIdAndRoleNameAndProjectIdIn(userId, RoleName.ROLE_PRIVATE_PROJECT_USER, inviteOnlyProjectIds)
+            projectSummaries = projectSummaries.findAll {!it.getInviteOnlyEnabled() || inviteOnlyAuthorizedProjectIds.contains(it.projectId) }
+        }
         List<SettingsResult> customLevelTextForProjects = settingsService.getProjectSettingsForAllProjects('level.displayName')
         for (ProjectSummaryResult summaryResult : projectSummaries.sort({it.getOrderVal()})) {
             ProjectSummary summary = new ProjectSummary().fromProjectSummaryResult(summaryResult)
@@ -255,6 +270,11 @@ class SkillsLoader {
         myProgressSummary.numAchievedSkillsLastMonth = achievedSkillsCount.monthCount ?: 0
         myProgressSummary.numAchievedSkillsLastWeek = achievedSkillsCount.weekCount ?: 0
         myProgressSummary.mostRecentAchievedSkill = achievedSkillsCount.lastAchieved
+
+        UserQuizAttemptRepo.AttemptCounts attemptCounts = userQuizAttemptRepo.getAttemptCountsForUser(userId)
+        myProgressSummary.numQuizAttempts = attemptCounts.numQuizAttempts ?: 0
+        myProgressSummary.numSurveyAttempts = attemptCounts.numAttempts ? attemptCounts.numAttempts - myProgressSummary.numQuizAttempts : 0
+
         return myProgressSummary
     }
 
@@ -317,13 +337,7 @@ class SkillsLoader {
             skillLevel = 0
         }
 
-        //these probably need to exclude badges where enabled = FALSE
-        int numBadgesAchieved = achievedLevelRepository.countAchievedForUser(userId, projDef.projectId, ContainerType.Badge)
-        int numTotalBadges = skillDefRepo.countByProjectIdAndTypeWhereEnabled(projDef.projectId, ContainerType.Badge)
-
-        // add in global badge counts
-        numBadgesAchieved += achievedLevelRepository.countAchievedGlobalBadgeForUserIntersectingProjectId(userId, projDef.projectId)
-        numTotalBadges += skillDefRepo.countGlobalBadgesIntersectingWithProjectIdWhereEnabled(projDef.projectId)
+        OverallSkillSummary.BadgeStats badgeStats = getBadgeStats(projDef, userId)
 
         SettingsResult showDescSetting = settingsService.getProjectSetting(projDef.projectId, Settings.SHOW_PROJECT_DESCRIPTION_EVERYWHERE.settingName)
         String projectDescription
@@ -336,6 +350,7 @@ class SkillsLoader {
                 projectId: projDef.projectId,
                 projectName: InputSanitizer.unsanitizeName(projDef.name),
                 skillsLevel: skillLevel,
+                lastLevelAchieved: levelInfo?.achievedOn,
                 totalLevels: levelInfo?.totalNumLevels ?: 0,
                 points: points,
                 totalPoints: totalPoints,
@@ -345,10 +360,53 @@ class SkillsLoader {
                 totalSkills: totalSkills,
                 skillsAchieved: skillsAchieved,
                 subjects: subjects,
-                badges: new OverallSkillSummary.BadgeStats(numTotalBadges: numTotalBadges, numBadgesCompleted: numBadgesAchieved, enabled: numTotalBadges > 0),
+                badges: badgeStats,
                 projectDescription: projectDescription
         )
 
+        return res
+    }
+
+    @Profile
+    private OverallSkillSummary.BadgeStats getBadgeStats(ProjDef projDef, String userId) {
+        //these probably need to exclude badges where enabled = FALSE
+        int numBadgesAchieved = achievedLevelRepository.countAchievedForUser(userId, projDef.projectId, ContainerType.Badge)
+        int numTotalBadges = skillDefRepo.countByProjectIdAndTypeWhereEnabled(projDef.projectId, ContainerType.Badge)
+
+        List<UserAchievedLevelRepo.AchievementInfo> recentlyAchievedBadges = getRecentlyAchievedBadges(userId, projDef.projectId)
+        List<OverallSkillSummary.SingleBadgeInfo> recentlyAwardedBadges = recentlyAchievedBadges?.collect {
+            new OverallSkillSummary.SingleBadgeInfo(
+                    badgeName: it.name,
+                    badgeId: it.id,
+                    achievedOn: it.achievedOn,
+                    isGlobalBadge: it.type == ContainerType.GlobalBadge
+            )
+        }
+        // add in global badge counts
+        numBadgesAchieved += achievedLevelRepository.countAchievedGlobalBadgeForUserIntersectingProjectId(userId, projDef.projectId)
+        numTotalBadges += skillDefRepo.countGlobalBadgesIntersectingWithProjectIdWhereEnabled(projDef.projectId)
+
+        return new OverallSkillSummary.BadgeStats(
+                numTotalBadges: numTotalBadges,
+                numBadgesCompleted: numBadgesAchieved,
+                enabled: numTotalBadges > 0,
+                recentlyAwardedBadges: recentlyAwardedBadges
+        )
+    }
+
+    private List<UserAchievedLevelRepo.AchievementInfo> getRecentlyAchievedBadges(String userId, String projectId) {
+        Calendar calendar = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+        calendar.add(Calendar.DAY_OF_YEAR, -7)
+        Date afterThisDate = calendar.time
+        List<UserAchievedLevelRepo.AchievementInfo> res = []
+        List<UserAchievedLevelRepo.AchievementInfo> recentlyAchievedBadges = achievedLevelRepository.getUserAchievementsAfterDate(userId, projectId, [ContainerType.Badge], afterThisDate)
+        if (recentlyAchievedBadges) {
+            res.addAll(recentlyAchievedBadges)
+        }
+        List<UserAchievedLevelRepo.AchievementInfo> recentlyAchievedGlobalBadges = achievedLevelRepository.getUserGlobalBadgeAchievementsAfterDate(userId, projectId, afterThisDate)
+        if (recentlyAchievedGlobalBadges) {
+            res.addAll(recentlyAchievedGlobalBadges)
+        }
         return res
     }
 
@@ -497,7 +555,14 @@ class SkillsLoader {
         ProjDef projDef = getProjDef(userId, crossProjectId ?: projectId)
         SkillDefWithExtra skillDef = getSkillDefWithExtra(userId, crossProjectId ?: projectId, skillId, [ContainerType.Skill, ContainerType.SkillsGroup])
 
+        String skillSubjectId = skillRelDefRepo.findSubjectSkillIdByChildId(skillDef.id)
+
         def badges = skillDefRepo.findAllBadgesForSkill([skillId], crossProjectId ?: projectId);
+
+        String groupName = null
+        if(skillDef.groupId) {
+            groupName = skillDefRepo.getSkillNameByProjectIdAndSkillId(projectId, skillDef.groupId)?.skillName
+        }
 
         String nextSkillId = null;
         String prevSkillId = null;
@@ -596,10 +661,13 @@ class SkillsLoader {
 
         String unsanitizedName = InputSanitizer.unsanitizeName(skillDef.name)
         boolean isReusedSkill = SkillReuseIdUtil.isTagged(unsanitizedName)
+
+        List<ApprovalEvent> approvalHistory = approvalHistoryLoader.loadApprovalHistory(skillDef, userId, quizNameAndId)
         return new SkillSummary(
                 projectId: skillDef.projectId,
                 projectName: InputSanitizer.unsanitizeName(projDef.name),
                 skillId: skillDef.skillId,
+                subjectId: skillSubjectId,
                 prevSkillId: prevSkillId,
                 nextSkillId: nextSkillId,
                 orderInGroup: orderInGroup,
@@ -618,24 +686,26 @@ class SkillsLoader {
                 badgeDependencyInfo: badgeDependencySummary,
                 crossProject: crossProjectId != null,
                 achievedOn: achievedOn,
-                selfReporting: loadSelfReporting(userId, skillDef, quizNameAndId),
+                selfReporting: loadSelfReporting(userId, skillDef, quizNameAndId, achievedOn),
                 type: skillDef.type,
                 copiedFromProjectId: isReusedSkill ? null : skillDef.copiedFromProjectId,
                 copiedFromProjectName: isReusedSkill ? null : InputSanitizer.unsanitizeName(copiedFromProjectName),
                 badges: badges,
                 tags: loadSkillTags(skillDef.id),
-                videoSummary: getVideoSummary(skillDef),
+                videoSummary: getVideoSummary(skillDef.copiedFrom ?: skillDef.id),
                 expirationDate: expirationDate,
                 isMotivationalSkill: isMotivationalSkill,
                 daysOfInactivityBeforeExp: daysOfInactivityBeforeExp,
                 mostRecentlyPerformedOn: mostRecentlyPerformedOn,
-                lastExpirationDate: lastExpirationDate
+                lastExpirationDate: lastExpirationDate,
+                groupName: groupName,
+                groupSkillId: skillDef.groupId,
+                approvalHistory: approvalHistory,
         )
     }
 
     @Profile
-    private VideoSummary getVideoSummary(SkillDefWithExtra skillDef) {
-        Integer skillDefId = skillDef.copiedFrom ?: skillDef.id
+    private VideoSummary getVideoSummary(Integer skillDefId) {
         VideoSummary res = null
         SkillAttributesDefRepo.VideoSummaryAttributes videoSummaryAttributes = skillAttributesDefRepo.getVideoSummary(skillDefId)
         if (videoSummaryAttributes) {
@@ -643,7 +713,9 @@ class SkillsLoader {
                     videoUrl: videoSummaryAttributes.url,
                     videoType: videoSummaryAttributes.type,
                     hasCaptions: videoSummaryAttributes.hasCaptions,
-                    hasTranscript: videoSummaryAttributes.hasTranscript
+                    hasTranscript: videoSummaryAttributes.hasTranscript,
+                    height: videoSummaryAttributes.height,
+                    width: videoSummaryAttributes.width
             )
         }
         return res
@@ -659,30 +731,61 @@ class SkillsLoader {
             return new SelfReportingInfo(enabled: false)
         }
         SkillApproval skillApproval = skillDefAndUserPoints.approval
+        boolean isFinished = skillDefAndUserPoints.points === skillDef.totalPoints
         SelfReportingInfo selfReportingInfo = new SelfReportingInfo(
                 approvalId: skillApproval?.id,
                 enabled: skillDef.selfReportingType != null,
                 type: skillDefAndUserPoints.quizType == QuizDefParent.QuizType.Survey ? 'Survey' : skillDef.selfReportingType.toString(),
                 justificationRequired: Boolean.valueOf(skillDef.justificationRequired),
                 requestedOn: skillApproval?.requestedOn?.time,
-                rejectedOn: skillApproval?.rejectedOn?.time,
-                rejectionMsg: skillApproval?.rejectionMsg,
+                rejectedOn: !isFinished ? skillApproval?.rejectedOn?.time : null,
+                message: !isFinished ? skillApproval?.message : null,
                 quizId: skillDefAndUserPoints?.quizId,
                 quizName: skillDefAndUserPoints?.quizName,
                 numQuizQuestions: skillDefAndUserPoints?.quizNumQuestions ?: 0,
+                quizNeedsGrading: skillDefAndUserPoints?.lastQuizAttemptStatus && skillDefAndUserPoints?.lastQuizAttemptStatus == UserQuizAttempt.QuizAttemptStatus.NEEDS_GRADING,
+                quizNeedsGradingAttemptDate: skillDefAndUserPoints?.lastQuizAttemptDate,
+                quizAttemptId: skillDefAndUserPoints?.lastQuizAttemptId,
+                quizOrSurveyPassed: skillDefAndUserPoints?.lastQuizAttemptStatus && skillDefAndUserPoints?.lastQuizAttemptStatus == UserQuizAttempt.QuizAttemptStatus.PASSED,
+                approvedBy: isFinished ? skillDefAndUserPoints.approverUserIdForDisplay : '',
+                approved: !skillApproval?.rejectedOn && skillApproval?.approverUserId,
         )
 
         return selfReportingInfo
     }
 
     @Profile
-    private SelfReportingInfo loadSelfReporting(String userId, SkillDefParent skillDef, QuizToSkillDefRepo.QuizNameAndId quizNameAndId){
+    private SelfReportingInfo loadSelfReporting(String userId, SkillDefParent skillDef, QuizToSkillDefRepo.QuizNameAndId quizNameAndId, Date achievedOn){
         boolean enabled = skillDef.selfReportingType != null
         Pageable oneRowPlease = PageRequest.of(0, 1, Sort.by(Sort.Direction.DESC, "requestedOn"))
         String queryProjId = skillDef.copiedFrom ? skillDef.copiedFromProjectId : skillDef.projectId
         Integer querySkillRefId = skillDef.copiedFrom ? skillDef.copiedFrom : skillDef.id
         List<SkillApproval> skillApprovals = skillApprovalRepo.findApprovalForSkillsDisplay(userId, queryProjId, querySkillRefId, oneRowPlease )
         SkillApproval skillApproval = skillApprovals?.size() > 0 ? skillApprovals.first() : null
+
+        Boolean quizNeedsGrading = false
+        Boolean quizOrSurveyPassed = false
+        Date quizNeedsGradingAttemptDate = null
+        Integer quizAttemptId = null
+        if (quizNameAndId) {
+            PageRequest onePlease = PageRequest.of(0, 1, Sort.by(Sort.Direction.DESC, "updated"))
+            List<UserQuizAttempt> gradingAttempts = userQuizAttemptRepo.findByQuizRefIdAndUserIdAndStatus(
+                    quizNameAndId.getQuizRefId(),
+                    userId,
+                    [UserQuizAttempt.QuizAttemptStatus.NEEDS_GRADING, UserQuizAttempt.QuizAttemptStatus.PASSED], onePlease)
+            if (gradingAttempts) {
+                UserQuizAttempt lastAttempt = gradingAttempts.first()
+                if ( lastAttempt.status == UserQuizAttempt.QuizAttemptStatus.NEEDS_GRADING) {
+                    quizNeedsGrading = true
+                    quizNeedsGradingAttemptDate = gradingAttempts.first().getUpdated()
+                    quizAttemptId = lastAttempt.id
+                }
+                if ( lastAttempt.status == UserQuizAttempt.QuizAttemptStatus.PASSED) {
+                    quizOrSurveyPassed = true
+                    quizAttemptId = lastAttempt.id
+                }
+            }
+        }
 
         SelfReportingInfo selfReportingInfo = new SelfReportingInfo(
                 approvalId: skillApproval?.getId(),
@@ -691,10 +794,14 @@ class SkillsLoader {
                 justificationRequired: Boolean.valueOf(skillDef.justificationRequired),
                 requestedOn: skillApproval?.requestedOn?.time,
                 rejectedOn: skillApproval?.rejectedOn?.time,
-                rejectionMsg: skillApproval?.rejectionMsg,
+                message: skillApproval?.message,
                 quizId: quizNameAndId?.quizId,
                 quizName: quizNameAndId?.quizName,
-                numQuizQuestions: quizNameAndId?.numQuestions ?: 0,
+                numQuizQuestions: quizNameAndId?.configuredNumQuestionsQuizLength ?: (quizNameAndId?.numQuestions ?: 0),
+                quizNeedsGrading: quizNeedsGrading,
+                quizNeedsGradingAttemptDate: quizNeedsGradingAttemptDate,
+                quizOrSurveyPassed: quizOrSurveyPassed,
+                quizAttemptId: quizAttemptId
         )
 
         return selfReportingInfo
@@ -713,6 +820,10 @@ class SkillsLoader {
     }
 
     @Transactional(readOnly = true)
+    Map<String, String> loadGroupDescription(String projectId, String groupId) {
+        return loadDescription(projectId, groupId)
+    }
+    @Transactional(readOnly = true)
     List<SkillDescription> loadSubjectDescriptions(String projectId, String subjectId, String userId, Integer version = -1) {
         return loadDescriptions(projectId, subjectId, userId, SkillRelDef.RelationshipType.RuleSetDefinition, version)
     }
@@ -723,6 +834,15 @@ class SkillsLoader {
     @Transactional(readOnly = true)
     List<SkillDescription> loadGlobalBadgeDescriptions(String badgeId, String userId,Integer version = -1) {
         return loadDescriptions(null, badgeId, userId, SkillRelDef.RelationshipType.BadgeRequirement, version)
+    }
+
+    private Map<String, String> loadDescription(String projectId, String skillId) {
+        List<SkillDefWithExtraRepo.SkillIdAndDesc> description = skillDefWithExtraRepo.findDescriptionBySkillIdIn(projectId, [skillId])
+        if(description.size() > 0) {
+            return ['description': description[0]?.description?.toString()];
+        } else {
+            return null
+        }
     }
 
     private List<SkillDescription> loadDescriptions(String projectId, String subjectId,  String userId, SkillRelDef.RelationshipType relationshipType, int version) {
@@ -904,13 +1024,19 @@ class SkillsLoader {
         if (skillsRes && version >= 500) {
             points = skillsRes ? skillsRes.collect({ it.points }).sum() as Integer : 0
             todaysPoints = skillsRes ? skillsRes.collect({ it.todaysPoints }).sum() as Integer : 0
-            skillsAchieved = skillsRes ? skillsRes.collect({ it.points == it.totalPoints ? 1 : 0 }).sum() as Integer : 0
-            totalSkills = skillsRes ? skillsRes.size() : 0
+            List<SkillSummary> flattenChildSkills = skillsRes ? (List<SkillSummary>)skillsRes.collect {
+                if (it instanceof SkillsSummaryGroup) {
+                    return it.children ?: []
+                }
+                return it
+            }.flatten() : []
+            skillsAchieved = flattenChildSkills ? flattenChildSkills.collect({SkillSummary skillSummary -> skillSummary.points == skillSummary.totalPoints ? 1 : 0 }).sum() as Integer : 0
+            totalSkills = flattenChildSkills ? flattenChildSkills.size() : 0
         } else {
             points = calculatePointsForSubject(projDef.projectId, userId, subjectDefinition)
             todaysPoints= calculateTodayPoints(userId, subjectDefinition)
-            skillsAchieved = achievedLevelRepository.countAchievedChildren(userId, projDef.projectId, subjectDefinition.skillId, SkillRelDef.RelationshipType.RuleSetDefinition)
-            totalSkills = skillDefRepo.countChildren(projDef.projectId, subjectDefinition.skillId, SkillRelDef.RelationshipType.RuleSetDefinition)
+            skillsAchieved = achievedLevelRepository.countAchievedChildSkills(userId, projDef.projectId, subjectDefinition.skillId)
+            totalSkills = skillDefRepo.countSkillChildren(projDef.projectId, subjectDefinition.skillId)
         }
 
         // convert null result to 0
@@ -945,6 +1071,7 @@ class SkillsLoader {
                 points: points,
 
                 skillsLevel: levelInfo.level,
+                lastLevelAchieved: levelInfo?.achievedOn,
                 totalLevels: levelInfo.totalNumLevels,
 
                 levelPoints: levelInfo.currentPoints,
@@ -1081,9 +1208,9 @@ class SkillsLoader {
 
         if (loadSkills) {
             SubjectDataLoader.SkillsData groupChildrenMeta = subjectDataLoader.loadData(userId, null, badgeDefinition, version, [SkillRelDef.RelationshipType.BadgeRequirement])
-            skillsRes = createSkillSummaries(null, groupChildrenMeta.childrenWithPoints, userId)?.sort({ it.skill?.toLowerCase() })
+            skillsRes = createSkillSummaries(null, groupChildrenMeta.childrenWithPoints, true, userId)?.sort({ it.skill?.toLowerCase() })
             if (skillsRes) {
-                // all the skills are "cross-project" if they don't belong to the project that originated this reqest
+                // all the skills are "cross-project" if they don't belong to the project that originated this request
                 skillsRes.each {
                     if (it.projectId != originatingProject) {
                         it.crossProject = true
@@ -1303,7 +1430,8 @@ class SkillsLoader {
                         isMotivationalSkill: isMotivationalSkill,
                         daysOfInactivityBeforeExp: daysOfInactivityBeforeExp,
                         mostRecentlyPerformedOn: mostRecentlyPerformedOn,
-                        lastExpirationDate: lastExpirationDate
+                        lastExpirationDate: lastExpirationDate,
+                        videoSummary: getVideoSummary(skillDef.copiedFrom ?: skillDef.id),
                 )
             }
         }
@@ -1349,6 +1477,7 @@ class SkillsLoader {
             }
         }
 
+        res.achievedOn = lastAchievedLevel?.achievedOn
         return res
     }
 

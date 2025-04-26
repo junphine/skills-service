@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useMyProgressState } from '@/stores/UseMyProgressState.js'
 import ProgressAndRankingSplash from '@/components/myProgress/ProgressAndRankingSplash.vue'
 import InfoSnapshotCard from '@/components/myProgress/InfoSnapshotCard.vue'
@@ -23,19 +23,22 @@ import LastEarnedCard from '@/components/myProgress/LastEarnedCard.vue'
 import BadgeNumCard from '@/components/myProgress/BadgeNumCard.vue'
 import MyCurrentProjects from '@/components/myProgress/MyCurrentProjects.vue'
 import MyProgressTitle from '@/components/myProgress/MyProgressTitle.vue'
+import MyQuizzesCard from "@/components/myProgress/MyQuizzesCard.vue";
 
 const myProgressState = useMyProgressState()
-
+const loading = ref(true)
 onMounted(() => {
-  myProgressState.loadMyProgressSummary()
+  myProgressState.loadMyProgressSummary().then(() => {
+    loading.value = false
+  })
 })
 
 </script>
 
 <template>
   <div>
-    <skills-spinner :is-loading="myProgressState.isLoadingMyProgressSummary" class="mt-8" />
-    <div v-if="!myProgressState.isLoadingMyProgressSummary">
+    <skills-spinner :is-loading="myProgressState.isLoadingMyProgressSummary || loading" class="mt-20" />
+    <div v-if="!myProgressState.isLoadingMyProgressSummary && !loading">
       <progress-and-ranking-splash v-if="!myProgressState.hasProjects" />
       <div v-if="myProgressState.hasProjects">
         <my-progress-title title="My Progress">
@@ -51,12 +54,12 @@ onMounted(() => {
           </template>
         </my-progress-title>
 
-        <div class="flex flex-column sm:flex-row gap-3 flex-wrap mt-3">
+        <div class="flex flex-col sm:flex-row gap-4 flex-wrap mt-4">
           <div class="flex-1">
             <info-snapshot-card />
           </div>
           <div class="flex-1">
-            <num-skills />
+            <my-quizzes-card />
           </div>
           <div class="flex-1">
             <last-earned-card />

@@ -26,6 +26,10 @@ export default {
       .post(`/${opType}/quiz-definitions/${quizId}`, quizDef)
       .then((response) => response.data)
   },
+  copyQuiz(quizDef) {
+    const quizId = quizDef.originalQuizId;
+    return axios.post(`/admin/quiz-definitions/${quizId}/copy`, quizDef).then((response) => response.data)
+  },
   deleteQuizId(quizId) {
     return axios.delete(`/admin/quiz-definitions/${quizId}`).then((response) => response.data)
   },
@@ -93,6 +97,11 @@ export default {
       .get(`/admin/quiz-definitions/${quizId}/runs/${attemptId}`)
       .then((response) => response.data)
   },
+  gradeQuizAnswerAttempt(quizId, userId, quizAttemptId, answerDefId, gradingInfo) {
+    return axios
+        .post(`/admin/quiz-definitions/${quizId}/users/${userId}/attempt/${quizAttemptId}/gradeAnswer/${answerDefId}`, gradingInfo)
+        .then((response) => response.data)
+  },
   deleteQuizRunHistoryItem(quizId, attemptId) {
     return axios
       .delete(`/admin/quiz-definitions/${quizId}/runs/${attemptId}`)
@@ -118,8 +127,11 @@ export default {
   },
   addQuizAdmin(quizId, userId) {
     const adminRole = 'ROLE_QUIZ_ADMIN'
-    return axios
-      .post(`/admin/quiz-definitions/${quizId}/users/${userId}/roles/${adminRole}`)
+    return axios.post(
+        `/admin/quiz-definitions/${quizId}/users/${userId}/roles/${adminRole}`,
+        null,
+        { handleError: false }
+      )
       .then((response) => response.data)
   },
   deleteQuizAdmin(quizId, userId) {
@@ -128,10 +140,9 @@ export default {
       .delete(`/admin/quiz-definitions/${quizId}/users/${userId}/roles/${adminRole}`)
       .then((response) => response.data)
   },
-  getSkillsForQuiz(quizId, userId) {
-    const params = { userId }
+  getSkillsForQuiz(quizId) {
     return axios
-      .get(`/admin/quiz-definitions/${quizId}/skills/`, { params })
+      .get(`/admin/quiz-definitions/${quizId}/skills`)
       .then((response) => response.data)
   },
   getUserTagCounts(quizId, userTagKey) {
@@ -143,5 +154,20 @@ export default {
     return axios
       .get(`/admin/quiz-definitions/${quizId}/usageOverTime`)
       .then((response) => response.data)
+  },
+  saveMyPreference(quizId, preferenceKey, value) {
+    return axios
+        .post(`/admin/quiz-definitions/${quizId}/preferences/${preferenceKey}`, {value})
+        .then((response) => response.data)
+  },
+  getMyPreferences(quizId) {
+    return axios
+        .get(`/admin/quiz-definitions/${quizId}/preferences`)
+        .then((response) => response.data)
+  },
+  validateQuizForEnablingCommunity(quizId) {
+    return axios
+        .get(`/admin/quiz-definitions/${encodeURIComponent(quizId)}/validateEnablingCommunity`)
+        .then((response) => response.data)
   }
 }

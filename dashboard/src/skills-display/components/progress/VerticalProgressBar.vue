@@ -25,14 +25,6 @@ const props = defineProps({
     type: Number,
     default: 0
   },
-  beforeTodayBarColor: {
-    type: String,
-    default: 'bg-teal-600'
-  },
-  totalProgressBarColor: {
-    type: String,
-    default: 'bg-teal-300'
-  },
   barSize: {
     type: Number,
     default: 22
@@ -44,16 +36,14 @@ const props = defineProps({
   isLocked: {
     type: Boolean,
     default: false
+  },
+  disableDailyColor: {
+    type: Boolean,
+    default: false
   }
 })
 
 const isCompleted = computed(() => props.totalProgress >= 100)
-const overallProgressColor = computed(() => {
-  if (isCompleted.value) {
-    return 'bg-green-400'
-  }
-  return props.totalProgressBeforeToday > 0 ? props.totalProgressBarColor : props.beforeTodayBarColor
-})
 const computedTotalProgressBeforeToday = computed(() => !isCompleted.value ? props.totalProgressBeforeToday : 0)
 
 const styleObject = computed(() => {
@@ -72,28 +62,31 @@ const ariaLabelFullMsg = computed(() => {
 
 <template>
   <div class="user-skill-progress-layers" :style="`height: ${props.barSize+2}px`">
-<!--    <pre> totalProgress:{{ totalProgress }}</pre>-->
-<!--    <pre> totalProgressBeforeToday: {{ totalProgressBeforeToday }}</pre>-->
-<!--    <pre> computedTotalProgressBeforeToday: {{ computedTotalProgressBeforeToday }}</pre>-->
-    <ProgressBar :value="totalProgress"
-                 :pt="{ value: { class: overallProgressColor }}"
-                 class="today-progress"
+    <ProgressBar v-if="!isCompleted && !disableDailyColor" :value="totalProgress"
+                 :pt="{ value: { class: '!bg-teal-300' }}"
+                 class="progress-bar sd-theme-today-progress is-not-completed"
                  :class="{ 'is-completed': isCompleted, 'is-not-completed': !isCompleted }"
                  :show-value="false"
                  :ariaLabel="ariaLabelFullMsg"
                  :style="styleObject"></ProgressBar>
-    <ProgressBar :value="computedTotalProgressBeforeToday"
-                 :pt="{ value: { class: beforeTodayBarColor },
-               root: { class: 'opacity-100 remove-background' }}"
-                 class="total-progress"
+    <ProgressBar v-if="!isCompleted && !disableDailyColor" :value="computedTotalProgressBeforeToday"
+                 :pt="{ value: { class: '!bg-teal-600' },
+                    root: { class: '!opacity-100 !bg-transparent' }}"
+                 class="progress-bar sd-theme-total-progress  is-not-completed"
                  :class="{ 'is-completed': isCompleted, 'is-not-completed': !isCompleted }"
+                 :show-value="false"
+                 :ariaLabel="ariaLabelFullMsg"
+                 :style="styleObject"></ProgressBar>
+    <ProgressBar v-if="isCompleted || disableDailyColor" :value="totalProgress"
+                 :pt="{ value: { class: '!bg-green-700' }}"
+                 class="is-completed progress-bar"
                  :show-value="false"
                  :ariaLabel="ariaLabelFullMsg"
                  :style="styleObject"></ProgressBar>
     <div v-if="isLocked" class="absolute left-0 right-0" data-cy="progressBarWithLock">
-      <div class="flex justify-content-center">
+      <div class="flex justify-center">
         <div class="text-center" style="z-index: 1000 !important;">
-          <i class="fas fa-lock" aria-hidden="true"/>
+          <i class="fas fa-lock" :class="{ 'text-orange-200': isCompleted }" aria-hidden="true"/>
         </div>
       </div>
     </div>
@@ -106,7 +99,7 @@ const ariaLabelFullMsg = computed(() => {
 }
 </style>
 <style scoped>
-.total-progress {
+.progress-bar {
   position: absolute;
   width: 100%;
   height: 100%;
@@ -114,13 +107,6 @@ const ariaLabelFullMsg = computed(() => {
   left: 0px;
 }
 
-.today-progress {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  top: 0px;
-  left: 0px;
-}
 
 .user-skill-progress-layers {
   position: relative;

@@ -15,18 +15,11 @@
  */
 package skills.intTests.quiz
 
-import groovy.json.JsonOutput
-import org.springframework.beans.factory.annotation.Autowired
+
 import org.springframework.beans.factory.annotation.Value
 import skills.intTests.utils.DefaultIntSpec
 import skills.intTests.utils.QuizDefFactory
-import skills.intTests.utils.SkillsClientException
 import skills.intTests.utils.SkillsService
-import skills.storage.model.UserQuizAttempt
-import skills.storage.repos.UserQuizAnswerAttemptRepo
-import skills.storage.repos.UserQuizAttemptRepo
-import skills.storage.repos.UserQuizQuestionAttemptRepo
-import spock.lang.IgnoreIf
 
 class QuizUserTagsSpecs extends DefaultIntSpec {
 
@@ -68,8 +61,8 @@ class QuizUserTagsSpecs extends DefaultIntSpec {
         runQuiz(users[3], quiz2, quiz2Info, true, true)
 
         when:
-        def q1UserTagCounts = skillsService.getUserTagCounts(quiz.quizId, usersTableAdditionalUserTagKey)
-        def q2UserTagCounts = skillsService.getUserTagCounts(quiz2.quizId, usersTableAdditionalUserTagKey)
+        def q1UserTagCounts = skillsService.getQuizUserTagCounts(quiz.quizId, usersTableAdditionalUserTagKey)
+        def q2UserTagCounts = skillsService.getQuizUserTagCounts(quiz2.quizId, usersTableAdditionalUserTagKey)
         then:
         q1UserTagCounts.value == ["ABC2", "ABC1", "ABC"]
         q1UserTagCounts.count == [4, 2, 1]
@@ -99,7 +92,7 @@ class QuizUserTagsSpecs extends DefaultIntSpec {
         }
 
         when:
-        def q1UserTagCounts = skillsService.getUserTagCounts(quiz.quizId, usersTableAdditionalUserTagKey)
+        def q1UserTagCounts = skillsService.getQuizUserTagCounts(quiz.quizId, usersTableAdditionalUserTagKey)
         then:
         !q1UserTagCounts
     }
@@ -107,8 +100,8 @@ class QuizUserTagsSpecs extends DefaultIntSpec {
 
     void runQuiz(String userId, def quiz, def quizInfo, boolean pass, boolean complete = true) {
         def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, userId).body
-        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, userId)
-        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[pass ? 0 : 1].id, userId)
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id, userId)
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[pass ? 0 : 1].id, userId)
         if (complete) {
             skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, userId).body
         }

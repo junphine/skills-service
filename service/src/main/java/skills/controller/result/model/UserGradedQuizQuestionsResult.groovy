@@ -20,12 +20,16 @@ import skills.storage.model.QuizDefParent
 import skills.storage.model.UserQuizAttempt
 
 class UserGradedQuizQuestionsResult {
+    String quizName
     String userId
     String userIdForDisplay
     QuizDefParent.QuizType quizType
     List<UserGradedQuizQuestionResult> questions
     UserQuizAttempt.QuizAttemptStatus status
+    Boolean allQuestionsReturned
+    Integer numQuestions
     Integer numQuestionsToPass
+    Integer numQuestionsPassed
     Date started
     Date completed
     String userTag

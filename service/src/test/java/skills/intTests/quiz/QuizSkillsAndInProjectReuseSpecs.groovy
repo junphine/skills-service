@@ -314,7 +314,6 @@ class QuizSkillsAndInProjectReuseSpecs extends DefaultIntSpec {
         def apiSkills_t1 = skillsService.getSkillSummary(userId, proj.projectId, subj2.subjectId)
         def p1_apiSkills_t1 = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
         def apiSkill2_t1 = skillsService.getSingleSkillSummary(userId, proj.projectId, SkillReuseIdUtil.addTag(skills[1].skillId, 0))
-        println JsonOutput.prettyPrint(JsonOutput.toJson(apiSkills_t1))
         then:
         skillsRes_t0.selfReportingType == [SkillDef.SelfReportingType.Quiz.toString(), SkillDef.SelfReportingType.HonorSystem.toString(), null, SkillDef.SelfReportingType.Quiz.toString()]
         skillsRes_t0.quizId == [quiz.quizId, null, null, survey.quizId]
@@ -390,11 +389,10 @@ class QuizSkillsAndInProjectReuseSpecs extends DefaultIntSpec {
         skillsService.reuseSkillInAnotherSubject(proj.projectId, skills[2].skillId, subj2.subjectId)
         String userId = getRandomUsers(1).first()
         SkillsService otherUserService = createService(userId)
-        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
         when:
         def quizAttempt =  otherUserService.startQuizAttempt(quiz.quizId).body
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id)
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[0].id)
         def gradedQuizAttempt = otherUserService.completeQuizAttempt(quiz.quizId, quizAttempt.id).body
         waitForAsyncTasksCompletion.waitForAllScheduleTasks()
 
@@ -440,11 +438,10 @@ class QuizSkillsAndInProjectReuseSpecs extends DefaultIntSpec {
 
         String userId = getRandomUsers(1).first()
         SkillsService otherUserService = createService(userId)
-        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
         when:
         def quizAttempt =  otherUserService.startQuizAttempt(quiz.quizId).body
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id)
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[0].id)
         def gradedQuizAttempt = otherUserService.completeQuizAttempt(quiz.quizId, quizAttempt.id).body
         waitForAsyncTasksCompletion.waitForAllScheduleTasks()
 

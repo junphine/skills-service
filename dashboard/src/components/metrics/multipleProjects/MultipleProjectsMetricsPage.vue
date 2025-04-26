@@ -39,11 +39,11 @@ const loadProjects = () => {
 
 <template>
   <div>
-    <sub-page-header title="Metrics"/>
+    <sub-page-header title="Metrics" :title-level="1"/>
 
     <skills-spinner :is-loading="loading" />
     <div v-if="!loading">
-      <training-profile-comparator class="mb-3" :available-projects="projects"/>
+      <training-profile-comparator class="mb-4" :available-projects="projects"/>
       <multiple-proj-users-in-common :available-projects="projects"/>
     </div>
   </div>

@@ -21,6 +21,9 @@ import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import { useProjectCommunityReplacement } from '@/components/customization/UseProjectCommunityReplacement.js'
 import { useRoute } from 'vue-router'
 import UsersService from '@/components/users/UsersService.js'
+import { useSkillsDisplayInfo } from '@/skills-display/UseSkillsDisplayInfo.js'
+import { useLog } from '@/components/utils/misc/useLog.js'
+import dayjs from 'dayjs'
 
 export const useLoadTranscriptData = () => {
   const skillsDisplayService = useSkillsDisplayService()
@@ -31,6 +34,8 @@ export const useLoadTranscriptData = () => {
   const isLoading = ref(false)
   const appConfig = useAppConfig()
   const route = useRoute()
+  const skillsDisplayInfo = useSkillsDisplayInfo()
+  const log = useLog()
 
   const loadTranscriptData = () => {
     isLoading.value = true
@@ -50,24 +55,40 @@ export const useLoadTranscriptData = () => {
         })
       }
 
+      if (skillsDisplayInfo.isSkillsClientPath()) {
+        return skillsDisplayService.getLoggedInUserInfo().then((userInfo) => {
+          return userInfo
+        })
+      }
+
       return Promise.resolve(userAuthState.userInfo)
     }
 
     const buildUserName = (userInfo) => {
-      const hasUserIdForDisplay = userInfo.userIdForDisplay && userInfo.userIdForDisplay.length > 0
-      const userIdToPrint = hasUserIdForDisplay ? userInfo.userIdForDisplay : userInfo.userId
-
-      if (userInfo.nickname && userInfo.nickname.length > 0) {
-        return `${userInfo.nickname} (${userIdToPrint})`
+      if(!userInfo && skillsDisplayInfo.isSkillsClientPath()) {
+        return skillsDisplayAttributesState.userId || ''
       }
 
-      const hasLastName = userInfo.last && userInfo.last.length > 0
-      const hasFirstName = userInfo.first && userInfo.first.length > 0
-      if (hasLastName && hasFirstName) {
-        return `${userInfo.first} ${userInfo.last} (${userIdToPrint})`
+      if (log.isTraceEnabled()) {
+        log.trace(`UseLoadTranscriptData.js: userinfo=${JSON.stringify(userInfo)}`)
       }
+      if(userInfo) {
+        const hasUserIdForDisplay = userInfo.userIdForDisplay && userInfo.userIdForDisplay.length > 0
+        const userIdToPrint = hasUserIdForDisplay ? userInfo.userIdForDisplay : userInfo.userId
 
-      return userIdToPrint
+        if (userInfo.nickname && userInfo.nickname.length > 0) {
+          return `${userInfo.nickname} (${userIdToPrint})`
+        }
+
+        const hasLastName = userInfo.last && userInfo.last.length > 0
+        const hasFirstName = userInfo.first && userInfo.first.length > 0
+        if (hasLastName && hasFirstName) {
+          return `${userInfo.first} ${userInfo.last} (${userIdToPrint})`
+        }
+
+        return userIdToPrint
+      }
+      return ''
     }
 
     const buildProjectName = (projRes) => {
@@ -105,7 +126,9 @@ export const useLoadTranscriptData = () => {
                   return {
                     name: skillRes.skill,
                     userPoints: skillRes.points,
-                    totalPoints: skillRes.totalPoints
+                    totalPoints: skillRes.totalPoints,
+                    achievedOn: skillRes.achievedOn ? dayjs(skillRes.achievedOn).format('YYYY-MM-DD') : null,
+                    approvedBy: skillRes.selfReporting && skillRes.selfReporting.approvedBy ? skillRes.selfReporting.approvedBy : '',
                   }
                 })
               }

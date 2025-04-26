@@ -19,7 +19,6 @@ import { useRoute } from 'vue-router'
 import { useForm } from 'vee-validate'
 import * as yup from 'yup'
 import Card from 'primevue/card'
-import InputSwitch from 'primevue/inputswitch'
 import RadioButton from 'primevue/radiobutton'
 import Checkbox from 'primevue/checkbox'
 import SubPageHeader from '@/components/utils/pages/SubPageHeader.vue'
@@ -31,6 +30,7 @@ import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import { useProjConfig } from '@/stores/UseProjConfig.js'
 import SkillsSettingTextInput from '@/components/settings/SkillsSettingTextInput.vue'
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
+import SettingsItem from "@/components/settings/SettingsItem.vue";
 
 const dialogMessages = useDialogMessages()
 const announcer = useSkillsAnnouncer();
@@ -52,7 +52,7 @@ const schema = yup.object({
   pointDisplayName: yup.string().max(appConfig.maxCustomLabelLength).label('Point Display Text'),
 });
 
-const { values, defineField, errors, meta, handleSubmit, setFieldValue } = useForm({
+const { values, defineField, errors, meta, handleSubmit, setFieldValue, resetForm } = useForm({
   validationSchema: schema,
   initialValues: {
     levelDisplayName: 'Level',
@@ -68,6 +68,7 @@ onMounted(() => {
   loadSettings();
 })
 
+const labelsHaveBeenCleared = ref(false);
 let isLoading = ref(true);
 let showCustomLabelsConfigToggle = ref(false);
 let selfReport = ref({
@@ -143,6 +144,27 @@ let settings = ref({
     dirty: false,
     projectId: route.params.projectId,
   },
+  projectDeletionProtection: {
+    value: false,
+    setting: 'project-deletion-protection',
+    lastLoadedValue: false,
+    dirty: false,
+    projectId: route.params.projectId,
+  },
+  groupInfoOnSkillPage: {
+    value: false,
+    setting: 'group-info-on-skill-page',
+    lastLoadedValue: false,
+    dirty: false,
+    projectId: route.params.projectId,
+  },
+  disableAchievementsCelebration: {
+    value: false,
+    setting: 'skills-display-achievement-celebration-disabled',
+    lastLoadedValue: false,
+    dirty: false,
+    projectId: route.params.projectId,
+  },
   projectDisplayName: {
     value: 'Project',
     setting: 'project.displayName',
@@ -198,7 +220,7 @@ const showSavedMsg = ref(false);
 
 // computed
 const isDirty = computed(() => {
-  const foundDirty = Object.values(settings.value).find((item) => item.dirty);
+  const foundDirty = Object.values(settings.value).find((item) => item.dirty) || labelsHaveBeenCleared.value;
   return !!foundDirty;
 });
 
@@ -209,8 +231,7 @@ const approvalSelected = computed(() => {
 });
 
 const shouldShowCustomLabelsConfig = computed(() => {
-  return showCustomLabelsConfigToggle.value
-      || settings.value.projectDisplayName.value !== 'Project' || settings.value.projectDisplayName.dirty
+  return settings.value.projectDisplayName.value !== 'Project' || settings.value.projectDisplayName.dirty
       || settings.value.subjectDisplayName.value !== 'Subject' || settings.value.subjectDisplayName.dirty
       || settings.value.groupDisplayName.value !== 'Group' || settings.value.groupDisplayName.dirty
       || settings.value.skillDisplayName.value !== 'Skill' || settings.value.skillDisplayName.dirty
@@ -229,6 +250,18 @@ const selfReportingEnabledLabel = computed(() => {
 const groupDescriptionsLabel = computed(() => {
   return formatToggleLabel(settings.value.groupDescriptions.value);
 });
+
+const disableAchievementCelebrationLabel = computed(() => {
+  return formatToggleLabel(settings.value.disableAchievementsCelebration.value);
+});
+
+const projectDeletionProtectionLabel = computed(() => {
+  return formatToggleLabel(settings.value.projectDeletionProtection.value);
+});
+
+const groupInfoOnSkillPageLabel = computed(() => {
+  return formatToggleLabel(settings.value.groupInfoOnSkillPage.value);
+})
 
 const rankOptOutLabel = computed(() => {
   return formatToggleLabel(settings.value.rankAndLeaderboardOptOut.value);
@@ -287,6 +320,18 @@ const rankAndLeaderboardOptOutChanged = ((value) => {
 const groupDescriptionsChanged = ((value) => {
   settings.value.groupDescriptions.dirty = `${value}` !== `${settings.value.groupDescriptions.lastLoadedValue}`;
 });
+
+const projectDeletionProtectionChanged = ((value) => {
+  settings.value.projectDeletionProtection.dirty = `${value}` !== `${settings.value.projectDeletionProtection.lastLoadedValue}`;
+});
+
+const groupInfoOnSkillPageChanged = ((value) => {
+  settings.value.groupInfoOnSkillPage.dirty = `${value}` !== `${settings.value.groupInfoOnSkillPage.lastLoadedValue}`;
+})
+
+const disableAchievementsCelebrationChanged = ((value) => {
+  settings.value.disableAchievementsCelebration.dirty = `${value}` !== `${settings.value.disableAchievementsCelebration.lastLoadedValue}`;
+})
 
 const inviteOnlyProjectChanged = ((value) => {
   settings.value.inviteOnlyProject.dirty = `${value}` !== `${settings.value.inviteOnlyProject.lastLoadedValue}`;
@@ -389,26 +434,17 @@ const setSyntheticSetting = ((settingsResponse) => {
 });
 
 const save = (() => {
-  // $refs.observer.validate()
-  //     .then((res1) => {
-  //       if (!res1) {
-  //         errMsg.value = 'Form did NOT pass validation, please fix and try to Save again';
-  //       } else {
-          const dirtyChanges = Object.values(settings.value).filter((item) => item.dirty && !item.setting.startsWith('synthetic.'));
-          if (dirtyChanges) {
-            // isLoading.value = true;
-            SettingService.checkSettingsValidity(route.params.projectId, dirtyChanges)
-                .then((res) => {
-                  if (res.valid) {
-                    saveSettings(dirtyChanges);
-                  } else {
-                    errMsg.value = res.explanation;
-                    // isLoading.value = false;
-                  }
-                });
-          }
-      //   }
-      // });
+  const dirtyChanges = Object.values(settings.value).filter((item) => item.dirty && !item.setting.startsWith('synthetic.'));
+  if (dirtyChanges) {
+    SettingService.checkSettingsValidity(route.params.projectId, dirtyChanges)
+    .then((res) => {
+      if (res.valid) {
+        saveSettings(dirtyChanges);
+      } else {
+        errMsg.value = res.explanation;
+      }
+    });
+  }
 });
 
 const saveSettings = ((dirtyChanges) => {
@@ -430,12 +466,32 @@ const saveSettings = ((dirtyChanges) => {
             SkillsReporter.reportSkill('ConfigureProjectRootHelpUrl');
           }
         });
+        labelsHaveBeenCleared.value = false;
         projConfig.loadProjConfigState({ projectId: route.params.projectId, updateLoadingVar: false })
       })
       .finally(() => {
         // isLoading.value = false;
       });
 });
+
+const toggleCustomLabelConfig = () => {
+  resetForm()
+  if(!showCustomLabelsConfigToggle.value) {
+    labelsHaveBeenCleared.value = true;
+    settings.value.projectDisplayName.value = 'Project'
+    settings.value.projectDisplayName.dirty = true
+    settings.value.subjectDisplayName.value = 'Subject'
+    settings.value.subjectDisplayName.dirty = true
+    settings.value.groupDisplayName.value = 'Group'
+    settings.value.groupDisplayName.dirty = true
+    settings.value.skillDisplayName.value = 'Skill'
+    settings.value.skillDisplayName.dirty = true
+    settings.value.levelDisplayName.value = 'Level'
+    settings.value.levelDisplayName.dirty = true
+    settings.value.pointDisplayName.value = 'Point'
+    settings.value.pointDisplayName.dirty = true
+  }
+}
 </script>
 
 <template>
@@ -444,11 +500,8 @@ const saveSettings = ((dirtyChanges) => {
     <Card>
       <template #content>
         <loading-container :is-loading="isLoading">
-          <div class="field flex flex-column lg:flex-row lg:gap-3" data-cy="projectVisibility">
-            <label class="text-secondary w-min-11rem lg:max-w-11rem" id="projectVisibilityLabel" for="projectVisibilityDropdown">
-              Project Discoverability:
-            </label>
-            <Dropdown v-model="settings.projectVisibility.value"
+          <settings-item label="Project Discoverability" input-id="projectVisibilityDropdown">
+            <Select v-model="settings.projectVisibility.value"
                       inputId="projectVisibilityDropdown"
                       :options="projectVisibilityOptions"
                       @change="projectVisibilityChanged"
@@ -456,13 +509,10 @@ const saveSettings = ((dirtyChanges) => {
                       optionLabel="text" optionValue="value"
                       class="w-full"
                       data-cy="projectVisibilitySelector" required />
-          </div>
+          </settings-item>
 
-          <div class="field flex flex-column lg:flex-row lg:gap-3">
-            <label class="text-secondary w-min-11rem lg:max-w-11rem" id="hideProjectDescriptionLabel" for="hideProjectDescription">
-              Project Description:
-            </label>
-            <Dropdown v-model="settings.hideProjectDescription.value"
+          <settings-item label="Project Description" input-id="hideProjectDescription">
+            <Select v-model="settings.hideProjectDescription.value"
                       inputId="hideProjectDescription"
                       :options="[{value: true, label: 'Show Project Description everywhere'}, {value: false, label: 'Only show Description in Project Catalog'}]"
                       optionLabel="label" optionValue="value"
@@ -470,173 +520,181 @@ const saveSettings = ((dirtyChanges) => {
                       aria-labelledby="hideProjectDescriptionLabel"
                       class="w-full"
                       data-cy="showProjectDescriptionSelector" />
-          </div>
+          </settings-item>
 
-          <div class="field flex flex-column lg:flex-row lg:gap-3">
-            <label class="text-secondary w-min-11rem lg:max-w-11rem" id="pointsForLevelsLabel" for="levelPointsEnabled">
-              Use Points For Levels:
-            </label>
-            <div class="flex align-items-center">
-              <InputSwitch v-model="settings.levelPointsEnabled.value"
-                           inputId="levelPointsEnabled"
-                           v-on:update:modelValue="levelPointsEnabledChanged"
-                           name="check-button"
-                           aria-labelledby="pointsForLevelsLabel"
-                           data-cy="usePointsForLevelsSwitch" />
-              <span class="ml-1">{{ usePointsForLevelsLabel }}</span>
-            </div>
-          </div>
+          <settings-item label="Use Points For Levels" input-id="levelPointsEnabled">
+            <ToggleSwitch v-model="settings.levelPointsEnabled.value"
+                         inputId="levelPointsEnabled"
+                         v-on:update:modelValue="levelPointsEnabledChanged"
+                         name="check-button"
+                         aria-labelledby="pointsForLevelsLabel"
+                         data-cy="usePointsForLevelsSwitch" />
+            <span class="ml-1">{{ usePointsForLevelsLabel }}</span>
+          </settings-item>
 
           <SkillsSettingTextInput name="helpUrlHost"
-                                  label="Root Help Url:"
+                                  label="Root Help Url"
+                                  :label-width-in-rem="16"
                                   @input="updateSettingsField"
                                   placeholder="http://www.STarticle.com" />
 
-          <div class="field flex flex-column lg:flex-row lg:gap-3">
-            <label class="text-secondary w-min-11rem lg:max-w-11rem" id="selfReportLabel" for="selfReportingControl">
-              Self Report Default:
-            </label>
-            <div class="">
-              <div class="flex align-items-center">
-              <InputSwitch v-model="selfReport.enabled"
-                               name="check-button"
-                               inputId="selfReportingControl"
-                               v-on:update:modelValue="selfReportingControl"
-                               aria-labelledby="selfReportLabel"
-                               data-cy="selfReportSwitch" />
+          <settings-item label="Self Report Default" input-id="selfReportingControl">
+            <div class="flex flex-col flex-1">
+              <div class="flex items-center">
+                <ToggleSwitch v-model="selfReport.enabled"
+                             name="check-button"
+                             inputId="selfReportingControl"
+                             v-on:update:modelValue="selfReportingControl"
+                             aria-labelledby="selfReportLabel"
+                             data-cy="selfReportSwitch"/>
                 <span class="ml-1">{{ selfReportingEnabledLabel }}</span>
               </div>
-              <Card class="mt-2" Card :pt="{  content: { class: 'py-0' } }" data-cy="selfReportTypeSelector">
+              <Card v-if="selfReport.enabled" class="mt-2" Card :pt="{  content: { class: 'py-0' } }" data-cy="selfReportTypeSelector">
                 <template #content>
-                  <div class="flex flex-column">
+                  <div class="flex flex-col">
                     <div>
                       <RadioButton class="mr-2"
                                    inputId="approval"
                                    value="Approval"
                                    v-model="selfReport.selected"
                                    @change="selfReportingTypeChanged('Approval')"
-                                   :disabled="!selfReport.enabled" />
+                                   :disabled="!selfReport.enabled"/>
                       <label for="approval">Approval Queue (reviewed by project admins first)</label>
                     </div>
-                    <div class="ml-4">
+                    <div class="ml-6 mt-1">
                       <Checkbox data-cy="justificationRequiredCheckbox"
                                 inputId="justificationRequiredCheckbox"
                                 id="justification-required-checkbox" :binary="true"
                                 class="d-inline mr-2"
                                 v-model="settings.selfReportJustificationRequired.value"
                                 :disabled="!approvalSelected || !selfReport.enabled"
-                                @update:modelValue="justificationRequiredChanged" />
-                      <label for="justificationRequiredCheckbox" class="m-0 font-italic"
+                                @update:modelValue="justificationRequiredChanged"/>
+                      <label for="justificationRequiredCheckbox" class="m-0 italic"
                              :class="{ 'text-secondary': !approvalSelected || !selfReport.enabled}">
                         Justification Required
                       </label>
                     </div>
                   </div>
-                      <div class="flex mt-2">
-                        <RadioButton class="mr-2"
-                                     inputId="honorSystem"
-                                     @change="selfReportingTypeChanged('HonorSystem')"
-                                     value="HonorSystem"
-                                     v-model="selfReport.selected"
-                                     :disabled="!selfReport.enabled" />
-                        <label for="honorSystem">Honor System (applied right away)</label>
-                      </div>
+                  <div class="flex mt-2">
+                    <RadioButton class="mr-2"
+                                 inputId="honorSystem"
+                                 @change="selfReportingTypeChanged('HonorSystem')"
+                                 value="HonorSystem"
+                                 v-model="selfReport.selected"
+                                 :disabled="!selfReport.enabled"/>
+                    <label for="honorSystem">Honor System (applied right away)</label>
+                  </div>
                 </template>
               </Card>
             </div>
-          </div>
+          </settings-item>
 
-          <div class="field flex flex-column lg:flex-row lg:gap-3">
-            <label class="text-secondary w-min-11rem lg:max-w-11rem" id="rankAndLeaderboardOptOutLabel" for="rankAndLeaderboardOptOut">
-              Rank Opt-Out for ALL Admins:
-            </label>
-            <div class="flex align-items-center">
-              <InputSwitch v-model="settings.rankAndLeaderboardOptOut.value"
-                           inputId="rankAndLeaderboardOptOut"
-                           name="check-button"
-                           v-on:update:modelValue="rankAndLeaderboardOptOutChanged"
-                           aria-labelledby="rankAndLeaderboardOptOutLabel"
-                           data-cy="rankAndLeaderboardOptOutSwitch" />
-              <span class="ml-1">{{ rankOptOutLabel }}</span>
-            </div>
-          </div>
+          <settings-item label="Rank Opt-Out for ALL Admins" input-id="rankAndLeaderboardOptOut">
+            <ToggleSwitch v-model="settings.rankAndLeaderboardOptOut.value"
+                         inputId="rankAndLeaderboardOptOut"
+                         name="check-button"
+                         v-on:update:modelValue="rankAndLeaderboardOptOutChanged"
+                         aria-labelledby="rankAndLeaderboardOptOutLabel"
+                         data-cy="rankAndLeaderboardOptOutSwitch" />
+            <span class="ml-1">{{ rankOptOutLabel }}</span>
+          </settings-item>
 
-          <div class="field flex flex-column lg:flex-row lg:gap-3">
-            <label class="text-secondary w-min-11rem lg:max-w-11rem" id="customLabelsLabel" for="showCustomLabelsConfigToggle">
-              Custom Labels:
-            </label>
-            <div class="">
-              <div class="flex align-items-center">
-                <InputSwitch v-model="showCustomLabelsConfigToggle"
+          <settings-item label="Custom Labels" input-id="showCustomLabelsConfigToggle">
+            <div class="flex flex-col flex-1">
+              <div class="flex items-center">
+                <ToggleSwitch v-model="showCustomLabelsConfigToggle"
                              inputId="showCustomLabelsConfigToggle"
-                               name="check-button"
-                               aria-labelledby="customLabelsLabel"
-                               data-cy="customLabelsSwitch"/>
+                             name="check-button"
+                             aria-labelledby="customLabelsLabel"
+                             @change="toggleCustomLabelConfig"
+                             data-cy="customLabelsSwitch"/>
                 <span class="ml-1">{{ showCustomLabelsConfigLabel }}</span>
               </div>
-
-                <Card class="mt-3" v-if="shouldShowCustomLabelsConfig">
-                  <template #content>
-                    <SkillsSettingTextInput name="projectDisplayName"
-                                            label="Project Display Text"
-                                            @input="updateSettingsField"
-                                            help-message='The word "Project" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
-                    <SkillsSettingTextInput name="subjectDisplayName"
-                                            label="Subject Display Text"
-                                            @input="updateSettingsField"
-                                            help-message='The word "Subject" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
-                    <SkillsSettingTextInput name="groupDisplayName"
-                                            label="Group Display Text"
-                                            @input="updateSettingsField"
-                                            help-message='The word "Group" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
-                    <SkillsSettingTextInput name="skillDisplayName"
-                                            label="Skill Display Text"
-                                            @input="updateSettingsField"
-                                            help-message='The word "Skill" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
-                    <SkillsSettingTextInput name="levelDisplayName"
-                                            label="Level Display Text"
-                                            @input="updateSettingsField"
-                                            help-message='The word "Level" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
-                    <SkillsSettingTextInput name="pointDisplayName"
-                                            label="Point Display Text"
-                                            @input="updateSettingsField"
-                                            help-message='The word "Point" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
-                  </template>
-                </Card>
+              <Card class="mt-4" v-if="showCustomLabelsConfigToggle">
+                <template #content>
+                  <SkillsSettingTextInput name="projectDisplayName"
+                                          label="Project Display Text"
+                                          @input="updateSettingsField"
+                                          help-message='The word "Project" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
+                  <SkillsSettingTextInput name="subjectDisplayName"
+                                          label="Subject Display Text"
+                                          @input="updateSettingsField"
+                                          help-message='The word "Subject" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
+                  <SkillsSettingTextInput name="groupDisplayName"
+                                          label="Group Display Text"
+                                          @input="updateSettingsField"
+                                          help-message='The word "Group" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
+                  <SkillsSettingTextInput name="skillDisplayName"
+                                          label="Skill Display Text"
+                                          @input="updateSettingsField"
+                                          help-message='The word "Skill" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
+                  <SkillsSettingTextInput name="levelDisplayName"
+                                          label="Level Display Text"
+                                          @input="updateSettingsField"
+                                          help-message='The word "Level" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
+                  <SkillsSettingTextInput name="pointDisplayName"
+                                          label="Point Display Text"
+                                          @input="updateSettingsField"
+                                          help-message='The word "Point" may be overloaded to some organizations.  You can change the value displayed to users in Skills Display here.'/>
+                </template>
+              </Card>
             </div>
-          </div>
+          </settings-item>
 
-          <div class="field flex flex-column lg:flex-row lg:gap-3">
-            <label class="text-secondary w-min-11rem lg:max-w-11rem" id="groupDescriptions" for="groupDescriptionsSwitch">
-              <span id="groupDescriptionsLabel">Always Show Group Descriptions:</span>
-            </label>
-            <div class="flex align-items-center">
-              <InputSwitch v-model="settings.groupDescriptions.value"
-                           inputId="groupDescriptionsSwitch"
+          <settings-item label="Always Show Group Descriptions" input-id="groupDescriptionsSwitchInput">
+            <ToggleSwitch v-model="settings.groupDescriptions.value"
+                         inputId="groupDescriptionsSwitchInput"
+                         name="check-button"
+                         v-on:update:modelValue="groupDescriptionsChanged"
+                         aria-labelledby="groupDescriptionsLabel"
+                         data-cy="groupDescriptionsSwitch" />
+            <span class="ml-1">{{ groupDescriptionsLabel }}</span>
+          </settings-item>
+          <settings-item label="Hide Group Info On Skill Pages" input-id="groupInfoOnSkillPageSwitchInput">
+            <ToggleSwitch v-model="settings.groupInfoOnSkillPage.value"
+                         inputId="groupInfoOnSkillPageSwitchInput"
+                         name="check-button"
+                         v-on:update:modelValue="groupInfoOnSkillPageChanged"
+                         aria-labelledby="groupInfoOnSkillPageLabel"
+                         data-cy="groupInfoOnSkillPageSwitch" />
+            <span class="ml-1">{{ groupInfoOnSkillPageLabel }}</span>
+          </settings-item>
+
+          <settings-item label="Hide Achievement Celebration" input-id="disableAchievementsCelebrationSwitchInput">
+            <ToggleSwitch v-model="settings.disableAchievementsCelebration.value"
+                         inputId="disableAchievementsCelebrationSwitchInput"
+                         name="check-button"
+                         v-on:update:modelValue="disableAchievementsCelebrationChanged"
+                         aria-labelledby="disableAchievementsCelebrationLabel"
+                         data-cy="disableAchievementsCelebrationSwitch" />
+            <span class="ml-1">{{ disableAchievementCelebrationLabel }}</span>
+          </settings-item>
+
+          <settings-item label="Project Deletion Protection" input-id="projectDeletionProtectionSwitchInput">
+              <ToggleSwitch v-model="settings.projectDeletionProtection.value"
+                           inputId="projectDeletionProtectionSwitchInput"
                            name="check-button"
-                           v-on:update:modelValue="groupDescriptionsChanged"
-                           aria-labelledby="groupDescriptionsLabel"
-                           data-cy="groupDescriptionsSwitch" />
-              <span class="ml-1">{{ groupDescriptionsLabel }}</span>
-            </div>
-          </div>
+                           v-on:update:modelValue="projectDeletionProtectionChanged"
+                           aria-labelledby="projectDeletionProtectionLabel"
+                           data-cy="projectDeletionProtectionSwitch" />
+              <span class="ml-1">{{ projectDeletionProtectionLabel }}</span>
+          </settings-item>
 
           <hr/>
 
           <Message v-if="errMsg" severity="error" :closable="false">{{ errMsg }}</Message>
 
-          <div class="flex flex-row">
-            <div class="col">
-              <SkillsButton variant="outline-success" @click="save" :disabled="!meta.valid || !isDirty" data-cy="saveSettingsBtn" icon="fas fa-arrow-circle-right" label="Save">
-              </SkillsButton>
+          <div class="flex flex-row mt-2">
+            <SkillsButton variant="outline-success" @click="save" :disabled="!meta.valid || !isDirty"
+                          data-cy="saveSettingsBtn" icon="fas fa-arrow-circle-right" label="Save">
+            </SkillsButton>
 
-              <InlineMessage v-if="isDirty" class="ml-2" data-cy="unsavedChangesAlert" severity="warn" icon="fa fa-exclamation-circle">
-                  Unsaved Changes
-                </InlineMessage>
-              <InlineMessage v-if="!isDirty && showSavedMsg" class="ml-2" data-cy="settingsSavedAlert" severity="success" icon="fa fa-check">
-                  Settings Updated!
-                </InlineMessage>
-            </div>
+            <InlineMessage v-if="isDirty" class="ml-2" data-cy="unsavedChangesAlert" severity="warn">
+              Unsaved Changes
+            </InlineMessage>
+            <InlineMessage v-if="!isDirty && showSavedMsg" class="ml-2" data-cy="settingsSavedAlert" severity="success">
+              Settings Updated!
+            </InlineMessage>
           </div>
         </loading-container>
       </template>

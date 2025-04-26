@@ -16,6 +16,7 @@
 package skills.auth.form
 
 import groovy.util.logging.Slf4j
+import org.apache.commons.lang3.StringUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.context.annotation.Conditional
 import org.springframework.web.bind.annotation.*
@@ -25,6 +26,7 @@ import skills.auth.UserInfo
 import skills.controller.PublicPropsBasedValidator
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
+import skills.controller.exceptions.SkillsValidator
 import skills.controller.result.model.RequestResult
 import skills.services.PasswordManagementService
 import skills.services.UserAttrsService
@@ -51,7 +53,7 @@ class EmailVerificationController {
     @GetMapping('userEmailIsVerified/{email}')
     boolean userEmailIsVerified(@PathVariable('email') String email) {
         UserAttrs userAttrs = userAttrsService.findByUserId(email)
-        return Boolean.valueOf(userAttrs?.emailVerified)
+        return userAttrs == null ? true : Boolean.valueOf(userAttrs.emailVerified)
     }
 
     // used to send a secondary email after the initial account creation email verification was sent
@@ -66,6 +68,12 @@ class EmailVerificationController {
 
     @PostMapping("verifyEmail")
     RequestResult verifyEmail(@RequestBody EmailVerification emailVerification) {
+        if (StringUtils.isBlank(emailVerification.token)) {
+            throw new SkillException("The supplied email verification token is blank.")
+        }
+        if (StringUtils.isBlank(emailVerification.email)) {
+            throw new SkillException("The supplied email is blank.")
+        }
         UserToken token = passwordMangementService.loadToken(emailVerification.token)
         if (token?.getUser()?.getUserId() != emailVerification.email) {
             throw new SkillException("The supplied email verification token does not exist or is not for the specified user.")

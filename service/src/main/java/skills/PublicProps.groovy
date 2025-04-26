@@ -42,9 +42,11 @@ class PublicProps {
         minPasswordLength,
         maxPasswordLength,
         minNameLength,
+        maxAdminGroupNameLength,
         maxBadgeNameLength,
         maxProjectNameLength,
         maxQuizNameLength,
+        maxQuizAnswerHintLength,
         maxSkillNameLength,
         maxSubjectNameLength,
         maxLevelNameLength,
@@ -66,9 +68,11 @@ class PublicProps {
         maxQuizDefsPerAdmin,
         maxQuestionsPerQuiz,
         maxQuizTextAnswerLength,
+        maxTakeQuizInputTextAnswerLength,
         maxVideoCaptionsLength,
         maxVideoTranscriptLength,
         motivationalSkillWarningGracePeriod,
+        maxGraderFeedbackMessageLength,
     }
 
     @Autowired

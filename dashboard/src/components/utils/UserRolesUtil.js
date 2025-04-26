@@ -22,6 +22,14 @@ export default class UserRolesUtil {
     return role && role === 'ROLE_PROJECT_APPROVER';
   }
 
+  static isProjectAdminRole(role) {
+    return role && role === 'ROLE_PROJECT_ADMIN';
+  }
+
+  static isSuperRole(role) {
+    return role && role === 'ROLE_SUPER_DUPER_USER';
+  }
+
   static isQuizAdminRole(role) {
     return role && role === 'ROLE_QUIZ_ADMIN';
   }

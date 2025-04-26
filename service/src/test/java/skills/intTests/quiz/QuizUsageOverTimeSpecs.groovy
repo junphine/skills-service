@@ -59,8 +59,8 @@ class QuizUsageOverTimeSpecs extends DefaultIntSpec {
         runQuiz(users[3], quiz2, quiz2Info, true, dates[2], true)
 
         when:
-        def q1UsageOverTime = skillsService.getUsageOverTime(quiz.quizId)
-        def q2UsageOverTime = skillsService.getUsageOverTime(quiz2.quizId)
+        def q1UsageOverTime = skillsService.getQuizUsageOverTime(quiz.quizId)
+        def q2UsageOverTime = skillsService.getQuizUsageOverTime(quiz2.quizId)
         then:
         q1UsageOverTime.value == dates.collect { new Date(it.time).clearTime() }.time
         q1UsageOverTime.count == [4, 2, 1, 3]
@@ -96,7 +96,7 @@ class QuizUsageOverTimeSpecs extends DefaultIntSpec {
         49.times { expectedCounts.add(0)}
 
         when:
-        def q1UsageOverTime = skillsService.getUsageOverTime(quiz.quizId)
+        def q1UsageOverTime = skillsService.getQuizUsageOverTime(quiz.quizId)
         then:
         q1UsageOverTime.value == dates.collect { new Date(it.time).clearTime() }.time
         q1UsageOverTime.count == expectedCounts
@@ -114,7 +114,7 @@ class QuizUsageOverTimeSpecs extends DefaultIntSpec {
         skillsService.createQuizQuestionDefs(questions2)
 
         when:
-        def q1UsageOverTime = skillsService.getUsageOverTime(quiz.quizId)
+        def q1UsageOverTime = skillsService.getQuizUsageOverTime(quiz.quizId)
         then:
         !q1UsageOverTime
     }
@@ -122,8 +122,8 @@ class QuizUsageOverTimeSpecs extends DefaultIntSpec {
 
     void runQuiz(String userId, def quiz, def quizInfo, boolean pass, Date startDate, boolean complete = true) {
         def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, userId).body
-        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, userId)
-        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[pass ? 0 : 1].id, userId)
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id, userId)
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[pass ? 0 : 1].id, userId)
         if (complete) {
             skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, userId).body
         }

@@ -137,10 +137,10 @@ const smallScreenMode = computed(() => responsive.sm.value)
 </script>
 
 <template>
-  <div class="skills-theme-breadcrumb-container flex justify-content-center"
+  <div class="skills-theme-breadcrumb-container flex justify-center"
        :class="{'sd-breadcrumb-vertical-mode mb-3': smallScreenMode}"
        data-cy="skillsDisplayBreadcrumbBar">
-    <Breadcrumb :model="breadcrumbState.breadcrumbItems" :pt="{ root: { class: 'border-none px-0 py-1' } }">
+    <Breadcrumb :model="breadcrumbState.breadcrumbItems" :pt="{ root: { class: 'border-none !px-0 !py-1' } }">
       <template #item="{ item, props }">
         <router-link
           v-if="!item.isLast"

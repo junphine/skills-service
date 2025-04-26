@@ -15,7 +15,7 @@
 #
 
 server:
-#  port: 8443
+  #  port: 8443
 #  ssl:
 #    enabled: true
 #    client-auth:  want
@@ -63,6 +63,9 @@ spring:
       location: ${java.io.tmpdir}
       max-file-size: ${skills.config.maxAttachmentSize}
       max-request-size: ${skills.config.maxAttachmentSize}
+#  http:
+#    client:
+#      factory: simple
 management:
   server:
     port: 8808
@@ -99,7 +102,7 @@ skills:
       dispatchRetrySchedule: "0 0 * * * *"
       # remove failed notifications after 2 days
       retainFailedNotificationsForNumSecs: 172800
-    unusedProjectDeletionEnabled: false
+    unusedProjectDeletionEnabled: true
     expireUnusedProjectsOlderThan: 180
     expirationGracePeriod: 7
     projectExpirationSchedule: "0 4 0 * * *"
@@ -107,7 +110,7 @@ skills:
     maxAttachmentSize: 128MB
     allowedAttachmentMimeTypes: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.presentationml.presentation, application/msword, application/vnd.oasis.opendocument.presentation, application/vnd.oasis.opendocument.spreadsheet, application/vnd.oasis.opendocument.text, application/pdf, application/vnd.ms-powerpoint, application/vnd.ms-excel"
     allowedAttachmentFileTypes: ".xlsx, .docx, .pptx, .doc, .odp, .ods, .odt, .pdf, .ppt, .xls"
-    allowedVideoUploadMimeTypes: "video/webm, video/mp4"
+    allowedVideoUploadMimeTypes: "video/webm, video/mp4, audio/wav, audio/mpeg, audio/mp4, audio/aac, audio/aacp, audio/ogg, audio/webm, audio/flac"
     attachmentWarningMessage:
     ui:
       dashboardVersion: @pom.version@
@@ -137,18 +140,21 @@ skills:
       maxHostLength: 50
       maxLastNameLength: 30
       maxNicknameLength: 70
-      minUsernameLength: 2
-      minPasswordLength: 6
+      minUsernameLength: 5
+      minPasswordLength: 8
       maxPasswordLength: 40
-      minNameLength: 2
+      minNameLength: 3
+      maxAdminGroupNameLength: 100
       maxBadgeNameLength: 50
       maxProjectNameLength: 50
       maxQuizNameLength: 75
-      maxQuizTextAnswerLength: 8000
+      maxQuizTextAnswerLength: 2000
+      maxQuizAnswerHintLength: 2000
+      maxTakeQuizInputTextAnswerLength: 50000
       maxSkillNameLength: 100
       maxSubjectNameLength: 50
       maxLevelNameLength: 50
-      maxCustomLabelLength: 50
+      maxCustomLabelLength: 20
       maxSkillTagLength: 50
       minIdLength: 3
       maxIdLength: 50
@@ -162,6 +168,7 @@ skills:
       defaultLandingPage: "admin"
       maxSelfReportMessageLength: ${skills.config.ui.descriptionMaxLength}
       maxSelfReportRejectionMessageLength: 250
+      maxGraderFeedbackMessageLength: 50000
       artifactBuildTimestamp: @maven.build.timestamp@
       maxSkillsInBulkImport: 50
       enablePageVisitReporting: false
@@ -175,6 +182,7 @@ skills:
       videoUploadWarningMessage:
       videoUploadLoadingBarLengthyCalculationTimeoutRatio: 75000
       activityHistoryStartDate:
+      disableEncouragementsConfetti: false
     client:
       loggingEnabled: false
       loggingLevel: DEBUG

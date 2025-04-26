@@ -368,6 +368,15 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
         from SkillDef s, SkillRelDef r, SkillDef c 
         where 
             s.id = r.parent.id and c.id = r.child.id and 
+            s.projectId=?1 and c.projectId=?1 and
+            c.type = 'Skill' and c.enabled = 'true' and
+            s.skillId=?2''')
+    Integer countSkillChildren(String projectId, String skillId)
+
+    @Query(value='''SELECT count(c) 
+        from SkillDef s, SkillRelDef r, SkillDef c 
+        where 
+            s.id = r.parent.id and c.id = r.child.id and 
             s.projectId is null and
             s.skillId=?1 and r.type=?2''')
     Integer countGlobalChildren(String skillId, RelationshipType relationshipType)
@@ -861,4 +870,21 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
     @Transactional
     @Query('''update SkillDef set selfReportingType=null where projectId=?1 and skillId=?2 and selfReportingType=?3''')
     int unsetSelfReportTypeByProjectIdSkillIdAndSelfReportType(String projectId, String skillId, SelfReportingType selfReportingType)
+
+
+    static interface SkillIdAndName {
+        String getSkillId()
+        String getSkillName()
+        ContainerType getType()
+    }
+
+    @Nullable
+    @Query('''select sd.skillId as skillId, sd.name as skillName, sd.type as type
+            from SkillDef sd, SkillRelDef rel
+            where
+                sd.id = rel.child.id
+                and rel.parent.id = ?1
+                and rel.type in ('RuleSetDefinition', 'GroupSkillToSubject')''')
+    List<SkillIdAndName> findSkillsIdAndNameUnderASubject(Integer subjectRefId)
+
 }

@@ -21,15 +21,16 @@ import { useAuthState } from '@/stores/UseAuthState.js'
 import { useAppInfoState } from '@/stores/UseAppInfoState.js'
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import { useProjectInfo } from '@/common-components/stores/UseCurrentProjectInfo.js'
+import { useQuizInfo } from '@/common-components/stores/UseCurrentQuizInfo.js';
 import { SkillsConfiguration, SkillsReporter } from '@skilltree/skills-client-js'
 import { useProjConfig } from '@/stores/UseProjConfig.js'
 import IconManagerService from '@/components/utils/iconPicker/IconManagerService.js'
 import { useAccessState } from '@/stores/UseAccessState.js'
 import { useInviteOnlyProjectState } from '@/stores/UseInviteOnlyProjectState.js'
-import { useSkillsDisplayParentFrameState } from '@/skills-display/stores/UseSkillsDisplayParentFrameState.js'
 import { useLog } from '@/components/utils/misc/useLog.js'
-import { useSkillsDisplayInfo } from '@/skills-display/UseSkillsDisplayInfo.js'
 import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
+import PathAppendValues from '@/router/SkillsDisplayPathAppendValues.js'
+import { useQuizSummaryState } from '@/stores/UseQuizSummaryState.js';
 
 export const useGlobalNavGuards = () => {
 
@@ -39,13 +40,13 @@ export const useGlobalNavGuards = () => {
   const appInfoState = useAppInfoState()
   const appConfig = useAppConfig()
   const projectInfo = useProjectInfo()
+  const quizInfo = useQuizInfo()
+  const quizSummaryState = useQuizSummaryState()
   const inviteOnlyProjectState = useInviteOnlyProjectState()
   const accessState = useAccessState()
   const projConfig = useProjConfig()
   const router = useRouter()
   const route = useRoute()
-  const skillDisplayParentFrameState = useSkillsDisplayParentFrameState()
-  const skillsDisplayInfo = useSkillsDisplayInfo()
   const skillsDisplayAttributes = useSkillsDisplayAttributesState()
 
   const log = useLog()
@@ -53,25 +54,29 @@ export const useGlobalNavGuards = () => {
   const isAdminPage = (route) => route.path?.toLowerCase().startsWith('/administrator') && !route.path?.toLowerCase().startsWith('/administrator/skills')
   const isGlobalAdminPage = (route) => route.path?.toLowerCase().startsWith('/administrator/globalbadges')
   const isActiveProjectIdChange = (to, from) => to.params.projectId !== from.params.projectId
+  const isActiveQuizIdChange = (to, from) => to.params.quizId !== from.params.quizId
   const isLoggedIn = () => authState.isAuthenticated
   const isPki = () => appConfig.isPkiAuthenticated
   const getLandingPage = () => authState.userInfo?.landingPage === 'admin' ? 'AdminHomePage' : 'MyProgressPage'
 
+  const registrationId = () => appConfig.saml2RegistrationId;
+  const isSaml2 = () => appConfig.isSAML2Authenticated;
+
   const beforeEachNavGuard = (to, from, next) => {
     const { skillsClientDisplayPath } = to.query
-    const requestAccountPath = '/request-root-account'
+    const requestRootAccountPath = '/request-root-account'
     const skillsLoginPath = '/skills-login'
+
     if (
-      !isPki() &&
-      !isLoggedIn() &&
-      to.path?.toLowerCase() !== requestAccountPath &&
-      appConfig.needToBootstrap
+        !isPki() && !isSaml2() &&
+        !isLoggedIn() &&
+        to.path?.toLowerCase() !== requestRootAccountPath.toLowerCase() &&
+        appConfig.needToBootstrap
     ) {
-      next({ path: requestAccountPath })
+      next({ path: requestRootAccountPath })
     } else if (
-      !isPki() &&
-      to.path?.toLowerCase() === requestAccountPath &&
-      !appConfig.needToBootstrap
+        to.path?.toLowerCase() === requestRootAccountPath.toLowerCase() &&
+        !appConfig.needToBootstrap
     ) {
       next({ name: getLandingPage() })
     } else if (
@@ -107,28 +112,32 @@ export const useGlobalNavGuards = () => {
           }
           IconManagerService.refreshCustomIconCss(to.params.projectId, accessState.isSupervisor)
         }
+        if (isActiveQuizIdChange(to, from)) {
+          quizInfo.setCurrentQuizId(to.params.quizId)
+          if (isAdminPage(to) && to.params.quizId) {
+            quizConfig.loadQuizConfigState({ quizId: to.params.quizId })
+            quizSummaryState.loadQuizSummary(to.params.quizId)
+          }
+        }
         if (isGlobalAdminPage(to)) {
           IconManagerService.refreshCustomIconCss(null, true)
         }
-        if (
-          to.path?.toLowerCase().startsWith('/administrator/quizzes/') &&
-          to.params.quizId &&
-          (!quizConfig.quizConfig || to.params.quizId !== from.params.quizId)
-        ) {
-          quizConfig.loadQuizConfigState({ quizId: to.params.quizId })
-        }
+
         if (to.matched.some((record) => record.meta.requiresAuth)) {
           // this route requires auth, check if logged in if not, redirect to login page.
           if (!isLoggedIn()) {
             const newRoute = { query: { redirect: to.fullPath } }
-            if (isPki()) {
-              newRoute.name = getLandingPage()
-            } else {
-              newRoute.name = 'Login'
-            }
+              if (isPki()) {
+          		newRoute.name = getLandingPage();
+	          } else if (isSaml2()) {
+                window.location = `/saml2/authenticate/${registrationId()}`;
+                return;
+              } else {
+	            newRoute.name = 'Login';
+	          }
             next(newRoute)
           } else {
-            if(skillsClientDisplayPath) {
+            if((to.name?.endsWith(PathAppendValues.Local) || to.name?.endsWith(PathAppendValues.Inception)) && skillsClientDisplayPath) {
               const newRoute = to.path + skillsClientDisplayPath;
               const nextRoute = '/redirect?nextPage=' + newRoute
               next(nextRoute)
@@ -142,6 +151,7 @@ export const useGlobalNavGuards = () => {
         }
       }
     }
+
   }
 
   const addNavGuards = () => {
@@ -188,20 +198,6 @@ export const useGlobalNavGuards = () => {
             }
           })
         }, 150)
-      }
-      if (skillDisplayParentFrameState.parentFrame) {
-        const params = {
-          path: skillsDisplayInfo.cleanPath(to.path),
-          fullPath: skillsDisplayInfo.cleanPath(to.fullPath),
-          name: to.name,
-          query: to.query,
-          currentLocation: window.location.toString(),
-          historySize: window.history.length,
-        };
-        if (log.isDebugEnabled()) {
-          log.debug(`emit route-change event to parent frame with ${JSON.stringify(params)}`)
-        }
-        skillDisplayParentFrameState.parentFrame.emit('route-changed', params);
       }
     })
 

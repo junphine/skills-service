@@ -20,10 +20,13 @@ import { useRoute } from 'vue-router'
 import { useSkillsDisplayService } from '@/skills-display/services/UseSkillsDisplayService.js'
 import { useSkillsDisplayInfo } from '@/skills-display/UseSkillsDisplayInfo.js'
 import SkillProgress from '@/skills-display/components/progress/SkillProgress.vue'
-import { useScrollSkillsIntoViewState } from '@/skills-display/stores/UseScrollSkillsIntoViewState.js'
-import { useSkillsDisplaySubjectState } from '@/skills-display/stores/UseSkillsDisplaySubjectState.js'
-import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
+import {useScrollSkillsIntoViewState} from '@/skills-display/stores/UseScrollSkillsIntoViewState.js'
+import {useSkillsDisplaySubjectState} from '@/skills-display/stores/UseSkillsDisplaySubjectState.js'
+import {useSkillsDisplayAttributesState} from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
 import Prerequisites from '@/skills-display/components/skill/prerequisites/Prerequisites.vue'
+import SkillAchievementMsg from "@/skills-display/components/progress/celebration/SkillAchievementMsg.vue";
+import SkillsInputSwitch from "@/components/utils/inputForm/SkillsInputSwitch.vue";
+import MarkdownText from "@/common-components/utilities/markdown/MarkdownText.vue";
 
 const attributes = useSkillsDisplayAttributesState()
 const skillsDisplayService = useSkillsDisplayService()
@@ -33,6 +36,9 @@ const route = useRoute()
 const skillState = useSkillsDisplaySubjectState()
 const skill = computed(() => skillState.skillSummary)
 const loadingSkill = ref(true)
+const displayGroupDescription = ref(false);
+const groupDescription = ref(null);
+const loadingDescription = ref(true);
 
 onMounted(() => {
   loadSkillSummary()
@@ -40,6 +46,10 @@ onMounted(() => {
 watch( () => route.params.skillId, () => {
   loadSkillSummary()
 });
+watch(() => skill.value.groupSkillId, () => {
+  groupDescription.value = null;
+  displayGroupDescription.value = false;
+})
 const loadSkillSummary = () => {
   const skillId = skillsDisplayInfo.isDependency() ? route.params.dependentSkillId : route.params.skillId
   skillState.loadSkillSummary(skillId, route.params.crossProjectId, route.params.subjectId)
@@ -49,6 +59,10 @@ const loadSkillSummary = () => {
         skillsDisplayService.updateSkillHistory(skill.value.projectId, skillId)
       }
       scrollIntoViewState.setLastViewedSkillId(skillId)
+
+      if(!groupDescription.value && skill.value.groupSkillId && attributes.groupDescriptionsOn) {
+        descriptionToggled();
+      }
     })
 }
 
@@ -68,17 +82,25 @@ const nextButtonClicked = () => {
 }
 
 const isLoading = computed(() => loadingSkill.value || skillState.loadingSkillSummary)
-
+const descriptionToggled = () => {
+  if(!groupDescription.value && skill.value.groupSkillId) {
+    loadingDescription.value = true;
+    skillsDisplayService.getDescriptionForSkill(skill.value.groupSkillId).then((res) => {
+      groupDescription.value = res.description;
+      loadingDescription.value = false;
+    })
+  }
+}
 </script>
 
 <template>
   <div>
     <div v-if="!isLoading">
       <skills-title>{{ attributes.skillDisplayName }} Overview</skills-title>
-      <Card class="mt-3" :pt="{ content: { class: 'p-0' }}">
+      <Card class="mt-4" :pt="{ content: { class: 'p-0' }}">
         <template #content>
-          <div class="flex-column sm:flex-row align-items-center flex gap-2 mb-4" v-if="skill && (skill.prevSkillId || skill.nextSkillId) && !skillsDisplayInfo.isCrossProject()">
-            <div class="w-7rem">
+          <div class="flex-col sm:flex-row items-center flex gap-2 mb-6" v-if="skill && (skill.prevSkillId || skill.nextSkillId) && !skillsDisplayInfo.isCrossProject()">
+            <div class="w-28">
               <SkillsButton
                 @click="prevButtonClicked" v-if="skill.prevSkillId"
                 outlined
@@ -90,10 +112,10 @@ const isLoading = computed(() => loadingSkill.value || skillState.loadingSkillSu
               </SkillsButton>
             </div>
             <div class="flex-1 text-center " style="font-size: 0.9rem;" data-cy="skillOrder"><span
-              class="font-italic">{{ attributes.skillDisplayName }}</span> <span class="font-semibold">{{ skill.orderInGroup
-              }}</span> <span class="font-italic">of</span> <span class="font-semibold">{{ skill.totalSkills }}</span>
+              class="italic">{{ attributes.skillDisplayName }}</span> <span class="font-semibold">{{ skill.orderInGroup
+              }}</span> <span class="italic">of</span> <span class="font-semibold">{{ skill.totalSkills }}</span>
             </div>
-            <div class="w-7rem text-right">
+            <div class="w-28 text-right">
               <SkillsButton
                 @click="nextButtonClicked"
                 v-if="skill.nextSkillId"
@@ -107,6 +129,29 @@ const isLoading = computed(() => loadingSkill.value || skillState.loadingSkillSu
               </SkillsButton>
             </div>
           </div>
+          <div v-if="!attributes.groupInfoOnSkillPage && skill.groupName" class="mt-4 p-1 mb-4" data-cy="groupInformationSection">
+            <div class="flex">
+              <div class="mr-2 mt-1 text-xl">
+                <i class="fas fa-layer-group" aria-hidden="true"></i>
+              </div>
+              <div class="flex flex-1">
+                <span class="text-2xl sd-theme-primary-color font-medium flex">{{ skill.groupName }}</span>
+              </div>
+              <div v-if="!attributes.groupDescriptionsOn">
+                <div class="flex flex-row content-center">
+                  <label for="groupDescriptionToggleSwitch">
+                    <span class="text-muted pr-1 content-center">Group Description:</span>
+                  </label>
+                  <ToggleSwitch v-model="displayGroupDescription" data-cy="toggleGroupDescription" @change="descriptionToggled" inputId="groupDescriptionToggleSwitch" />
+                </div>
+              </div>
+            </div>
+            <div class="mt-2 ml-6" v-if="displayGroupDescription || attributes.groupDescriptionsOn" data-cy="groupDescriptionSection">
+              <skills-spinner :is-loading="loadingDescription" :size-in-rem="1"/>
+              <markdown-text v-if="groupDescription" :text="groupDescription" />
+            </div>
+          </div>
+          <skill-achievement-msg :skill="skill" />
           <div class="card-body text-center text-sm-left">
             <skill-progress :skill="skill" />
           </div>
@@ -115,7 +160,7 @@ const isLoading = computed(() => loadingSkill.value || skillState.loadingSkillSu
 
       <prerequisites />
     </div>
-    <skills-spinner v-if="isLoading" :is-loading="isLoading" class="mt-5" />
+    <skills-spinner v-if="isLoading" :is-loading="isLoading" class="mt-8" />
   </div>
 </template>
 

@@ -21,11 +21,11 @@ import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkil
 import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js'
 import { useSkillsDisplayService } from '@/skills-display/services/UseSkillsDisplayService.js'
 import GraphLegend from '@/skills-display/components/skill/prerequisites/GraphLegend.vue'
+import GraphUtils from '@/components/skills/dependencies/GraphUtils';
 import UserPrerequisitesProgress from '@/skills-display/components/skill/prerequisites/UserPrerequisitesProgress.vue'
 import PrerequisitesTable from '@/skills-display/components/skill/prerequisites/PrerequisitesTable.vue'
 import { useNavToSkillUtil } from '@/skills-display/components/skill/prerequisites/UseNavToSkillUtil.js'
 import { useThemesHelper } from '@/components/header/UseThemesHelper.js'
-
 
 const props = defineProps({
   dependencies: Array
@@ -273,7 +273,7 @@ const buildNode = (skill, isCrossProject, createdSkillIds, nodes, achievedIds, e
     createdSkillIds.push(skill.id)
     const skillColor = skill.isThisSkill ? themeState.graphThisSkillColor : themeState.graphSkillColor
     const isAchieved = achievedIds.includes(skill.id)
-    let label = isCrossProject ? `Shared from\n<b>${skill.projectName}</b>\n${skill.skillName}` : skill.skillName
+    let label = isCrossProject ? `Shared from\n<b>${skill.projectName}</b>\n${GraphUtils.truncate(skill.skillName)}` : GraphUtils.truncate(skill.skillName)
     if (skill.isThisSkill) {
       label = `<b>This Skill</b>\n${label}`
     } else if (skill.isThisBadge) {
@@ -293,7 +293,7 @@ const buildNode = (skill, isCrossProject, createdSkillIds, nodes, achievedIds, e
         color: skillColor
       },
       chosen: !skill.isThisSkill,
-      font: { multi: 'html', size: 20 }
+      font: { multi: 'html', size: 20 },
     }
 
     const themePrimaryColor = themeState.graphTextPrimaryColor
@@ -330,10 +330,10 @@ const buildNode = (skill, isCrossProject, createdSkillIds, nodes, achievedIds, e
 <template>
   <Card v-if="!loadingData && dependenciesInternal?.length > 0"
         :pt="{ content: { class: 'p-0' }, body: {class: 'p-0'} }"
-        data-cy="prerequisitesCard" class="mt-3">
+        data-cy="prerequisitesCard" class="mt-4">
     <template #content>
-      <div class="pt-3 px-3">
-        <div class="flex flex-wrap gap-3">
+      <div class="pt-4 px-4">
+        <div class="flex flex-wrap gap-4">
           <div class="flex-1 w-min-16rem">
             <graph-legend />
           </div>

@@ -26,9 +26,9 @@ export default {
     return axios.get(url, { params })
       .then((response) => response.data);
   },
-  approve(projectId, approvalIds) {
+  approve(projectId, approvalIds, approvalMsg) {
     const url = `/admin/projects/${encodeURIComponent(projectId)}/approvals/approve`;
-    return axios.post(url, { skillApprovalIds: approvalIds })
+    return axios.post(url, { skillApprovalIds: approvalIds, approvalMessage: approvalMsg })
       .then((response) => response.data);
   },
   reject(projectId, approvalIds, rejectMsg) {
@@ -83,4 +83,7 @@ export default {
   removeApproverConfig(projectId, approverConfigID) {
     return axios.delete(`/admin/projects/${encodeURIComponent(projectId)}/approverConf/${approverConfigID}`).then((response) => response.data);
   },
+  countApproverConfig(projectId) {
+    return axios.get(`/admin/projects/${encodeURIComponent(projectId)}/approverConf/count`).then((response) => response.data);
+  }
 };

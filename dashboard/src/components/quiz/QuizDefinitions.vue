@@ -17,7 +17,8 @@ limitations under the License.
 import { computed, onMounted, ref } from 'vue'
 import { useSkillsAnnouncer } from '@/common-components/utilities/UseSkillsAnnouncer.js'
 import { useResponsiveBreakpoints } from '@/components/utils/misc/UseResponsiveBreakpoints.js';
-import { FilterMatchMode } from 'primevue/api'
+import { FilterMatchMode } from '@primevue/core/api'
+import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js';
 import QuizService from '@/components/quiz/QuizService.js'
 import SkillsSpinner from '@/components/utils/SkillsSpinner.vue'
 import NoContent2 from '@/components/utils/NoContent2.vue'
@@ -28,9 +29,13 @@ import RemovalValidation from '@/components/utils/modal/RemovalValidation.vue'
 import HighlightedValue from '@/components/utils/table/HighlightedValue.vue'
 import InputGroup from 'primevue/inputgroup'
 import InputGroupAddon from 'primevue/inputgroupaddon'
+import Avatar from 'primevue/avatar';
+import { useQuizSummaryState } from '@/stores/UseQuizSummaryState.js';
 
 const announcer = useSkillsAnnouncer()
 const responsive = useResponsiveBreakpoints()
+const communityLabels = useCommunityLabels()
+const quizSummaryState = useQuizSummaryState()
 
 const loading = ref(false);
 const quizzes = ref([]);
@@ -89,6 +94,7 @@ const hasData = computed(() => {
 });
 
 onMounted(() => {
+  quizSummaryState.quizSummary = null
   loadData()
 })
 
@@ -153,6 +159,13 @@ function deleteQuiz() {
 const showUpdateModal = (quizDef, isEdit = true) => {
   editQuizInfo.value.quizDef = quizDef;
   editQuizInfo.value.isEdit = isEdit;
+  editQuizInfo.value.isCopy = false;
+  editQuizInfo.value.showDialog = true;
+};
+const showCopyModal = (quizDef, isCopy = true) => {
+  editQuizInfo.value.quizDef = quizDef;
+  editQuizInfo.value.isCopy = isCopy;
+  editQuizInfo.value.isEdit = false;
   editQuizInfo.value.showDialog = true;
 };
 
@@ -163,10 +176,10 @@ defineExpose({
 
 <template>
   <div style="min-height: 20rem;">
-    <SkillsSpinner :is-loading="loading" class="my-5" />
+    <SkillsSpinner :is-loading="loading" class="my-8" />
     <NoContent2 v-if="!loading && !hasData"
                 title="No Quiz or Survey Definitions"
-                class="py-8 px-4"
+                class="py-20 px-6"
                 message="Create a Survey or a Quiz to run independently or to associate to a skill in one of the existing SkillTree projects."
                 data-cy="noQuizzesYet"/>
     <div v-if="!loading && hasData">
@@ -189,7 +202,7 @@ defineExpose({
               <InputGroupAddon>
                 <i class="fas fa-search" aria-hidden="true"/>
               </InputGroupAddon>
-              <InputText class="flex flex-grow-1"
+              <InputText class="flex grow"
                          v-model="filters['global'].value"
                          data-cy="quizNameFilter"
                          placeholder="Quiz/Survey Search"
@@ -212,10 +225,10 @@ defineExpose({
         </template>
 
         <template #empty>
-          <div class="flex justify-content-center flex-wrap">
-            <i class="flex align-items-center justify-content-center mr-1 fas fa-exclamation-circle" aria-hidden="true"></i>
-            <span class="flex align-items-center justify-content-center">No Quiz or Survey Definitions.  Click
-            <SkillsButton class="flex flex align-items-center justify-content-center px-1"
+          <div class="flex justify-center flex-wrap">
+            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle" aria-hidden="true"></i>
+            <span class="flex items-center justify-center">No Quiz or Survey Definitions.  Click
+            <SkillsButton class="flex flex items-center justify-center px-1"
                           label="Reset"
                           link
                           size="small"
@@ -231,28 +244,38 @@ defineExpose({
             <span><i :class="col.imageClass" aria-hidden="true"></i> {{ col.label }}</span>
           </template>
           <template #body="slotProps">
-            <div v-if="slotProps.field === 'name'" class="flex w-full flex-wrap flex-column sm:flex-row gap-2">
+            <div v-if="slotProps.field === 'name'" class="flex w-full flex-wrap flex-col sm:flex-row gap-2">
               <div class="flex align-items-start justify-content-start w-min-10rem">
-                <router-link :data-cy="`managesQuizLink_${slotProps.data.quizId}`"
-                             :to="{ name:'Questions', params: { quizId: slotProps.data.quizId }}"
-                             :aria-label="`Manage Quiz ${slotProps.data.name}`">
-                  <highlighted-value :value="slotProps.data.name" :filter="filters.global.value" />
-                </router-link>
+                <div>
+                  <router-link :data-cy="`managesQuizLink_${slotProps.data.quizId}`"
+                               :to="{ name:'Questions', params: { quizId: slotProps.data.quizId }}"
+                               :aria-label="`Manage Quiz ${slotProps.data.name}`">
+                    <highlighted-value :value="slotProps.data.name" :filter="filters.global.value" />
+                  </router-link>
+                  <div v-if="slotProps.data.userCommunity" class="my-2" data-cy="userCommunity">
+                    <Avatar icon="fas fa-shield-alt" class="text-red-500"></Avatar>
+                    <span class="text-color-secondary font-italic ml-1">{{ communityLabels.beforeCommunityLabel.value }}</span> <span
+                      class="text-primary">{{ slotProps.data.userCommunity }}</span> <span
+                      class="text-color-secondary font-italic">{{ communityLabels.afterCommunityLabel.value }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="flex flex-1 flex-wrap align-items-start justify-content-end gap-2">
+              <div class="flex flex-1 flex-wrap items-start justify-end gap-2">
                 <router-link :data-cy="`managesQuizBtn_${slotProps.data.quizId}`"
                              :to="{ name:'Questions', params: { quizId: slotProps.data.quizId }}"
                              :aria-label="`Manage Quiz ${slotProps.data.name}`" tabindex="-1">
                   <SkillsButton label="Manage"
                                 icon="fas fa-arrow-circle-right"
-                                  class="flex-shrink-1"
+                                class="shrink"
                                 outlined
+                                severity="info"
                                 size="small"/>
                 </router-link>
                 <ButtonGroup class="flex flex-nowrap">
                   <SkillsButton @click="showUpdateModal(slotProps.data)"
                                 icon="fas fa-edit"
                                 outlined
+                                severity="info"
                                 :data-cy="`editQuizButton_${slotProps.data.quizId}`"
                                 :aria-label="`Edit Quiz ${slotProps.data.name}`"
                                 :ref="`edit_${slotProps.data.quizId}`"
@@ -260,9 +283,21 @@ defineExpose({
                                 :track-for-focus="true"
                                 title="Edit Quiz">
                   </SkillsButton>
+                  <SkillsButton @click="showCopyModal(slotProps.data)"
+                                icon="fas fa-copy"
+                                outlined
+                                severity="info"
+                                :data-cy="`copyQuizButton_${slotProps.data.quizId}`"
+                                :aria-label="`Copy Quiz ${slotProps.data.name}`"
+                                :ref="`copy_${slotProps.data.quizId}`"
+                                :id="`copy_${slotProps.data.quizId}`"
+                                :track-for-focus="true"
+                                title="Copy Quiz">
+                  </SkillsButton>
                   <SkillsButton @click="showDeleteWarningModal(slotProps.data)"
                                 icon="text-warning fas fa-trash"
                                 outlined
+                                severity="info"
                                 :data-cy="`deleteQuizButton_${slotProps.data.quizId}`"
                                 :aria-label="'delete Quiz '+slotProps.data.name"
                                 :ref="`delete_${slotProps.data.quizId}`"
@@ -292,6 +327,7 @@ defineExpose({
         v-model="editQuizInfo.showDialog"
         :quiz="editQuizInfo.quizDef"
         :is-edit="editQuizInfo.isEdit"
+        :is-copy="editQuizInfo.isCopy"
         @quiz-saved="updateQuizDef"
         :enable-return-focus="true"/>
 

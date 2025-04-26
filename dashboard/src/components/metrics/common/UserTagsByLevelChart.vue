@@ -19,43 +19,60 @@ import MetricsService from "@/components/metrics/MetricsService.js";
 import { useRoute } from 'vue-router';
 import MetricsOverlay from "@/components/metrics/utils/MetricsOverlay.vue";
 import NumberFormatter from '@/components/utils/NumberFormatter.js';
+import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js';
+import { useThemesHelper } from '@/components/header/UseThemesHelper.js';
+import {useLayoutSizesState} from "@/stores/UseLayoutSizesState.js";
 
 const props = defineProps(['tag']);
 const route = useRoute();
 
+const themeState = useSkillsDisplayThemeState()
+const themeHelper = useThemesHelper()
+const layoutSizes = useLayoutSizesState()
+
+const chartAxisColor = () => {
+  if (themeState.theme.charts.axisLabelColor) {
+    return themeState.theme.charts.axisLabelColor
+  }
+  return themeHelper.isDarkTheme ? 'white' : undefined
+}
 const series = ref([]);
 const loading = ref(true);
 const chartOptions = ref({
   chart: {
     width: 250,
-        type: 'bar',
-        toolbar: {
+    type: 'bar',
+    toolbar: {
       show: true,
-          offsetX: 0,
-          offsetY: 0,
+      offsetX: 0,
+      offsetY: 0,
     },
   },
   plotOptions: {
     bar: {
       horizontal: true,
-          dataLabels: {
+      dataLabels: {
         position: 'bottom',
       },
     },
   },
   stroke: {
     show: true,
-        width: 2,
-        colors: ['transparent'],
+    width: 2,
+    colors: ['transparent'],
   },
   xaxis: {
     title: {
+      style: {
+        color: chartAxisColor()
+      },
       text: '# of Users',
     },
     labels: {
       style: {
         fontSize: '13px',
-            fontWeight: 600,
+        fontWeight: 600,
+        colors: chartAxisColor(),
       },
     },
   },
@@ -63,8 +80,14 @@ const chartOptions = ref({
     title: {
       text: props.tag.label,
     },
+    labels: {
+      style: {
+        colors: chartAxisColor()
+      }
+    }
   },
   tooltip: {
+    theme: themeHelper.isDarkTheme ? 'dark' : 'light',
     y: {
       formatter(val) {
         return NumberFormatter.format(val);
@@ -154,14 +177,14 @@ const loadData = () => {
 </script>
 
 <template>
-  <Card :data-cy="`numUsersByTag-${tag.key}`">
+  <Card :data-cy="`numUsersByTag-${tag.key}`" :style="`width: ${layoutSizes.tableMaxWidth}px;`">
     <template #header>
       <SkillsCardHeader :title="`Top 20 ${tag.label} Level Breakdown`"></SkillsCardHeader>
     </template>
     <template #content>
       <div style="max-height: 800px; overflow-y: auto; overflow-x: clip;">
         <metrics-overlay :loading="loading" :has-data="series.length > 0" no-data-msg="No users currently">
-          <apexchart v-if="!loading" type="bar" :height="chartHeight" :options="chartOptions" :series="series"></apexchart>
+          <apexchart v-if="!loading" width="100%" type="bar" :height="chartHeight" :options="chartOptions" :series="series"></apexchart>
         </metrics-overlay>
       </div>
     </template>

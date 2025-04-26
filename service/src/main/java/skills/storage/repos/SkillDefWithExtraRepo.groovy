@@ -35,6 +35,7 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
 
     List<SkillDefWithExtra> findAllByProjectIdAndType(@Nullable String id, ContainerType type)
 
+
     List<SkillDefWithExtra> findAllByProjectIdAndTypeAndEnabled(@Nullable String id, ContainerType type, String enabled)
 
     @Nullable
@@ -45,6 +46,9 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
 
     @Nullable
     SkillDefWithExtra findByProjectIdAndSkillId(String id, String skillId)
+
+    @Nullable
+    List<SkillDefWithExtra> findAllByProjectIdAndSkillIdIn(String projectId, List<String> skillId)
 
     static interface SkillDescDBRes {
         String getSkillId()
@@ -182,4 +186,12 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
     @Nullable
     @Query('''select s from SkillDefWithExtra s where s.copiedFrom = ?1''')
     List<SkillDefWithExtra> findSkillsCopiedFrom(int skillRefId)
+
+    @Query(value = '''select count(id) > 0
+            from skill_definition
+            where
+                convert_from(lo_get(CAST(description as oid)), 'UTF8') like CONCAT('%(/api/download/', ?3, ')%')
+              and LOWER(skill_id) <> LOWER(?2)
+              and LOWER(project_id) = LOWER(?1) ''', nativeQuery = true)
+    Boolean otherSkillsExistInProjectWithAttachmentUUID(String projectId, String notThisSkill, String attachmentUUID)
 }

@@ -39,16 +39,16 @@ watch(timer, (value) => {
 
 <template>
   <div>
-    <div class="grid justify-content-center text-center" data-cy="resetConfirmation">
-      <div class="col md:col-8 lg:col-7 xl:col-4 mt-3" style="min-width: 20rem;">
-        <div class="mt-5">
-          <logo1 />
-          <div class="text-3xl mt-4 text-primary">Password Successfully Reset!</div>
+    <div class="pt-10" data-cy="resetConfirmation">
+      <div class="max-w-md lg:max-w-xl mx-auto" >
+        <div class="text-center">
+          <logo1 class="mb-4" />
+          <Message :closable="false" role="heading" aria-level="1" severity="success">Password Successfully Reset!</Message>
         </div>
-        <Card class="mt-3 text-left">
+        <Card class="mt-4 text-left">
           <template #content>
             <p>Your password has been successfully reset! You will be forwarded to the login page in {{ timer }} seconds.</p>
-            <div class="flex justify-content-center mt-2">
+            <div class="flex justify-center mt-2">
               <router-link :to="{ name: 'Login' }" tabindex="-1">
                 <SkillsButton icon="fas fa-sign-in-alt"
                               outlined

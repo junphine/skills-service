@@ -16,7 +16,7 @@ limitations under the License.
 <script setup>
 import SkillProgressNameRow from '@/skills-display/components/progress/skill/SkillProgressNameRow.vue'
 import { useRoute } from 'vue-router'
-import { computed, ref } from 'vue'
+import { computed, ref, watch, onMounted } from 'vue'
 import { useSkillsDisplayInfo } from '@/skills-display/UseSkillsDisplayInfo.js'
 import SkillsSummaryCards from '@/skills-display/components/progress/SkillsSummaryCards.vue'
 import MarkdownText from '@/common-components/utilities/markdown/MarkdownText.vue'
@@ -29,6 +29,8 @@ import CatalogImportStatus from '@/skills-display/components/progress/CatalogImp
 import PartialPointsAlert from '@/skills-display/components/skill/PartialPointsAlert.vue'
 import SkillVideo from '@/skills-display/components/progress/SkillVideo.vue';
 import dayjs from 'dayjs';
+import {useStorage} from "@vueuse/core";
+import {useSkillsAnnouncer} from "@/common-components/utilities/UseSkillsAnnouncer.js";
 
 const props = defineProps({
   skill: Object,
@@ -65,10 +67,16 @@ const props = defineProps({
     type: Boolean,
     default: false,
     required: false
+  },
+  expandGroups: {
+    type: Boolean,
+    default: false,
+    required: false
   }
 })
-const emit = defineEmits(['add-tag-filter', 'points-earned'])
+const emit = defineEmits(['add-tag-filter', 'points-earned', 'reset-group-expansion'])
 const route = useRoute()
+const announcer = useSkillsAnnouncer()
 const skillsDisplayInfo = useSkillsDisplayInfo()
 const attributes = useSkillsDisplayAttributesState()
 
@@ -113,6 +121,13 @@ const isSkillLocked = computed(() => {
   }
   return (sk.dependencyInfo && !sk.dependencyInfo.achieved) || hasBadgeDependency;
 })
+const shouldDisplayLock = computed(() => {
+  if(isSkillComplete.value) {
+    return false;
+  } else {
+    return isSkillLocked.value;
+  }
+})
 const pointsEarned = (pts) => {
   props.skill.mostRecentlyPerformedOn = dayjs()
   skillOverviewFooter.value.updateEarnedPoints({pointsEarned: pts})
@@ -120,13 +135,25 @@ const pointsEarned = (pts) => {
 }
 
 const isSkillComplete = computed(() => props.skill && props.skill.meta && props.skill.meta.complete)
+const storageKey = computed(() => props.skill.projectId + '-' + props.skill.skillId + '-expanded')
+const expanded = useStorage(storageKey.value, true)
+const toggleRow = () => {
+  expanded.value = !expanded.value;
+  announcer.polite(`Group ${props.skill.skill} has been ${expanded.value ? 'expanded' : 'collapsed'}`);
+  emit('reset-group-expansion')
+}
+watch(() => props.expandGroups, (newValue) => {
+  if(newValue !== null && props.skill.type === 'SkillsGroup') {
+    expanded.value = newValue
+  }
+})
 </script>
 
 <template>
   <div class="text-left skills-theme-skills-progress" data-cy="skillProgress">
-    <div v-if="skill.crossProject && !skillsDisplayInfo.isGlobalBadgePage.value" class="flex gap-3 flex-wrap">
+    <div v-if="skill.crossProject && !skillsDisplayInfo.isGlobalBadgePage.value" class="flex gap-4 flex-wrap">
       <div class="flex-1">
-        <div class="text-xl"><span class="text-color-secondary font-italic">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}</div>
+        <div class="text-xl"><span class="text-muted-color italic">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}</div>
       </div>
       <div class="">
         <div class="text-xl"><i class="fa fa-vector-square" aria-hidden="true"/> Cross-{{ attributes.projectDisplayName }} {{ attributes.skillDisplayName }}</div>
@@ -142,11 +169,12 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
       }}</strong> {{ attributes.projectDisplayName.toLowerCase() }}! Happy playing!!
     </Message>
 
-
     <skill-progress-name-row
       :skill="skill"
       :badge-is-locked="badgeIsLocked"
       :to-route="toRoute"
+      :is-expanded="expanded"
+      @toggle-row="toggleRow"
       :child-skill-highlight-string="childSkillHighlightString"
       :type="type" />
     <div class="mt-1">
@@ -155,13 +183,10 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
         :to="toRoute"
         tabindex="-1"
         :aria-label="`Navigate to ${skill.skill}`">
-        <!--        <vertical-progress-bar-->
-        <!--          class="border-1 border-transparent hover:border-orange-700 border-round"-->
-        <!--          data-cy="skillProgressBar" />-->
         <div class="relative">
           <skill-progress-bar data-cy="skillProgressBar"
-                              :is-locked="isSkillLocked"
-                              class="border-1 border-transparent hover:border-orange-700 border-round"
+                              :is-locked="shouldDisplayLock"
+                              class="border border-transparent hover:border-orange-700 rounded-border"
                               :skill="skill" />
 
         </div>
@@ -169,7 +194,7 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
       <skill-progress-bar
         v-else
         :skill="skill"
-        :is-locked="isSkillLocked"
+        :is-locked="shouldDisplayLock"
         data-cy="skillProgressBar" />
 
       <!--        <progress-bar :skill="skill" v-on:progressbar-clicked="skillClicked"-->
@@ -183,7 +208,7 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
          :data-cy="`skillDescription-${skill.skillId}`">
 
       <div v-if="skill.type === 'SkillsGroup'">
-        <p class="skills-text-description text-primary mt-3" style="font-size: 0.9rem;">
+        <p class="skills-text-description text-primary mt-4" style="font-size: 0.9rem;">
           <markdown-text
             :instance-id="`skillDescription-${skill.skillId}`"
             v-if="skill.description && skill.description.description"
@@ -199,7 +224,7 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
           <span v-else>Please see its prerequisites below.</span>
           ***
         </div>
-        <p v-if="skill.subjectName" class="text-secondary mt-3">
+        <p v-if="skill.subjectName" class="text-secondary mt-4">
           {{ attributes.subjectDisplayName }}: {{ skill.subjectName }}
         </p>
 
@@ -208,7 +233,7 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
           :date="skill.achievedOn" class="mt-2" />
 
         <partial-points-alert v-if="!enableDrillDown" :skill="skill" :is-locked="isSkillLocked" />
-        <skills-summary-cards v-if="!isSkillLocked" :skill="skill" class="mt-3" />
+        <skills-summary-cards v-if="!isSkillLocked" :skill="skill" class="mt-4" />
         <catalog-import-status :skill="skill" />
         <skill-video v-if="skill"
                      :skill="skill"
@@ -216,7 +241,7 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
                      :video-collapsed-by-default="videoCollapsedByDefault"
                      @points-earned="pointsEarned"
                      class="mt-2" />
-        <p class="skills-text-description text-primary mt-3" style="font-size: 0.9rem;">
+        <p class="skills-text-description text-primary mt-4" style="font-size: 0.9rem;">
           <markdown-text
             :instance-id="`skillDescription-${skill.skillId}`"
             v-if="skill.description && skill.description.description"
@@ -229,7 +254,7 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
       </div>
     </div>
 
-    <div v-if="skill.isSkillsGroupType && childSkillsInternal" class="ml-4 mt-3">
+    <div v-if="skill.isSkillsGroupType && childSkillsInternal && expanded" class="ml-6 mt-4">
       <div v-for="(childSkill, index) in childSkillsInternal"
            :key="`group-${skill.skillId}_skill-${childSkill.skillId}`"
            :id="`skillRow-${childSkill.skillId}`"
@@ -238,7 +263,7 @@ const isSkillComplete = computed(() => props.skill && props.skill.meta && props.
         <!--        @points-earned="onChildSkillPointsEarned"-->
         <skill-progress
           :id="`group-${skill.skillId}_skillProgress-${childSkill.skillId}`"
-          class="mb-3"
+          class="mb-4"
           :skill="childSkill"
           :subjectId="subjectId"
           :badgeId="badgeId"

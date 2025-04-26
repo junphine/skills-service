@@ -38,11 +38,11 @@ const exportTranscriptToPdf = () => {
 <template>
   <Card :pt="{ content: { class: 'p-0' } }" data-cy="downloadTranscriptCard">
     <template #content>
-      <div class="flex flex-column md:flex-row gap-2 align-items-center">
+      <div class="flex flex-col md:flex-row gap-2 items-center">
         <div class="flex-1">
           You have Completed
           <Tag>{{ skillsAchieved }}</Tag>
-          out of {{ totalSkills }} skill{{ plural.plural(totalSkills) }}!
+          out of <Tag severity="secondary">{{ totalSkills }}</Tag> skill{{ plural.plural(totalSkills) }}!
         </div>
         <div>
           <SkillsButton

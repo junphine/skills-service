@@ -128,7 +128,7 @@ const skillCreatedOrUpdated = (skill) => {
   }
   if (skill.groupId) {
     skillsState.setGroupSkills(skill.groupId, skills)
-    const parentGroup = skillsState.subjectSkills.find((item) => item.skillId = skill.groupId)
+    const parentGroup = skillsState.subjectSkills.find((item) => item.skillId === skill.groupId)
     const groupSkills = skillsState.getGroupSkills(skill.groupId)
     parentGroup.totalPoints = groupSkills
       .map((item) => item.totalPoints)
@@ -166,7 +166,7 @@ const skillCreatedOrUpdated = (skill) => {
           ref="importFromCatalogBtn"
           label="Import"
           outlined
-          class="bg-primary-reverse"
+          class="text-primary bg-primary-contrast"
           icon="fas fa-book"
           @click="initiateImport()"
           size="small"
@@ -181,9 +181,8 @@ const skillCreatedOrUpdated = (skill) => {
           @click="createOrUpdateGroup"
           size="small"
           outlined
-          class="bg-primary-reverse ml-1"
+          class="text-primary bg-primary-contrast ml-1"
           aria-label="new skills group"
-          aria-describedby="newGroupSrText"
           data-cy="newGroupButton"
           :track-for-focus="true"
           :aria-disabled="addSkillDisabled"
@@ -197,10 +196,9 @@ const skillCreatedOrUpdated = (skill) => {
           variant="outline-primary"
           size="small"
           aria-label="new skill"
-          aria-describedby="newSkillSrText"
           data-cy="newSkillButton"
           outlined
-          class="bg-primary-reverse ml-1"
+          class="text-primary bg-primary-contrast ml-1"
           :track-for-focus="true"
           :aria-disabled="addSkillDisabled"
           :disabled="addSkillDisabled" />
@@ -216,17 +214,17 @@ const skillCreatedOrUpdated = (skill) => {
     </sub-page-header>
 
 
-    <Card :pt="{ body: { class: 'p-0' }, content: { class: 'p-0' } }">
+    <Card :pt="{ body: { class: '!p-0' } }">
       <template #content>
         <skills-spinner
           v-if="skillsState.loadingSubjectSkills && !skillsState.hasSkills "
           :is-loading="skillsState.loadingSubjectSkills"
-          extraClass="py-8 my-0 h-23rem" />
+          extraClass="py-20 my-0 h-[23rem]" />
         <skills-table v-if="skillsState.hasSkills" />
         <no-content2
           v-if="!skillsState.loadingSubjectSkills && !skillsState.hasSkills"
           title="No Skills Yet"
-          class="py-8"
+          class="py-20"
           message="Projects are composed of Subjects which are made of Skills and a single skill defines a training unit within the gamification framework." />
       </template>
     </Card>
@@ -238,6 +236,7 @@ const skillCreatedOrUpdated = (skill) => {
       :is-edit="newSkillInfo.isEdit"
       :is-copy="newSkillInfo.isCopy"
       :group-id="newSkillInfo.groupId"
+      :project-user-community="projConfig.getProjectCommunityValue()"
       @skill-saved="skillCreatedOrUpdated"
     />
 

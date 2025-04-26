@@ -24,6 +24,7 @@ import skills.storage.model.QuizToSkillDef
 import skills.storage.model.SkillDef
 import skills.storage.model.SkillDefSkinny
 import skills.storage.model.SubjectAwareSkillDef
+import skills.storage.model.UserQuizAttempt
 
 interface QuizToSkillDefRepo extends JpaRepository<QuizToSkillDef, Long> {
 
@@ -31,8 +32,11 @@ interface QuizToSkillDefRepo extends JpaRepository<QuizToSkillDef, Long> {
         Integer getSkillRefId()
         String getQuizName()
         String getQuizId()
+        Integer getQuizRefId()
         QuizDefParent.QuizType getQuizType()
         Integer getNumQuestions()
+        Integer getNumTextInputQuestions()
+        Integer getConfiguredNumQuestionsQuizLength()
     }
 
     static interface ProjectIdAndSkillId {
@@ -41,13 +45,23 @@ interface QuizToSkillDefRepo extends JpaRepository<QuizToSkillDef, Long> {
         String getSkillId()
     }
 
+    static interface QuizAttemptInfo {
+        Integer getAttemptId()
+        UserQuizAttempt.QuizAttemptStatus getStatus()
+        Date getUpdated()
+        Integer getQuizDefRefId()
+    }
+
     @Nullable
     @Query(value = '''select q.quiz_id as quizId,
+                   max(q.id) as quizRefId, 
                    max(q.name) as quizName,
                    max(q.type) as quizType,
                    max(qToS.skill_ref_id) as skillRefId,
+                   max(qSettings.value) as configuredNumQuestionsQuizLength,
                    count(question.id) as numQuestions
             from quiz_to_skill_definition qToS, quiz_definition q
+                 left join quiz_settings qSettings on (q.id = qSettings.quiz_ref_id and qSettings.setting = 'quizLength')
                  left join quiz_question_definition question on (q.quiz_id = question.quiz_id)
             where qToS.skill_ref_id = ?1
               and q.id = qToS.quiz_ref_id
@@ -57,7 +71,7 @@ interface QuizToSkillDefRepo extends JpaRepository<QuizToSkillDef, Long> {
     @Nullable
     @Query('''select child.name as skillName, child.skillId as skillId, child.projectId as projectId, subject.skillId as subjectId,
                      subject.name as subjectName, exists(
-                       select ur.roleName from UserRole ur where ((ur.projectId = child.projectId and
+                       select ur.roleName from UserRole ur where ((ur.projectId = project.projectId and
                        ur.roleName in ('ROLE_PROJECT_ADMIN', 'ROLE_PROJECT_APPROVER')) OR ur.roleName = 'ROLE_SUPER_DUPER_USER') and ur.userId = ?2
                    ) as canUserAccess, subject.totalPoints as subjectPoints, project.totalPoints as projectPoints
               from QuizToSkillDef quiz, SkillDefWithExtra child
@@ -83,9 +97,13 @@ interface QuizToSkillDefRepo extends JpaRepository<QuizToSkillDef, Long> {
     @Query(value = '''select q.quiz_id as quizId,
                max(q.name) as quizName,
                max(q.type) as quizType,
+               max(q.id) as quizRefId,
                qToS.skill_ref_id as skillRefId,
-               count(question.id) as numQuestions
+               max(qSettings.value) as configuredNumQuestionsQuizLength,
+               count(question.id) as numQuestions,
+               count(case when question.type = 'TextInput' then question.id end) as numTextInputQuestions
         from quiz_to_skill_definition qToS, quiz_definition q
+             left join quiz_settings qSettings on (q.id = qSettings.quiz_ref_id and qSettings.setting = 'quizLength')
              left join quiz_question_definition question on (q.quiz_id = question.quiz_id)
         where qToS.skill_ref_id in ?1
           and q.id = qToS.quiz_ref_id
@@ -95,6 +113,14 @@ interface QuizToSkillDefRepo extends JpaRepository<QuizToSkillDef, Long> {
     void deleteBySkillRefId(Integer skillRefId)
 
     Integer countByQuizRefId(Integer quizRefId)
+
+    @Query('''select distinct(skill.projectId)
+            from QuizToSkillDef qToS, QuizDef  quiz, SkillDef skill
+            where quiz.id = qToS.quizRefId
+                and skill.id = qToS.skillRefId
+                and quiz.id = ?1
+                and not exists (select 1 from Setting s2 where skill.projectId = s2.projectId and s2.setting = 'user_community' and s2.value = 'true')''')
+    List<String> getNonCommunityProjectsThatThisQuizIsLinkedTo(Integer quizRefId)
 
     @Query('''select count(quiz) > 0
             from QuizToSkillDef qToS, QuizDef  quiz, SkillDef  skill

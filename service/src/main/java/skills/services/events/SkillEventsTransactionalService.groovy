@@ -24,35 +24,23 @@ import org.springframework.transaction.annotation.Transactional
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
 import skills.controller.exceptions.SkillExceptionBuilder
+import skills.quizLoading.QuizRunService
 import skills.services.LockingService
 import skills.services.SelfReportingService
 import skills.services.UserEventService
 import skills.services.admin.SkillCatalogService
 import skills.services.admin.SkillsGroupAdminService
-import skills.services.attributes.ExpirationAttrs
 import skills.services.attributes.SkillAttributeService
 import skills.services.events.pointsAndAchievements.PointsAndAchievementsHandler
-import skills.services.userActions.DashboardAction
-import skills.services.userActions.DashboardItem
-import skills.services.userActions.UserActionInfo
 import skills.services.userActions.UserActionsHistoryService
-import skills.storage.model.SkillDef
-import skills.storage.model.SkillDefMin
-import skills.storage.model.UserAchievement
-import skills.storage.model.UserPerformedSkill
-import skills.storage.model.UserPoints
-import skills.storage.repos.SkillDefRepo
-import skills.storage.repos.SkillEventsSupportRepo
-import skills.storage.repos.UserAchievedLevelRepo
-import skills.storage.repos.UserAttrsRepo
-import skills.storage.repos.UserPerformedSkillRepo
-import skills.storage.repos.UserPointsRepo
+import skills.storage.model.*
+import skills.storage.repos.*
 import skills.tasks.TaskSchedulerService
 import skills.utils.MetricsLogger
 
 import static skills.services.events.CompletionItem.CompletionItemType
-import static skills.services.events.SkillEventsService.SkillApprovalParams
 import static skills.services.events.SkillEventsService.AppliedCheckRes
+import static skills.services.events.SkillEventsService.SkillApprovalParams
 
 @Service
 @CompileStatic
@@ -127,6 +115,9 @@ class SkillEventsTransactionalService {
 
     @Autowired
     UserAttrsRepo userAttrsRepo
+
+    @Autowired
+    QuizRunService quizRunService
 
     @Transactional
     void notifyUserOfAchievements(String userId){
@@ -281,6 +272,9 @@ class SkillEventsTransactionalService {
         savePerformedSkill(performedSkill)
 
         res.pointsEarned = skillDefinition.pointIncrement
+        res.totalPointsEarned = ((int)numExistingSkills + 1) * skillDefinition.pointIncrement
+        res.totalPoints = skillDefinition.totalPoints
+        res.numOccurrencesToCompletion = (int)(skillDefinition.totalPoints / skillDefinition.pointIncrement)
 
         List<CompletionItem> achievements = pointsAndAchievementsHandler.updatePointsAndAchievements(userId, skillDefinition, skillDate)
         if (achievements) {
@@ -292,6 +286,7 @@ class SkillEventsTransactionalService {
             pointsAndAchievementsHandler.documentSkillAchieved(userId, skillDefinition, res, skillDate)
             achievedBadgeHandler.checkForBadges(res, userId, skillDefinition, skillDate)
             achievedSkillsGroupHandler.checkForSkillsGroup(res, userId, skillDefinition, skillDate)
+            quizRunService.checkForDependentQuizzes(res, userId, skillDefinition)
         }
 
         // if requestedSkillCompleted OR overall level achieved, then need to check for global badges

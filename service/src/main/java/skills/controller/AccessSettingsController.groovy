@@ -23,6 +23,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.security.core.userdetails.UserDetailsService
 import org.springframework.web.bind.annotation.*
 import skills.UIConfigProperties
+import skills.auth.UserInfoService
 import skills.auth.UserNameService
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
@@ -47,6 +48,7 @@ import skills.storage.model.auth.RoleName
 import skills.storage.model.auth.User
 import skills.storage.repos.UserAttrsRepo
 import skills.storage.repos.UserRepo
+import skills.storage.repos.UserRoleRepo
 
 import static org.springframework.data.domain.Sort.Direction.ASC
 import static org.springframework.data.domain.Sort.Direction.DESC
@@ -60,7 +62,7 @@ class AccessSettingsController {
     private static List<RoleName> projectSupportedRoles = [RoleName.ROLE_PROJECT_ADMIN, RoleName.ROLE_PROJECT_APPROVER]
 
     @Autowired
-    skills.auth.UserInfoService userInfoService
+    UserInfoService userInfoService
 
     @Autowired
     UserDetailsService userDetailsService
@@ -101,6 +103,9 @@ class AccessSettingsController {
     @Autowired
     UserAttrsRepo userAttrsRepo
 
+    @Autowired
+    UserRoleRepo userRoleRepo
+
     @Value('#{securityConfig.authMode}}')
     skills.auth.AuthMode authMode = skills.auth.AuthMode.DEFAULT_AUTH_MODE
 
@@ -115,6 +120,27 @@ class AccessSettingsController {
             @RequestParam Boolean ascending) {
         PageRequest pageRequest = createPagingRequestWithValidation(projectId, limit, page, orderBy, ascending)
         return accessSettingsStorageService.getUserRolesForProjectId(projectId, roles, pageRequest)
+    }
+
+    @RequestMapping(value = "/admin-group-definitions/{adminGroupId}/userRoles", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    TableResult getAdminGroupUserRoles(
+            @PathVariable("adminGroupId") String adminGroupId,
+            @RequestParam List<RoleName> roles,
+            @RequestParam int limit,
+            @RequestParam int page,
+            @RequestParam String orderBy,
+            @RequestParam Boolean ascending) {
+        PageRequest pageRequest = createPagingRequestWithValidation(adminGroupId, limit, page, orderBy, ascending, 'Admin Group')
+        return accessSettingsStorageService.getUserRolesForAdminGroupId(adminGroupId, roles, pageRequest)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/countUserRoles", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    Integer countProjectUserRoles(
+            @PathVariable("projectId") String projectId,
+            @RequestParam List<RoleName> roles) {
+        return accessSettingsStorageService.countUserRolesForProjectId(projectId, roles)
     }
 
     @RequestMapping(value = "/projects/{projectId}/userRoles/{roleName}", method = RequestMethod.GET, produces = "application/json")
@@ -178,6 +204,9 @@ class AccessSettingsController {
         if (currentUser?.toLowerCase() == userId?.toLowerCase()) {
             throw new SkillException("Cannot add roles to myself. userId=[${userId}]", projectId, null, ErrorCode.AccessDenied)
         }
+        if (userRoleRepo.isUserProjectGroupAdmin(userId, projectId)) {
+            throw new SkillException("User is already part of an Admin Group and cannot be added as a local admin. userId=[${userId}]", projectId, null, ErrorCode.AccessDenied)
+        }
         accessSettingsStorageService.addUserRole(userId, projectId, roleName)
 
         handleNewRoleEmail(roleName, projectId, userId)
@@ -235,8 +264,8 @@ class AccessSettingsController {
 
     }
 
-    private PageRequest createPagingRequestWithValidation(String projectId, int limit, int page, String orderBy, Boolean ascending) {
-        SkillsValidator.isNotBlank(projectId, "Project Id")
+    private PageRequest createPagingRequestWithValidation(String projectId, int limit, int page, String orderBy, Boolean ascending, String type='Project') {
+        SkillsValidator.isNotBlank(projectId, "${type} Id")
         SkillsValidator.isTrue(limit <= 200, "Cannot ask for more than 200 items, provided=[${limit}]", projectId)
         SkillsValidator.isTrue(page >= 0, "Cannot provide negative page. provided =[${page}]", projectId)
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)

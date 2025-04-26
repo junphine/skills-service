@@ -28,10 +28,12 @@ import SkillEventsOverTime from "@/components/metrics/skill/SkillEventsOverTime.
 import SkillAchievedByUsersOverTime from "@/components/metrics/skill/SkillAchievedByUsersOverTime.vue";
 import UsersByTagChart from "@/components/metrics/skill/UsersByTagChart.vue";
 import { useColors } from '@/skills-display/components/utilities/UseColors.js'
+import {useLayoutSizesState} from "@/stores/UseLayoutSizesState.js";
 
 const appConfig = useAppConfig();
 const route = useRoute();
 const timeUtils = useTimeUtils();
+const layoutSizes = useLayoutSizesState()
 
 const loading = ref(true);
 const numUsersAchieved = ref(0);
@@ -68,8 +70,8 @@ onMounted(() => {
     <skills-spinner :is-loading="loading" />
 
     <!-- on FF charts end up pushing column to the next row; this is a workaround -->
-    <div v-if="!loading" style="width: 99%;">
-      <div class="flex flex-column lg:flex-row mb-3 gap-4">
+    <div v-if="!loading" :style="`width: ${layoutSizes.tableMaxWidth}px;`">
+      <div class="flex flex-col lg:flex-row mb-4 gap-6">
         <stats-card class="flex flex-1" title="Achieved" :statNum="numUsersAchieved" :icon="`fa fa-trophy ${colors.getTextClass(0)}`" data-cy="numUserAchievedStatCard">
           Number of users that achieved this skill
         </stats-card>
@@ -83,10 +85,10 @@ onMounted(() => {
         </stats-card>
       </div>
 
-      <skill-achieved-by-users-over-time class="mb-3"/>
-      <skill-events-over-time class="mb-3"/>
+      <skill-achieved-by-users-over-time class="mb-4"/>
+      <skill-events-over-time class="mb-4"/>
       <div v-for="tag of tags" :key="tag.key">
-        <users-by-tag-chart :tag="tag" class="mb-3" />
+        <users-by-tag-chart :tag="tag" class="mb-4" />
       </div>
 
       <Card data-cy="postAchievementContainers">
@@ -94,16 +96,16 @@ onMounted(() => {
           <SkillsCardHeader title="Post Achievement Metrics"></SkillsCardHeader>
         </template>
         <template #content>
-          <div class="flex flex-column lg:flex-row gap-4">
-            <div class="mb-3">
+          <div class="flex flex-col lg:flex-row gap-6">
+            <div class="mb-4">
               <post-achievement-users-pie-chart class="h-full" style="min-width: 16rem"/>
             </div>
-            <div class="flex-1 mb-3">
+            <div class="flex-1 mb-4">
               <binned-post-achievement-usage class="h-full"/>
             </div>
           </div>
           <div class="flex">
-            <div class="w-full mb-3">
+            <div class="w-full mb-4">
               <post-achievement-users-table class="h-100" />
             </div>
           </div>

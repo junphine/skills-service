@@ -22,6 +22,10 @@ import MetricsOverlay from "@/components/metrics/utils/MetricsOverlay.vue";
 import MetricsService from "@/components/metrics/MetricsService.js";
 import TimeLengthSelector from "@/components/metrics/common/TimeLengthSelector.vue";
 import NumberFormatter from '@/components/utils/NumberFormatter.js'
+import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js';
+import { useThemesHelper } from '@/components/header/UseThemesHelper.js';
+import {useLayoutSizesState} from "@/stores/UseLayoutSizesState.js";
+
 
 const appConfig = useAppConfig();
 const route = useRoute();
@@ -32,6 +36,17 @@ const props = defineProps({
     default: 'Users per day',
   },
 });
+
+const themeState = useSkillsDisplayThemeState()
+const themeHelper = useThemesHelper()
+const layoutSizes = useLayoutSizesState()
+
+const chartAxisColor = () => {
+  if (themeState.theme.charts.axisLabelColor) {
+    return themeState.theme.charts.axisLabelColor
+  }
+  return themeHelper.isDarkTheme ? 'white' : undefined
+}
 
 onMounted(() => {
   if (route.params.skillId) {
@@ -75,7 +90,7 @@ const chartOptions = ref({
     },
     toolbar: {
       autoSelected: 'zoom',
-      offsetY: -52,
+      offsetY: -30,
     },
   },
   dataLabels: {
@@ -96,6 +111,9 @@ const chartOptions = ref({
   },
   yaxis: {
     labels: {
+      style: {
+        colors: chartAxisColor()
+      },
       formatter(val) {
         return NumberFormatter.format(val);
       },
@@ -106,8 +124,14 @@ const chartOptions = ref({
   },
   xaxis: {
     type: 'datetime',
+    labels: {
+      style: {
+        colors: chartAxisColor()
+      }
+    }
   },
   tooltip: {
+    theme: themeHelper.isDarkTheme ? 'dark' : 'light',
     shared: false,
         y: {
       formatter(val) {
@@ -154,7 +178,7 @@ const loadData = () => {
 </script>
 
 <template>
-  <Card data-cy="distinctNumUsersOverTime" class="w-full">
+  <Card data-cy="distinctNumUsersOverTime" class="w-full" :style="`width: ${layoutSizes.tableMaxWidth}px;`">
     <template #header>
       <SkillsCardHeader :title="mutableTitle">
         <template #headerContent>
@@ -163,8 +187,8 @@ const loadData = () => {
       </SkillsCardHeader>
     </template>
     <template #content>
-      <metrics-overlay :loading="loading" :has-data="hasDataEnoughData" no-data-msg="This chart needs at least 2 days of user activity." class="mt-4">
-        <apexchart type="area" height="350" :options="chartOptions" :series="distinctUsersOverTime" data-cy="apexchart"></apexchart>
+      <metrics-overlay :loading="loading" :has-data="hasDataEnoughData" no-data-msg="This chart needs at least 2 days of user activity." class="mt-6">
+        <apexchart type="area" height="350" width="100%" :options="chartOptions" :series="distinctUsersOverTime" data-cy="apexchart"></apexchart>
       </metrics-overlay>
     </template>
   </Card>

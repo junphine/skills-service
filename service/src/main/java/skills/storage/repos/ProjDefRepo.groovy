@@ -441,6 +441,7 @@ interface ProjDefRepo extends CrudRepository<ProjDef, Long> {
                    (SELECT COALESCE(count(*), 1) FROM UserPoints WHERE projectId = pd.projectId and skillId is NULL) as totalUsers,
                    (SELECT COALESCE(count(*)+1, 1) FROM UserPoints WHERE projectId = pd.projectId and skillId is NULL and points > up.points) as rank,
                    COALESCE((SELECT value FROM Setting WHERE projectId = pd.projectId AND setting = 'user_community' and value = 'true'), 'false') as protectedCommunityEnabled,
+                   COALESCE((SELECT value FROM Setting WHERE projectId = pd.projectId AND setting = 'invite_only' and value = 'true'), 'false') as inviteOnlyEnabled,
                    pd.totalPoints as totalPoints,
                    ss.value as orderVal
             FROM Setting s, Setting ss, Users uu, ProjDef pd
@@ -489,5 +490,12 @@ interface ProjDefRepo extends CrudRepository<ProjDef, Long> {
     @Nullable
     @Query('''SELECT pd.totalPoints FROM ProjDef pd WHERE pd.projectId = ?1''')
     Integer getTotalPointsByProjectId(String projectId)
+
+    @Query(value = '''select count(id) > 0
+            from project_definition
+            where
+                convert_from(lo_get(CAST(description as oid)), 'UTF8') like CONCAT('%(/api/download/', ?2, ')%')
+              and LOWER(project_id) <> LOWER(?1)''', nativeQuery = true)
+    Boolean otherProjectExistWithAttachmentUUID(String notThisProject, String attachmentUUID)
 
 }

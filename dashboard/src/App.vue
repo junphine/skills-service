@@ -44,8 +44,6 @@ import ScrollToTop from '@/common-components/utilities/ScrollToTop.vue'
 import IconManagerService from '@/components/utils/iconPicker/IconManagerService.js'
 import log from 'loglevel';
 
-log.setLevel('WARN')
-
 const authState = useAuthState()
 const appInfoState = useAppInfoState()
 const appConfig = useAppConfig()
@@ -54,7 +52,6 @@ const accessState = useAccessState()
 const errorHandling = useErrorHandling()
 const userAgreementInterceptor = useUserAgreementInterceptor()
 const route = useRoute()
-const PrimeVue = usePrimeVue()
 
 const customGlobalValidators = useCustomGlobalValidators()
 const globalNavGuards = useGlobalNavGuards()
@@ -67,7 +64,6 @@ const isScrollToTopDisabled = computed(() => {
 const isLoadingApp = computed(() => !isAppLoaded.value || appConfig.isLoadingConfig || authState.restoringSession || (skillsDisplayAttributes.loadingConfig && skillsDisplayInfo.isSkillsDisplayPath()))
 
 const themeHelper = useThemesHelper()
-themeHelper.configureDefaultThemeFileInHeadTag()
 
 const addCustomIconCSSForClientDisplay = () => {
   if (skillsDisplayInfo.isSkillsClientPath()) {
@@ -76,30 +72,38 @@ const addCustomIconCSSForClientDisplay = () => {
 }
 const inceptionConfigurer = useInceptionConfigurer()
 const pageVisitService = usePageVisitService()
+const loadUserAndDisplayInfo = () => {
+  inceptionConfigurer.configure()
+  pageVisitService.reportPageVisit(route.path, route.fullPath)
+  const loadRoot = accessState.loadIsRoot()
+  const loadSupervisor = accessState.loadIsSupervisor()
+  const loadEmailEnabled = appInfoState.loadEmailEnabled()
+  const loadCustomIconCSS = addCustomIconCSSForClientDisplay()
+  const promises = [loadRoot, loadSupervisor, loadEmailEnabled, loadCustomIconCSS]
+  if (!skillsDisplayInfo.isSkillsClientPath()) {
+    const loadTheme = themeHelper.loadTheme()
+    promises.push(loadTheme)
+  }
+  return Promise.all(promises).then(() => {
+    isAppLoaded.value = true
+  })
+}
 watch(() => authState.userInfo, async (newUserInfo) => {
   if (newUserInfo) {
-    inceptionConfigurer.configure()
-    pageVisitService.reportPageVisit(route.path, route.fullPath)
-    const loadRoot = accessState.loadIsRoot()
-    const loadSupervisor = accessState.loadIsSupervisor()
-    const loadEmailEnabled = appInfoState.loadEmailEnabled()
-    const loadTheme = themeHelper.loadTheme()
-    const loadCustomIconCSS = addCustomIconCSSForClientDisplay()
-    Promise.all([loadRoot, loadSupervisor, loadEmailEnabled, loadTheme, loadCustomIconCSS]).then(() => {
-      isAppLoaded.value = true
-    })
+    await loadUserAndDisplayInfo()
   } else {
     isAppLoaded.value = true
   }
 })
 
 watch(() => themeHelper.currentTheme, (newTheme, oldTheme) => {
-  PrimeVue.changeTheme(oldTheme.value, newTheme.value, 'theme-link')
+  document.documentElement.classList.toggle('st-dark-theme');
 })
 
 const iframeInit = useIframeInit()
 onBeforeMount(() => {
   if (skillsDisplayInfo.isSkillsClientPath()) {
+    log.trace('App.vue: skillsDisplayInfo.isSkillsClientPath()=true, initiating iframe handshake')
     iframeInit.handleHandshake()
   }
   errorHandling.registerErrorHandling()
@@ -110,6 +114,7 @@ onBeforeMount(() => {
 onMounted(() => {
   invoke(async () => {
     if (skillsDisplayInfo.isSkillsClientPath()) {
+      log.trace('App.vue: skillsDisplayInfo.isSkillsClientPath()=true, waiting for iframe to load')
       await until(iframeInit.loadedIframe).toBe(true)
       log.debug('App.vue: skillsDisplayInfo.isSkillsClientPath()=true, loaded iframe!')
     }
@@ -117,18 +122,32 @@ onMounted(() => {
   })
 })
 
+const restoreSessionIfAvailable = () => {
+  if (skillsDisplayInfo.isSkillsClientPath()) {
+    authState.setRestoringSession(false)
+    return Promise.resolve()
+  }
+  return authState.restoreSessionIfAvailable()
+}
+
 const loadConfigs = () => {
   appConfig.loadConfigState().finally(() => {
-    authState.restoreSessionIfAvailable().finally(() => {
+    restoreSessionIfAvailable().finally(() => {
       skillsDisplayAttributes.loadConfigStateIfNeeded().then(() => {
 
         inceptionConfigurer.configure()
-        globalNavGuards.addNavGuards()
+        if (!skillsDisplayInfo.isSkillsClientPath()) {
+          globalNavGuards.addNavGuards()
+        }
         if (!authState.isAuthenticated) {
           isAppLoaded.value = true
         }
-        // do not need to set isAppLoaded to true here because it will be handled
-        // by the watch of authState.userInfo
+        if (skillsDisplayInfo.isSkillsClientPath()) {
+          loadUserAndDisplayInfo()
+        } else {
+          // do not need to set isAppLoaded to true here because it will be handled
+          // by the watch of authState.userInfo
+        }
       })
     })
   })
@@ -137,25 +156,29 @@ const loadConfigs = () => {
 const notSkillsClient = computed(() => !skillsDisplayInfo.isSkillsClientPath())
 const showHeader = computed(() => notSkillsClient.value && authState.isAuthenticated)
 const isPkiAndNeedsToBootstrap = computed(() => appConfig.isPkiAuthenticated && appConfig.needToBootstrap)
-const inBootstrapMode = computed(() => isPkiAndNeedsToBootstrap.value && notSkillsClient.value)
+const isSAML2AndNeedsToBootstrap = computed(() => appConfig.isSAML2Authenticated && appConfig.needToBootstrap)
+const inBootstrapMode = computed(() => ((isPkiAndNeedsToBootstrap.value || isSAML2AndNeedsToBootstrap.value) && notSkillsClient.value))
 const isCustomizableHeader = computed(() => notSkillsClient.value && !isLoadingApp.value && !inBootstrapMode.value)
 const isDashboardFooter = computed(() => notSkillsClient.value && !isLoadingApp.value && !inBootstrapMode.value)
 </script>
 
 <template>
+<!--  :class="{ 'st-dark-theme': themeHelper.isDarkTheme, 'st-light-theme': !themeHelper.isDarkTheme }"-->
   <div role="presentation"
-       :class="{ 'st-dark-theme': themeHelper.isDarkTheme, 'st-light-theme': !themeHelper.isDarkTheme }"
-       class="m-0 surface-ground">
+       class="m-0 bg-surface-50 dark:bg-surface-950">
     <VueAnnouncer class="sr-only" />
 
     <customizable-header v-if="isCustomizableHeader" role="region" aria-label="dynamic customizable header"></customizable-header>
     <div id="skilltree-main-container">
-      <div v-if="isLoadingApp" role="main" class="text-center">
-        <skills-spinner :is-loading="true" class="mt-8 text-center"/>
-        <h1 class="text-sm sr-only">Loading...</h1>
+      <div v-if="isLoadingApp" role="main" class="flex content-center justify-center flex-wrap" style="min-height: 40rem">
+        <div class="flex items-center justify-center m-2">
+          <skills-spinner :is-loading="true" class="text-center"/>
+          <h1 class="text-sm sr-only">Loading...</h1>
+        </div>
       </div>
       <div v-if="!isLoadingApp" class="m-0">
         <pki-app-bootstrap v-if="inBootstrapMode" role="region"/>
+
         <div v-if="!inBootstrapMode" :class="{ 'overall-container' : notSkillsClient, 'sd-theme-background-color': !notSkillsClient }">
           <new-software-version  />
           <dashboard-header v-if="showHeader" role="banner" />
@@ -166,44 +189,50 @@ const isDashboardFooter = computed(() => notSkillsClient.value && !isLoadingApp.
             <RouterView />
           </div>
         </div>
+        <ConfirmDialog></ConfirmDialog>
+        <dashboard-footer v-if="isDashboardFooter" role="region" />
+        <customizable-footer v-if="isDashboardFooter" role="region" aria-label="dynamic customizable footer"></customizable-footer>
+        <scroll-to-top v-if="!isScrollToTopDisabled && !inBootstrapMode" />
       </div>
     </div>
-    <ConfirmDialog></ConfirmDialog>
-    <dashboard-footer v-if="isDashboardFooter" role="region" />
-    <customizable-footer v-if="isDashboardFooter" role="region" aria-label="dynamic customizable footer"></customizable-footer>
-    <scroll-to-top v-if="!isScrollToTopDisabled && !inBootstrapMode" />
   </div>
 </template>
 
 <style scoped>
 .overall-container {
-  min-height: calc(100vh - 100px);
+  min-height: calc(100vh - 120px);
 }
 
 </style>
 
 <style>
 body a, a:link, a:visited {
-  text-decoration: none !important;
+  //text-decoration: none !important;
 }
 
 body .st-light-theme a, a:link {
-  color: #2f64bd !important;
+  //color: #2f64bd !important;
 }
 
 body .st-light-theme a:visited {
-  color: #784f9f !important;
+  //color: #784f9f !important;
 }
 
 body .st-dark-theme a, a:link {
-  color: #99befb !important;
+  //color: #99befb !important;
 }
 
 body .st-dark-theme a:visited {
-  color: #d5aafb !important;
+  //color: #d5aafb !important;
 }
 
 body a:hover, body a:focus {
   text-decoration: underline !important;
+}
+
+@media (forced-colors: active) {
+  :focus {
+    outline: 2px solid transparent;
+  }
 }
 </style>

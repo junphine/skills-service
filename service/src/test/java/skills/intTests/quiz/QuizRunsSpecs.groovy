@@ -141,7 +141,6 @@ class QuizRunsSpecs extends DefaultIntSpec {
         when:
         def quizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, 'uSeR1')
         def quizRuns_pg1 = skillsService.getQuizRuns(quiz.quizId, 3, 1, 'started', true, 'R1')
-        println JsonOutput.prettyPrint(JsonOutput.toJson(quizRuns))
         then:
         quizRuns.totalCount == users.size()
         quizRuns.count == 2
@@ -278,8 +277,8 @@ class QuizRunsSpecs extends DefaultIntSpec {
 
     void runQuiz(String userId, def quiz, def quizInfo, boolean pass) {
         def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, userId).body
-        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id, userId)
-        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[pass ? 0 : 1].id, userId)
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id, userId)
+        skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[pass ? 0 : 1].id, userId)
         skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, userId).body
     }
 

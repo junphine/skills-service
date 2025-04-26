@@ -21,19 +21,15 @@ import SupervisorService from "@/components/utils/SupervisorService.js";
 import AutoComplete from "primevue/autocomplete";
 import NumberFormatter from "../../utils/NumberFormatter.js";
 import SkillsDataTable from "@/components/utils/table/SkillsDataTable.vue";
-import ColumnGroup from 'primevue/columngroup';
-import Row from 'primevue/row';
 import LevelBadge from "@/components/metrics/multipleProjects/LevelBadge.vue";
 
 const props = defineProps(['availableProjects']);
 
-const fields = ref(['name', 'numSubjects', 'numBadges', 'numSkills', 'totalPoints', 'minLevel']);
 const projects = ref({
   loading: true,
   available: [],
   selected: [],
 });
-const selectProjects = ref([]);
 const results = ref([]);
 const resultsLoaded = ref(false);
 const resultTableOptions = ref({
@@ -72,19 +68,8 @@ const atLeast2Proj = computed(() => {
   return projects.value.selected && projects.value.selected.length > 1;
 });
 
-const hasResults = computed(() => {
-  return results.value && results.value.length > 0;
-});
-
 const enoughOverallProjects = computed(() => {
   return props.availableProjects && props.availableProjects.length >= 2;
-});
-
-const beforeListSlotText = computed(() => {
-  if (projects.value.selected.length >= 5) {
-    return 'Maximum of 5 options selected. First remove a selected option to select another.';
-  }
-  return '';
 });
 
 onMounted(() => {
@@ -94,14 +79,14 @@ onMounted(() => {
 const pageChanged = (pagingInfo) => {
   resultTableOptions.value.pagination.pageSize = pagingInfo.rows
   resultTableOptions.value.pagination.currentPage = pagingInfo.page + 1
-  locateUsers()
+  loadTableData()
 }
 const sortTable = (sortContext) => {
   resultTableOptions.value.sortOrder = sortContext.sortOrder;
   resultTableOptions.value.sortBy = sortContext.sortField;
   // set to the first page
   resultTableOptions.value.pagination.currentPage = 1;
-  locateUsers();
+  loadTableData();
 };
 
 const projAdded = (addedItem) => {
@@ -144,28 +129,11 @@ const clearRes = () => {
 };
 
 const locateUsers = () => {
-  resultTableOptions.value.busy = true;
-  resultsLoaded.value = true;
-
-  const params = {
-    pageSize: resultTableOptions.value.pagination.pageSize,
-    currentPage: resultTableOptions.value.pagination.currentPage,
-    sortDesc: resultTableOptions.value.sortOrder === -1,
-    projIdsAndLevel: projects.value.selected.map((item) => `${item.projectId}AndLevel${item.minLevel}`).join(','),
-  };
-  MetricsService.loadGlobalMetrics('findExpertsForMultipleProjectsChartBuilder', params)
-      .then((dataFromServer) => {
-        resultTableOptions.value.busy = false;
-        resultTableOptions.value.pagination.totalRows = dataFromServer.totalNum;
-        results.value = dataFromServer.data.map((item) => {
-          const res = { userId: item.userId };
-          item.levels.forEach((level) => {
-            const keyForLevel = resultTableOptions.value.fields.find((p) => p.projectId === level.projectId);
-            res[`${keyForLevel.projectId}`] = level.level;
-          });
-          return res;
-        });
-      });
+  if(!resultsLoaded.value) {
+    resultsLoaded.value = true;
+  } else {
+    loadTableData();
+  }
 };
 
 const loadProjects = (filter) => {
@@ -198,15 +166,40 @@ const syncOtherLevels = (level) => {
 const filterProjects = (event) => {
   loadProjects(event.query.toLowerCase());
 }
+
+const loadTableData = () => {
+  resultTableOptions.value.busy = true;
+
+  const params = {
+    pageSize: resultTableOptions.value.pagination.pageSize,
+    currentPage: resultTableOptions.value.pagination.currentPage,
+    sortDesc: resultTableOptions.value.sortOrder === -1,
+    projIdsAndLevel: projects.value.selected.map((item) => `${item.projectId}AndLevel${item.minLevel}`).join(','),
+  };
+
+  MetricsService.loadGlobalMetrics('findExpertsForMultipleProjectsChartBuilder', params)
+      .then((dataFromServer) => {
+        resultTableOptions.value.busy = false;
+        resultTableOptions.value.pagination.totalRows = dataFromServer.totalNum;
+        results.value = dataFromServer.data.map((item) => {
+          const res = { userId: item.userId };
+          item.levels.forEach((level) => {
+            const keyForLevel = resultTableOptions.value.fields.find((p) => p.projectId === level.projectId);
+            res[`${keyForLevel.projectId}`] = level.level;
+          });
+          return res;
+        });
+      });
+}
 </script>
 
 <template>
-  <Card data-cy="multiProjectUsersInCommon" class="mb-4">
+  <Card data-cy="multiProjectUsersInCommon" class="mb-6">
     <template #header>
       <SkillsCardHeader title="Find users across multiple projects"></SkillsCardHeader>
     </template>
     <template #content>
-      <skills-spinner :is-loading="projects.loading" class="mb-5"/>
+      <skills-spinner :is-loading="projects.loading" class="mb-8"/>
 
       <div v-if="enoughOverallProjects && !projects.loading">
         <div class="flex">
@@ -222,21 +215,22 @@ const filterProjects = (event) => {
               multiple
               optionLabel="name"
               inputClass="w-full"
-              class="w-full mb-4"
+              class="w-full mb-6"
               @complete="filterProjects"
               data-cy="projectSelector"
+              :pt="{ dropdown: { 'aria-label': 'click to select an item' } }"
               placeholder="Select option">
             <template #empty>
-              <div v-if="projects.selected.length === 5" class="ml-4" data-cy="projectSelectorMaximumReached">
+              <div v-if="projects.selected.length === 5" class="ml-6" data-cy="projectSelectorMaximumReached">
                 Maximum of 5 options selected. First remove a selected option to select another.
               </div>
-              <div v-else class="ml-4">
+              <div v-else class="ml-6">
                 No results found
               </div>
             </template>
           </AutoComplete>
         </div>
-        <div class="flex mb-4">
+        <div class="flex mb-6">
           <no-content2 v-if="!atLeast1Proj" title="No Projects Selected" class="w-full"
                        message="Please select at least 2 projects using search above then click 'Find Users' button below"></no-content2>
 
@@ -263,12 +257,12 @@ const filterProjects = (event) => {
             </Column>
             <Column field="minLevel" header="Min Level">
               <template #body="slotProps">
-                <div class="flex gap-4">
-                  <Dropdown :options="slotProps.data.availableLevels"
+                <div class="flex gap-6">
+                  <Select :options="slotProps.data.availableLevels"
                             v-if="!slotProps.data.loadingLevels"
                             v-model="slotProps.data.minLevel"
                             data-cy="minLevelSelector">
-                  </Dropdown>
+                  </Select>
                   <SkillsButton variant="outline-info"
                                 aria-label="Sync other levels"
                                 @click="syncOtherLevels(slotProps.data.minLevel)"
@@ -282,7 +276,7 @@ const filterProjects = (event) => {
             </Column>
           </SkillsDataTable>
         </div>
-        <div class="flex justify-content-center">
+        <div class="flex justify-center">
           <SkillsButton :disabled="!atLeast2Proj"
                         @click="locateUsers"
                         label="Find Users"
@@ -290,17 +284,18 @@ const filterProjects = (event) => {
                         data-cy="findUsersBtn">
           </SkillsButton>
         </div>
-        <div class="flex mt-4">
-          <SkillsDataTable v-if="hasResults || resultsLoaded"
+        <div class="flex mt-6">
+          <SkillsDataTable v-if="resultsLoaded"
                            :value="results"
+                           :busy="resultTableOptions.busy"
                            class="w-full"
+                           @tableReady="loadTableData"
                            @page="pageChanged"
                            @sort="sortTable"
-                           :totalRecords="resultTableOptions.
-                           pagination.totalRows"
+                           :totalRecords="resultTableOptions.pagination.totalRows"
                            :rows="resultTableOptions.pagination.pageSize"
-                           :sort-field="resultTableOptions.sortBy"
-                           :sort-order="resultTableOptions.sortOrder"
+                           v-model:sort-field="resultTableOptions.sortBy"
+                           v-model:sort-order="resultTableOptions.sortOrder"
                            :rowsPerPageOptions="resultTableOptions.pagination.possiblePageSizes"
                            paginator
                            lazy
@@ -322,14 +317,14 @@ const filterProjects = (event) => {
             </template>
 
             <template #empty>
-              <span class="flex align-items-center justify-content-center">There are no records to show</span>
+              <span class="flex items-center justify-center">There are no records to show</span>
             </template>
           </SkillsDataTable>
         </div>
       </div>
 
       <no-content2 v-if="!enoughOverallProjects"
-                   class="my-5"
+                   class="my-8"
                    title="Feature is disabled"
                    icon="fas fa-poo"
                    message="At least 2 projects must exist for this feature to work. Please create more projects to enable this feature."/>

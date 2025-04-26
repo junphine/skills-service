@@ -29,6 +29,7 @@ import HelpUrlInput from '@/components/utils/HelpUrlInput.vue'
 import InputSanitizer from '@/components/utils/InputSanitizer.js'
 import { useSkillYupValidators } from '@/components/skills/UseSkillYupValidators.js'
 import SettingsService from '@/components/settings/SettingsService.js';
+import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js';
 
 const show = defineModel()
 const route = useRoute()
@@ -39,10 +40,12 @@ const props = defineProps({
   groupId: {
     type: String,
     default: null,
-  }
+  },
+  projectUserCommunity: String,
 })
 const emit = defineEmits(['skill-saved'])
 const appConfig = useAppConfig()
+const communityLabels = useCommunityLabels()
 const skillYupValidators = useSkillYupValidators()
 
 const latestSkillVersion = ref(0)
@@ -125,6 +128,14 @@ if (props.isEdit) {
 if (props.isCopy) {
   modalTitle = 'Copy Skill'
   formId = `copySkillDialog-${props.skill.projectId}-${props.skill.skillId}`
+}
+const isQuizAssignableToSkill = (selectedQuiz, context) => {
+  const quizIsRestricted = communityLabels.isRestrictedUserCommunity(selectedQuiz?.userCommunity);
+  const projectIsRestricted = communityLabels.isRestrictedUserCommunity(props.projectUserCommunity);
+  if (selectedQuiz && quizIsRestricted && !projectIsRestricted) {
+    return context.createError({message: `Quiz is not allowed to be assigned to this project. Project does not have ${selectedQuiz.userCommunity} permission`});
+  }
+  return true;
 }
 
 const schema = object({
@@ -211,6 +222,7 @@ const schema = object({
   'associatedQuiz': object()
       .nullable()
       .test('quizRequired', 'Please select an available Quiz/Survey', (value) => !!(selfReportingType.value !== 'Quiz' || value))
+      .test('quizIsAssignable', (value, context) => isQuizAssignableToSkill(value, context))
       .label('Quiz/Survey'),
 })
 const selfReportingType = ref(props.skill.selfReportingType && props.skill.selfReportingType !== 'Disabled' ? props.skill.selfReportingType : null)
@@ -293,7 +305,7 @@ const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
           :name-to-id-sync-enabled="!props.isEdit" />
       </div>
 
-      <div class="lg:max-w-10rem lg:ml-3 w-full">
+      <div class="lg:max-w-40 lg:ml-4 w-full">
         <SkillsNumberInput
           showButtons
           :disabled="isEdit"
@@ -303,18 +315,16 @@ const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
       </div>
     </div>
 
-    <div class="flex flex-wrap lg:flex-no-wrap">
+    <div class="flex flex-col md:flex-row gap-2 mt-2">
       <SkillsNumberInput
-        class="flex-1"
-        style="min-width: 14rem;"
+        class="flex-1 min-w-[13rem]"
         :min="1"
         :is-required="true"
         label="Point Increment"
         name="pointIncrement" />
 
       <SkillsNumberInput
-        class="flex-1 sm:ml-2"
-        style="min-width: 16rem;"
+        class="flex-1 min-w-[15rem]"
         showButtons
         :min="0"
         :is-required="true"
@@ -322,18 +332,18 @@ const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
         label="Occurrences to Completion"
         name="numPerformToCompletion" />
 
-      <total-points-field class="lg:ml-2" />
+      <total-points-field class="min-w-[8rem]"/>
     </div>
 
-    <time-window-input :disabled="occurrencesToCompletionAndTimeWindowDisabled" class="mb-3"/>
+    <time-window-input :disabled="occurrencesToCompletionAndTimeWindowDisabled" class="mb-4"/>
 
     <self-reporting-type-input @self-reporting-type-changed="selfReportingType = $event" :initial-skill-data="initialSkillData" :is-edit="isEdit" class="mt-1"/>
 
     <markdown-editor
-      class="mt-5"
+      class="mt-8"
       name="description" />
 
-    <help-url-input class="mt-3"
+    <help-url-input class="mt-4"
                     name="helpUrl" />
 
   </SkillsInputFormDialog>

@@ -16,6 +16,7 @@
 package skills.intTests.export
 
 import groovy.time.TimeCategory
+import org.apache.poi.ss.usermodel.Cell
 import org.apache.poi.ss.usermodel.Row
 import org.apache.poi.ss.usermodel.Sheet
 import org.apache.poi.ss.usermodel.Workbook
@@ -50,13 +51,8 @@ class ExportBaseIntSpec extends DefaultIntSpec {
 
     def setupSpec() {
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
-        use(TimeCategory) {
-            dates = (10..0).collect({
-                return it.days.ago;
-            })
-        }
     }
-    
+
     def setup() {
         rootSkillsService = createService(ultimateRoot, 'aaaaaaaa')
         if (!rootSkillsService.isRoot()) {
@@ -64,6 +60,17 @@ class ExportBaseIntSpec extends DefaultIntSpec {
         }
         isPkiMode = mockUserInfoService != null
         users = new ArrayList<>(getRandomUsers(4))
+
+        TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
+        use(TimeCategory) {
+            dates = (10..0).collect({
+                return it.days.ago;
+            })
+        }
+        today = new Date()
+        oneDayAgo = new Date()-1
+        fiveDaysAgo = new Date()-5
+        tenDaysAgo = new Date()-10
     }
 
     protected void validateExport(File file, List<List<String>> data) {
@@ -71,6 +78,7 @@ class ExportBaseIntSpec extends DefaultIntSpec {
         assert data
         Workbook workbook = WorkbookFactory.create(file)
         Sheet sheet = workbook.getSheetAt(0)
+        printSheet(sheet)
         assert sheet.getPhysicalNumberOfRows() == data.size()
 
         data.eachWithIndex { dataRow, rowIndex ->
@@ -78,6 +86,15 @@ class ExportBaseIntSpec extends DefaultIntSpec {
             for (int i = 0; i < dataRow.size(); i++) {
                 assert row.getCell(i).toString() == dataRow.get(i), "row: ${rowIndex} col: ${i} expected: ${dataRow.get(i)} actual: ${row.getCell(i).toString()}"
             }
+        }
+    }
+
+    void printSheet(Sheet sheet) {
+        for (Row row : sheet) {
+            for (Cell cell : row) {
+                print "${cell}, "
+            }
+            println ""
         }
     }
 
@@ -153,6 +170,12 @@ class ExportBaseIntSpec extends DefaultIntSpec {
                 found = res.body.completed.findAll({ it.type == type })?.find { it.level == level }
                 skillIndex++
             }
+        }
+    }
+
+    static String formatDate(Date date, Integer extraHours = 0) {
+        use(TimeCategory) {
+            return (date + extraHours.hour).format("M/d/yy H:mm")
         }
     }
 }

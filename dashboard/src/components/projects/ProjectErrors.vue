@@ -132,7 +132,7 @@ const isFlex = computed(() => responsive.md.value)
       </div>
     </sub-page-header>
 
-    <Card :pt="{ body: { class: 'p-0' }, content: { class: 'p-0' } }">
+    <Card :pt="{ body: { class: '!p-0' } }">
       <template #content>
         <SkillsDataTable :busy="loading"
                          :value="errors"
@@ -143,12 +143,12 @@ const isFlex = computed(() => responsive.md.value)
                          :rows="pageSize"
                          @page="pageChanged"
                          @sort="sortTable"
-                         :sort-field="sortBy"
-                         :sort-order="sortOrder"
+                         v-model:sort-field="sortBy"
+                         v-model:sort-order="sortOrder"
                          :rowsPerPageOptions="possiblePageSizes">
-          <Column header="Error" field="typeAndError" sortable  :class="{'flex': isFlex }">
+          <Column header="Error" field="errorType" sortable  :class="{'flex': isFlex }">
             <template #body="slotProps">
-              <div class="pl-3">
+              <div class="pl-4">
                 <div class="mb-2">
                   {{ slotProps.data.errorType }}
                 </div>
@@ -186,10 +186,10 @@ const isFlex = computed(() => responsive.md.value)
           </template>
 
           <template #empty>
-            <div class="flex justify-content-center flex-wrap" data-cy="emptyTable">
-              <i class="flex align-items-center justify-content-center mr-1 fas fa-exclamation-circle"
+            <div class="flex justify-center flex-wrap" data-cy="emptyTable">
+              <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle"
                  aria-hidden="true"></i>
-              <span class="flex align-items-center justify-content-center">There are no records to show
+              <span class="flex items-center justify-center">There are no records to show
               </span>
             </div>
           </template>

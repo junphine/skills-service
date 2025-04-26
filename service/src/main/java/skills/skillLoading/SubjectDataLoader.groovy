@@ -35,6 +35,7 @@ import skills.storage.repos.SkillDefWithExtraRepo
 import skills.storage.repos.UserAchievedLevelRepo
 import skills.storage.repos.UserPerformedSkillRepo
 import skills.storage.repos.UserPointsRepo
+import skills.storage.repos.UserQuizAttemptRepo
 
 @Component
 @Slf4j
@@ -66,6 +67,9 @@ class SubjectDataLoader {
     QuizToSkillDefRepo quizToSkillDefRepo
 
     @Autowired
+    UserQuizAttemptRepo userQuizAttemptRepo
+
+    @Autowired
     SkillApprovalRepo skillApprovalRepo
 
     @Autowired
@@ -85,6 +89,9 @@ class SubjectDataLoader {
         QuizDefParent.QuizType quizType
         String quizName
         Integer quizNumQuestions
+        UserQuizAttempt.QuizAttemptStatus lastQuizAttemptStatus
+        Date lastQuizAttemptDate
+        Integer lastQuizAttemptId
 
         SkillDependencySummary dependencyInfo
 
@@ -95,6 +102,7 @@ class SubjectDataLoader {
         SkillAttributesDef attributes
         Date expiredOn
         Date achievedOn
+        String approverUserIdForDisplay
     }
 
     static class SkillsData {
@@ -140,7 +148,8 @@ class SubjectDataLoader {
                 ) : null
             }
             new SkillsAndPoints(skillDef: skillDefAndUserPoints.skillDef, points: points, todaysPoints: todayPoints, dependencyInfo: dependencyInfo,
-                    copiedFromProjectName: skillDefAndUserPoints.copiedFromProjectName, approval: skillDefAndUserPoints.approval, attributes: skillDefAndUserPoints.attributes)
+                    copiedFromProjectName: skillDefAndUserPoints.copiedFromProjectName, approval: skillDefAndUserPoints.approval, attributes: skillDefAndUserPoints.attributes,
+                    approverUserIdForDisplay: skillDefAndUserPoints.approverUserIdForDisplay)
         }
 
         updateLastViewedSkill(skillsAndPoints, userId, projectId)
@@ -149,7 +158,7 @@ class SubjectDataLoader {
         skillsAndPoints = handleGroupDescriptions(projectId, skillsAndPoints, relationshipTypes)
         skillsAndPoints = handleBadges(projectId, skillsAndPoints)
         skillsAndPoints = handleSkillTags(projectId, skillsAndPoints)
-        skillsAndPoints = handleSkillQuizInfo(projectId, skillsAndPoints)
+        skillsAndPoints = handleSkillQuizInfo(skillsAndPoints, userId)
         skillsAndPoints = handleAchievements(projectId, userId, skillsAndPoints)
         skillsAndPoints = handleSkillExpirations(projectId, userId, skillsAndPoints)
 
@@ -235,27 +244,44 @@ class SubjectDataLoader {
     }
 
     @Profile
-    private List<SkillsAndPoints> handleSkillQuizInfo(String projectId, List<SkillsAndPoints> skillsAndPoints) {
-        if(projectId) {
-            List<SkillsAndPoints> allSkillAndPoints = (List<SkillsAndPoints>)skillsAndPoints
-                    .collect { SkillsAndPoints skAndPts -> (skAndPts.skillDef.type == SkillDef.ContainerType.SkillsGroup) ? skAndPts.children : skAndPts }
-                    .flatten()
-            List<SkillsAndPoints> quizBasedSkills = allSkillAndPoints.findAll { it.skillDef.selfReportingType == SkillDef.SelfReportingType.Quiz}
-            if (quizBasedSkills) {
-                List<Integer> skillRefIds = quizBasedSkills.collect { it.skillDef.copiedFrom ?: it.skillDef.id }
-                List<QuizToSkillDefRepo.QuizNameAndId> quizInfo = quizToSkillDefRepo.getQuizInfoSkillIdRef(skillRefIds)
-                Map<Integer, List<QuizToSkillDefRepo.QuizNameAndId>> bySkillRefId = quizInfo.groupBy() { it.getSkillRefId() }
-                quizBasedSkills.each {
-                    List<QuizToSkillDefRepo.QuizNameAndId> found = bySkillRefId[it.skillDef.copiedFrom ?: it.skillDef.id]
-                    if (found) {
-                        QuizToSkillDefRepo.QuizNameAndId quizNameAndId = found.first()
-                        it.quizId = quizNameAndId.quizId
-                        it.quizName = quizNameAndId.quizName
-                        it.quizType = quizNameAndId.quizType
-                        it.quizNumQuestions = quizNameAndId.numQuestions
-                    } else {
-                        log.error("Failed to find quiz for skill ref id [{}]. This is likely an issue with the data and a record is missing in the QuizToSkillDef or SkillDef's SelfReportingType.Quiz is not correct.", it.skillDef.id)
+    private List<SkillsAndPoints> handleSkillQuizInfo(List<SkillsAndPoints> skillsAndPoints, String userId) {
+        List<SkillsAndPoints> allSkillAndPoints = (List<SkillsAndPoints>)skillsAndPoints
+                .collect { SkillsAndPoints skAndPts -> (skAndPts.skillDef.type == SkillDef.ContainerType.SkillsGroup) ? skAndPts.children : skAndPts }
+                .flatten()
+        List<SkillsAndPoints> quizBasedSkills = allSkillAndPoints.findAll { it.skillDef.selfReportingType == SkillDef.SelfReportingType.Quiz}
+        if (quizBasedSkills) {
+            List<Integer> skillRefIds = quizBasedSkills.collect { it.skillDef.copiedFrom ?: it.skillDef.id }
+            List<QuizToSkillDefRepo.QuizNameAndId> quizInfo = quizToSkillDefRepo.getQuizInfoSkillIdRef(skillRefIds)
+
+            List<Integer> quizIds = quizInfo.findAll { it.getNumTextInputQuestions() > 0 }?.collect { it.getQuizRefId() }?.unique()?.toList()
+            Map<Integer, List<QuizToSkillDefRepo.QuizAttemptInfo>> latestAttemptsByQuizRefId = [:]
+            if (quizIds) {
+                Integer[] quizRefIdArray = quizIds.toArray(new Integer[0]);
+                List<QuizToSkillDefRepo.QuizAttemptInfo> quizAttempts = userQuizAttemptRepo.getLatestQuizAttemptsForUserByQuizIds(quizRefIdArray, userId)
+                if (quizAttempts) {
+                    latestAttemptsByQuizRefId = quizAttempts.groupBy { it.quizDefRefId }
+                }
+            }
+            Map<Integer, List<QuizToSkillDefRepo.QuizNameAndId>> bySkillRefId = quizInfo.groupBy() { it.getSkillRefId() }
+            quizBasedSkills.each {
+                List<QuizToSkillDefRepo.QuizNameAndId> found = bySkillRefId[it.skillDef.copiedFrom ?: it.skillDef.id]
+                if (found) {
+                    QuizToSkillDefRepo.QuizNameAndId quizNameAndId = found.first()
+                    it.quizId = quizNameAndId.quizId
+                    it.quizName = quizNameAndId.quizName
+                    it.quizType = quizNameAndId.quizType
+                    it.quizNumQuestions = quizNameAndId.configuredNumQuestionsQuizLength ?: quizNameAndId.numQuestions
+
+                    List<QuizToSkillDefRepo.QuizAttemptInfo> attempts = latestAttemptsByQuizRefId[quizNameAndId.quizRefId]
+                    if (attempts) {
+                        QuizToSkillDefRepo.QuizAttemptInfo lastAttempt = attempts.first()
+                        it.lastQuizAttemptStatus = lastAttempt.status
+                        it.lastQuizAttemptId = lastAttempt.attemptId
+                        it.lastQuizAttemptDate = lastAttempt.updated
                     }
+
+                } else {
+                    log.error("Failed to find quiz for skill ref id [{}]. This is likely an issue with the data and a record is missing in the QuizToSkillDef or SkillDef's SelfReportingType.Quiz is not correct.", it.skillDef.id)
                 }
             }
         }
@@ -351,6 +377,7 @@ class SubjectDataLoader {
         String copiedFromProjectName
         SkillApproval approval
         SkillAttributesDef attributes
+        String approverUserIdForDisplay
     }
 
     @Profile
@@ -363,9 +390,10 @@ class SubjectDataLoader {
             UserPoints userPoints = (it.length > 2 ? it[2] : null) as UserPoints
             SkillApproval skillApproval = (projectId ? (it.length > 4 ? it[4] : null) : (it.length > 3 ? it[3] : null)) as SkillApproval
             return new SkillDefAndUserPoints(
-                    skillDef: it[0] as SkillDef, points: userPoints, copiedFromProjectName: it.length > 3 ? (String)it[3] : null, approval: skillApproval, attributes: attributes
+                    skillDef: it[0] as SkillDef, points: userPoints, copiedFromProjectName: it.length > 3 ? (String)it[3] : null, approval: skillApproval, attributes: attributes, approverUserIdForDisplay: it.length > 5 ? it[5] : null
             )
         }
+
         return res?.findAll {it.skillDef.type != SkillDef.ContainerType.SkillsGroup || it.skillDef.totalPoints > 0 }.sort { it.skillDef.displayOrder }
     }
 

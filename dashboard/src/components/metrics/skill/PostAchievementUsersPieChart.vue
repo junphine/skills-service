@@ -31,7 +31,7 @@ const chartOptions = ref({
     toolbar: {
       show: true,
       offsetX: 0,
-      offsetY: -40,
+      offsetY: -75,
     },
   },
   colors: ['#17a2b8', '#28a745'],
@@ -74,7 +74,7 @@ const loadData = () => {
     </template>
     <template #content>
       <metrics-overlay :loading="loading" :has-data="hasData" no-data-msg="No achievements yet for this skill.">
-        <apexchart type="pie" height="350" :options="chartOptions" :series="series" class="mt-3"></apexchart>
+        <apexchart type="pie" height="350" :options="chartOptions" :series="series" class="mt-4"></apexchart>
       </metrics-overlay>
     </template>
   </Card>

@@ -14,15 +14,27 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js';
+import { useThemesHelper } from '@/components/header/UseThemesHelper.js';
 import MetricsService from "@/components/metrics/MetricsService.js";
 import SubjectsService from "@/components/subjects/SubjectsService.js";
-import SkillsSpinner from "@/components/utils/SkillsSpinner.vue";
 import NumberFormatter from '@/components/utils/NumberFormatter.js'
 import MetricsOverlay from '@/components/metrics/utils/MetricsOverlay.vue'
+import {useLayoutSizesState} from "@/stores/UseLayoutSizesState.js";
 
 const route = useRoute();
+const themeState = useSkillsDisplayThemeState()
+const themeHelper = useThemesHelper()
+const layoutSizes = useLayoutSizesState()
+
+const chartAxisColor = () => {
+  if (themeState.theme.charts.axisLabelColor) {
+    return themeState.theme.charts.axisLabelColor
+  }
+  return themeHelper.isDarkTheme ? 'white' : undefined
+}
 
 const loading = ref({
   subjects: true,
@@ -47,6 +59,9 @@ const chartOptions = ref({
       text: '# of users',
     },
     labels: {
+      style: {
+        colors: chartAxisColor()
+      },
       formatter(val) {
         return NumberFormatter.format(val);
       },
@@ -56,12 +71,20 @@ const chartOptions = ref({
   },
   xaxis: {
     type: 'datetime',
+    labels: {
+      style: {
+        colors: chartAxisColor()
+      }
+    }
   },
   dataLabels: {
     enabled: false,
   },
   legend: {
     showForSingleSeries: true,
+  },
+  tooltip: {
+    theme: themeHelper.isDarkTheme ? 'dark' : 'light',
   },
 });
 
@@ -113,26 +136,26 @@ const overlayMessage  = computed(() => {
 </script>
 
 <template>
-  <Card data-cy="subjectNumUsersPerLevelOverTime">
+  <Card data-cy="subjectNumUsersPerLevelOverTime" :style="`width: ${layoutSizes.tableMaxWidth}px;`">
     <template #header>
       <SkillsCardHeader title="Number of users for each level over time"></SkillsCardHeader>
     </template>
     <template #content>
-      <div class="flex gap-2 mb-5 flex-column sm:flex-row">
+      <div class="flex gap-2 mb-8 flex-col sm:flex-row">
         <BlockUI :blocked="loading.subjects" rounded="sm" opacity="0.5" spinner-variant="info" spinner-type="grow" spinner-small class="flex flex-1">
-          <Dropdown :options="subjects.available"
+          <Select :options="subjects.available"
                     v-model="subjects.selected"
                     optionLabel="text"
                     optionValue="value"
                     class="w-full"
                     placeholder="Select a Subject to plot"
                     data-cy="subjectNumUsersPerLevelOverTime-subjectSelector">
-          </Dropdown>
+          </Select>
         </BlockUI>
         <SkillsButton variant="outline-info" class="ml-2" :disabled="!subjects.selected" @click="loadChart" icon="fas fa-paint-roller" label="Generate" />
       </div>
-      <metrics-overlay :loading="loading.charts" :has-data="!isSeriesEmpty" :no-data-msg="overlayMessage" class="mt-4">
-        <apexchart type="area" height="300" :options="chartOptions" :series="series"></apexchart>
+      <metrics-overlay :loading="loading.charts" :has-data="!isSeriesEmpty" :no-data-msg="overlayMessage" class="mt-6">
+        <apexchart type="area" height="300" width="100%" :options="chartOptions" :series="series"></apexchart>
       </metrics-overlay>
     </template>
   </Card>

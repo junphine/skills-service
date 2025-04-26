@@ -24,7 +24,6 @@ import * as yup from 'yup';
 import { string } from 'yup';
 import Logo1 from '@/components/brand/Logo1.vue';
 import AccessService from '@/components/access/AccessService.js';
-import InputGroupAddon from 'primevue/inputgroupaddon';
 import {useEmailVerificationInfo} from "@/components/access/UseEmailVerificationInfo.js";
 
 const authState = useAuthState()
@@ -121,18 +120,16 @@ const onSubmit = handleSubmit((values) => {
 
 <template>
   <div>
-    <div class="grid justify-content-center text-center">
-      <div class="col md:col-8 lg:col-7 xl:col-4 mt-3" style="min-width: 20rem;">
-        <div class="mt-5">
-          <logo1 />
-          <div class="text-3xl mt-4 text-primary">
-            New <span v-if="isRootAccount">Root </span>Account
-          </div>
+    <div class="pt-10">
+      <div class="max-w-md lg:max-w-xl mx-auto" style="min-width: 20rem;">
+        <div class="text-center">
+          <logo1 class="mb-4" />
+          <Message :closable="false" role="heading" aria-level="1">New <span v-if="isRootAccount">Root </span>Account</Message>
         </div>
-        <Card v-if="!oAuthOnly" class="mt-3 text-left">
+        <Card v-if="!oAuthOnly" class="mt-4 text-left">
           <template #content>
             <form @submit="onSubmit">
-              <div class="w-full">
+              <div class="w-full flex flex-col gap-2">
                 <SkillsTextInput
                     :label="$t('First Name')"
                     size="small"
@@ -144,9 +141,7 @@ const onSubmit = handleSubmit((values) => {
                     id="firstName"
                     name="firstName">
                   <template #addOnBefore>
-                    <InputGroupAddon class="p-0 m-0">
-                      <i class="fas fa-user" aria-hidden="true"></i>
-                    </InputGroupAddon>
+                    <i class="fas fa-user" aria-hidden="true"></i>
                   </template>
                 </SkillsTextInput>
                   <SkillsTextInput
@@ -160,9 +155,7 @@ const onSubmit = handleSubmit((values) => {
                       id="lastName"
                       name="lastName">
                     <template #addOnBefore>
-                      <InputGroupAddon class="p-0 m-0">
-                        <i class="fas fa-user-tie" aria-hidden="true"></i>
-                      </InputGroupAddon>
+                      <i class="fas fa-user-tie" aria-hidden="true"></i>
                     </template>
                   </SkillsTextInput>
                   <SkillsTextInput
@@ -176,9 +169,7 @@ const onSubmit = handleSubmit((values) => {
                       id="email"
                       name="email">
                     <template #addOnBefore>
-                      <InputGroupAddon class="p-0 m-0">
-                        <i class="fas fa-envelope" aria-hidden="true"></i>
-                      </InputGroupAddon>
+                      <i class="fas fa-envelope" aria-hidden="true"></i>
                     </template>
                   </SkillsTextInput>
                   <SkillsTextInput
@@ -193,9 +184,7 @@ const onSubmit = handleSubmit((values) => {
                       id="password"
                       name="password">
                     <template #addOnBefore>
-                      <InputGroupAddon class="p-0 m-0">
-                        <i class="fas fa-key" aria-hidden="true"></i>
-                      </InputGroupAddon>
+                      <i class="fas fa-key" aria-hidden="true"></i>
                     </template>
                   </SkillsTextInput>
                   <SkillsTextInput
@@ -210,13 +199,11 @@ const onSubmit = handleSubmit((values) => {
                       id="passwordConfirmation"
                       name="passwordConfirmation">
                     <template #addOnBefore>
-                      <InputGroupAddon class="p-0 m-0">
-                        <i class="fas fa-key" aria-hidden="true"></i>
-                      </InputGroupAddon>
+                      <i class="fas fa-key" aria-hidden="true"></i>
                     </template>
                   </SkillsTextInput>
               </div>
-              <div class="flex justify-content-end mt-2">
+              <div class="flex justify-center my-2">
                 <SkillsButton variant="outline-success"
                               type="submit"
                               label="Create Account"
@@ -231,8 +218,8 @@ const onSubmit = handleSubmit((values) => {
               </div>
               <div v-if="!isRootAccount" class="p-1">
                 <hr/>
-                <p class="text-center"><small>Already have an account?
-                  <strong><router-link :to="{ name: 'Login' }">Sign in</router-link></strong></small>
+                <p class="text-center mt-2"><small>Already have an account?
+                  <strong class="underline"><router-link :to="{ name: 'Login' }">Sign in</router-link></strong></small>
                 </p>
               </div>
             </form>
@@ -240,12 +227,12 @@ const onSubmit = handleSubmit((values) => {
         </Card>
 
         <Card v-if="oAuthProviders && oAuthProviders.length > 0"
-              class="mt-3"
+              class="mt-4"
               data-cy="oAuthProviders">
           <template #content>
             <div v-for="oAuthProvider in oAuthProviders"
                  :key="oAuthProvider.registrationId"
-                 class="col-12 mb-3">
+                 class="col-span-12 mb-4">
               <Button
                   class="w-full text-center"
                   outlined

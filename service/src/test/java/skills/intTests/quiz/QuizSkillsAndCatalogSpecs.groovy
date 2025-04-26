@@ -49,7 +49,6 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
 
         when:
         def res = skillsService.getCatalogSkills(proj2.projectId, 10, 1, "name")
-        println JsonOutput.prettyPrint(JsonOutput.toJson(res))
         then:
         res.data.selfReportingType == [QuizDefParent.QuizType.Quiz.toString(), null, null]
     }
@@ -148,7 +147,6 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
         def apiSkill1WithSubj = skillsService.getSingleSkillSummaryWithSubject(userId, proj2.projectId, proj2_subj.subjectId, skills[0].skillId)
         def apiSkill4 = skillsService.getSingleSkillSummary(userId, proj2.projectId, skills[3].skillId)
 
-        println JsonOutput.prettyPrint(JsonOutput.toJson(apiSkills))
         then:
         skillsRes.selfReportingType == [SkillDef.SelfReportingType.Quiz.toString(), SkillDef.SelfReportingType.HonorSystem.toString(), null, SkillDef.SelfReportingType.Quiz.toString()]
         skillsRes.quizId == [quiz.quizId, null, null, survey.quizId]
@@ -243,7 +241,6 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
         def apiSkills_t1 = skillsService.getSkillSummary(userId, proj2.projectId, proj2_subj.subjectId)
         def p1_apiSkills_t1 = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
         def apiSkill2_t1 = skillsService.getSingleSkillSummary(userId, proj2.projectId, skills[1].skillId)
-        println JsonOutput.prettyPrint(JsonOutput.toJson(apiSkills_t1))
         then:
         skillsRes_t0.selfReportingType == [SkillDef.SelfReportingType.Quiz.toString(), SkillDef.SelfReportingType.HonorSystem.toString(), null, SkillDef.SelfReportingType.Quiz.toString()]
         skillsRes_t0.quizId == [quiz.quizId, null, null, survey.quizId]
@@ -454,7 +451,6 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
         def apiSkills_t1 = skillsService.getSkillSummary(userId, proj2.projectId, proj2_subj.subjectId)
         def p1_apiSkills_t1 = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
         def apiSkill1_t1 = skillsService.getSingleSkillSummary(userId, proj2.projectId, skills[0].skillId)
-        println JsonOutput.prettyPrint(JsonOutput.toJson(apiSkills_t1))
         then:
         skillsRes_t0.selfReportingType == [SkillDef.SelfReportingType.Quiz.toString(), SkillDef.SelfReportingType.HonorSystem.toString(), null, SkillDef.SelfReportingType.Quiz.toString()]
         skillsRes_t0.quizId == [quiz.quizId, null, null, survey.quizId]
@@ -560,7 +556,6 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
         def apiSkills_t1 = skillsService.getSkillSummary(userId, proj2.projectId, proj2_subj.subjectId)
         def p1_apiSkills_t1 = skillsService.getSkillSummary(userId, proj.projectId, subj.subjectId)
         def apiSkill1_t1 = skillsService.getSingleSkillSummary(userId, proj2.projectId, skills[0].skillId)
-        println JsonOutput.prettyPrint(JsonOutput.toJson(apiSkills_t1))
         then:
         skillsRes_t0.selfReportingType == [SkillDef.SelfReportingType.Quiz.toString(), SkillDef.SelfReportingType.HonorSystem.toString(), null, SkillDef.SelfReportingType.Quiz.toString()]
         skillsRes_t0.quizId == [quiz.quizId, null, null, survey.quizId]
@@ -642,7 +637,6 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
         skillsService.finalizeSkillsImportFromCatalog(proj2.projectId)
         String userId = getRandomUsers(1).first()
         SkillsService otherUserService = createService(userId)
-        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
         when:
         def userOverallProgress_t0 = skillsService.getSkillSummary(otherUserService.userName, proj2.projectId)
         def userOverallProgressProj2_t0 = skillsService.getSkillSummary(otherUserService.userName, proj2.projectId)
@@ -651,8 +645,8 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
         def p2_skillRes_t0 = skillsService.getSingleSkillSummary(otherUserService.userName, proj2.projectId, skills[0].skillId)
 
         def quizAttempt =  otherUserService.startQuizAttempt(quiz.quizId).body
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id)
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[0].id)
         def gradedQuizAttempt = otherUserService.completeQuizAttempt(quiz.quizId, quizAttempt.id).body
         waitForAsyncTasksCompletion.waitForAllScheduleTasks()
 
@@ -690,10 +684,9 @@ class QuizSkillsAndCatalogSpecs extends DefaultIntSpec {
         String userId = getRandomUsers(1).first()
         SkillsService otherUserService = createService(userId)
 
-        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
         def quizAttempt =  otherUserService.startQuizAttempt(quiz.quizId).body
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[0].answerOptions[0].id)
-        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizInfo.questions[1].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id)
+        otherUserService.reportQuizAnswer(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[0].id)
         def gradedQuizAttempt = otherUserService.completeQuizAttempt(quiz.quizId, quizAttempt.id).body
 
         def proj = createProject(1)

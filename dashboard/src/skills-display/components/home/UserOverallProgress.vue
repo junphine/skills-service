@@ -24,6 +24,7 @@ import SkillLevel from '@/skills-display/components/progress/MySkillLevel.vue'
 import { useSkillsDisplaySubjectState } from '@/skills-display/stores/UseSkillsDisplaySubjectState.js'
 import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
 import VerticalProgressBar from '@/skills-display/components/progress/VerticalProgressBar.vue'
+import AchievementCelebration from "@/skills-display/components/progress/celebration/AchievementCelebration.vue";
 
 const props = defineProps({
   isSubject: {
@@ -61,9 +62,11 @@ const levelStats = computed(() => {
 </script>
 
 <template>
-  <Card>
+  <div>
+    <achievement-celebration :user-progress="userProgress"/>
+    <Card>
     <template #content>
-      <div class="flex flex-column md:flex-row gap-5 align-items-stretch text-center">
+      <div class="flex flex-col lg:flex-row gap-8 items-stretch text-center">
         <div class="flex-1">
           <div>
             <circle-progress
@@ -119,22 +122,23 @@ const levelStats = computed(() => {
           </circle-progress>
         </div>
       </div>
-      <div class="mt-6 mx-5 flex justify-content-center">
-        <div class="w-11">
+      <div class="mt-9 mx-8 mb-4 flex justify-center sd-theme-achieved-skills-progress" data-cy="achievedSkillsProgress">
+        <div class="w-11/12">
         <div class="flex mb-1" :aria-label="`Achieved ${skillsAchieved} out of ${totalSkills} skills`">
           <div class="flex-1 text-lg font-medium">Achieved Skills</div>
-          <div><span class="text-color-warn font-medium sd-theme-primary-color" data-cy="numAchievedSkills">{{skillsAchieved}}</span> / <span data-cy="numTotalSkills">{{totalSkills}}</span></div>
+          <div><span class="text-orange-700 dark:text-orange-400 font-medium sd-theme-primary-color" data-cy="numAchievedSkills">{{skillsAchieved}}</span> / <span data-cy="numTotalSkills">{{totalSkills}}</span></div>
         </div>
         <vertical-progress-bar
           :total-progress="skillsPercentAchieved"
           :barSize="8"
-          beforeTodayBarColor="bg-primary"
+          :disable-daily-color="true"
           :aria-label="`Achieved ${skillsAchieved} out of ${totalSkills} skills`"
         />
         </div>
       </div>
     </template>
   </Card>
+  </div>
 </template>
 
 <style scoped>

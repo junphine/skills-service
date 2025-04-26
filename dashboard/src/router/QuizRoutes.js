@@ -22,9 +22,11 @@ import QuizRunsHistoryPage from '@/components/quiz/runsHistory/QuizRunsHistoryPa
 import QuizSingleRunPage from '@/components/quiz/runsHistory/QuizSingleRunPage.vue';
 import QuizAccessPage from '@/components/quiz/access/QuizAccessPage.vue';
 import UserActionsPage from "@/components/userActions/UserActionsPage.vue";
+import GradeQuizzesPage  from "@/components/quiz/grade/GradeQuizzesPage.vue";
 
 const createQuizRoutes = () => {
   return {
+    name: 'QuizOverview',
     path: '/administrator/quizzes/:quizId',
     component: QuizPage,
     meta: {
@@ -54,6 +56,16 @@ const createQuizRoutes = () => {
         },
       },
     }, {
+      name: 'GradeQuizzesPage',
+      path: 'grading',
+      component: GradeQuizzesPage,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Grade Quizzes',
+        },
+      },
+    },{
       name: 'QuizSkillsPage',
       path: 'skills',
       component: QuizSkillsPage,

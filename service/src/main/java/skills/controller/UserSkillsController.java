@@ -63,8 +63,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 
 @CrossOrigin(allowCredentials = "true", originPatterns = {"*"})
 @RestController
@@ -126,6 +128,9 @@ class UserSkillsController {
 
     @Value("${skills.config.allowedAttachmentMimeTypes}")
     List<MediaType> allowedAttachmentMimeTypes;
+
+    @Value("${skills.config.allowedVideoUploadMimeTypes}")
+    List<MediaType> allowedMediaUploadTypes;
 
     @Value("${skills.config.maxAttachmentSize:10MB}")
     DataSize maxAttachmentSize;
@@ -222,8 +227,9 @@ class UserSkillsController {
     public List<SkillDescription> getSubjectSkillsDescriptions(@PathVariable("projectId") String projectId,
                                                                @PathVariable("subjectId") String subjectId,
                                                                @RequestParam(name = "userId", required = false) String userIdParam,
-                                                               @RequestParam(name = "version", required = false) Integer version) {
-        String userId = userInfoService.getUserName(userIdParam, true);
+                                                               @RequestParam(name = "version", required = false) Integer version,
+                                                               @RequestParam(name = "idType", required = false) String idType) {
+        String userId = userInfoService.getUserName(userIdParam, true, idType);
         return skillsLoader.loadSubjectDescriptions(projectId, subjectId, userId, getProvidedVersionOrReturnDefault(version));
     }
 
@@ -254,6 +260,13 @@ class UserSkillsController {
                                         @RequestParam(name = "idType", required = false) String idType) {
         String userId = userInfoService.getUserName(userIdParam, true, idType);
         return skillsLoader.loadSkillSummary(projectId, userId, null, skillId, subjectId);
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/description", method = RequestMethod.GET)
+    @ResponseBody
+    public Map<String, String> getSkillDescription(@PathVariable("projectId") String projectId,
+                                                   @PathVariable("skillId") String skillId) {
+        return skillsLoader.loadGroupDescription(projectId, skillId);
     }
 
     /**
@@ -525,7 +538,7 @@ class UserSkillsController {
         return videoCaptionsService.getVideoTranscript(projectId, skillId);
     }
 
-    @RequestMapping(value = "/download/{uuid}", method = RequestMethod.GET)
+    @RequestMapping(value = "/download/{uuid}", method = RequestMethod.GET, produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     @Transactional(readOnly = true)
     public void download(@PathVariable("uuid") String uuid,
                          HttpServletResponse response) {
@@ -547,10 +560,11 @@ class UserSkillsController {
             if (!StringUtils.equalsIgnoreCase(attachment.getContentType(), "application/pdf")) {
                 response.setHeader("Content-Disposition", "attachment; filename=\"" + attachment.getFilename() + "\"");
             }
-            if (StringUtils.equalsIgnoreCase(attachment.getContentType(), "video/mp4") || StringUtils.equalsIgnoreCase(attachment.getContentType(), "video/webm")) {
-                response.setContentType(attachment.getContentType());
+
+            String contentType = attachment.getContentType().toLowerCase();
+            if (AttachmentValidator.isAllowedAttachmentMimeTypeBoolean(contentType, allowedMediaUploadTypes)) {
                 response.setHeader("Content-Length", attachment.getSize().toString());
-                Long attachmentSize = attachment.getSize() - 1;
+                long attachmentSize = attachment.getSize() - 1;
                 response.setHeader("Content-Range", "bytes 0-" + attachmentSize + "/" + attachment.getSize().toString());
                 response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
             }

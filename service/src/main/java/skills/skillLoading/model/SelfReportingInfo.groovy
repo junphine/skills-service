@@ -15,8 +15,6 @@
  */
 package skills.skillLoading.model
 
-import skills.storage.model.SkillDef
-
 class SelfReportingInfo {
 
     Integer approvalId
@@ -28,10 +26,18 @@ class SelfReportingInfo {
     // only applicable to when selfReportingType == SelfReportingType.Approval
     Long requestedOn
     Long rejectedOn
-    String rejectionMsg
+    String message
 
     // only applicable to when selfReportingType == SelfReportingType.Quiz
     String quizId
     String quizName
     Integer numQuizQuestions
+
+    Boolean quizNeedsGrading = false
+    Date quizNeedsGradingAttemptDate
+    Boolean quizOrSurveyPassed = false
+    Integer quizAttemptId = null
+
+    String approvedBy
+    boolean approved
 }

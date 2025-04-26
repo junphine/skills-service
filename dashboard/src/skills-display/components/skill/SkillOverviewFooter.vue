@@ -23,6 +23,10 @@ import { useSkillsDisplaySubjectState } from '@/skills-display/stores/UseSkillsD
 import JustificationInput from '@/skills-display/components/skill/JustificationInput.vue'
 import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
 import { useLog } from '@/components/utils/misc/useLog.js'
+import QuizFooter from "@/skills-display/components/skill/QuizFooter.vue";
+import ApprovalHistory from '@/skills-display/components/skill/ApprovalHistory.vue';
+import QuizType from '@/skills-display/components/quiz/QuizType.js';
+import { useSelfReportHelper } from '@/skills-display/UseSelfReportHelper.js';
 
 const props = defineProps({
   skill: Object
@@ -34,6 +38,7 @@ const skillsDisplayInfo = useSkillsDisplayInfo()
 const skillsDisplayService = useSkillsDisplayService()
 const attributes = useSkillsDisplayAttributesState()
 const skillState = useSkillsDisplaySubjectState()
+const selfReportHelper = useSelfReportHelper()
 const log = useLog()
 
 const selfReport = ref({
@@ -47,12 +52,24 @@ const isCompleted = computed(() => skillInternal.value.points === skillInternal.
 const selfReportDisabled = computed(() => (isCompleted.value && !isMotivationalSkill.value) || isPendingApproval())
 const isHonorSystem = computed(() => skillInternal.value.selfReporting && skillInternal.value.selfReporting.type === 'HonorSystem')
 const isApprovalRequired = computed(() => skillInternal.value.selfReporting && skillInternal.value.selfReporting.type === 'Approval')
+const isQuizSkill = computed(() => skillInternal.value.selfReporting && QuizType.isQuiz(skillInternal.value.selfReporting.type))
+const isVideo = computed(() => skillInternal.value.selfReporting.type === 'Video')
 const isJustificationRequired = computed(() => skillInternal.value.selfReporting && skillInternal.value.selfReporting.justificationRequired)
 const isRejected = computed(() => skillInternal.value.selfReporting && skillInternal.value.selfReporting.rejectedOn !== null && skillInternal.value.selfReporting.rejectedOn !== undefined)
-const isQuizSkill = computed(() => skillInternal.value && skillInternal.value.selfReporting && skillInternal.value.selfReporting.type === 'Quiz')
-const isSurveySkill = computed(() => skillInternal.value && skillInternal.value.selfReporting && skillInternal.value.selfReporting.type === 'Survey')
-const isQuizOrSurveySkill = computed(() => isQuizSkill.value || isSurveySkill.value)
 const isMotivationalSkill = computed(() => skillInternal.value && skillInternal.value.isMotivationalSkill)
+const showTimeline = computed(() => {
+  if (skillInternal.value.approvalHistory && skillInternal.value.approvalHistory.length > 0) {
+    if (isApprovalRequired.value) {
+      return true;
+    }
+    if (isQuizSkill.value) {
+      return skillInternal.value.approvalHistory.length > 1
+          || (skillInternal.value.approvalHistory.length === 1 &&
+              selfReportHelper.isFailed(skillInternal.value.approvalHistory[0].eventStatus));
+    }
+  }
+  return false
+})
 
 const showApprovalJustification = ref(false)
 const requestApprovalLoading = ref(false)
@@ -65,18 +82,9 @@ const displayApprovalJustificationInput = () => {
   showApprovalJustification.value = true
   // nextTick(() => justificationInput.value.focusOnMarkdownEditor())
 }
-const navToQuiz = () => {
-  skillsDisplayInfo.routerPush('quizPage',
-    {
-      skillInternal: skillInternal.value.subjectId,
-      skillId: skillInternal.value.skillId,
-      quizId: skillInternal.value.selfReporting.quizId,
-    }
-  )
-}
+
 const isPendingApproval = () => {
-  const res = skillInternal.value.selfReporting && skillInternal.value.selfReporting.requestedOn !== null && skillInternal.value.selfReporting.requestedOn !== undefined && !isRejected.value
-  return res
+  return skillInternal.value.selfReporting && skillInternal.value.selfReporting.requestedOn !== null && skillInternal.value.selfReporting.requestedOn !== undefined && !isRejected.value
 }
 const selfReportConfigured = () => {
   return skillInternal.value.selfReporting && skillInternal.value.selfReporting && skillInternal.value.selfReporting.enabled
@@ -101,7 +109,8 @@ const removeRejection = () => {
     removeRejectionLoading.value = false
   })
 }
-
+const firstReport = ref(skillInternal?.value?.points === 0);
+const isRetention = ref(false);
 const errNotification = ref({
   enable: false,
   msg: ''
@@ -112,6 +121,8 @@ const reportSkill = (approvalRequestedMsg) => {
 
   requestApprovalLoading.value = true
 
+  firstReport.value = skillInternal.value.points === 0;
+  isRetention.value = skillInternal.value.points === skillInternal.value.totalPoints
   // selfReport.value.msgHidden = true
   // selfReport.value.res = null
   skillsDisplayService.reportSkill(skillInternal.value.skillId, approvalRequestedMsg)
@@ -123,13 +134,22 @@ const reportSkill = (approvalRequestedMsg) => {
       } else {
         if (skillInternal.value.selfReporting) {
           skillInternal.value.selfReporting.rejectedOn = null
-          skillInternal.value.selfReporting.rejectionMsg = null
+          skillInternal.value.selfReporting.message = null
         }
 
         selfReport.value.msgHidden = false
         selfReport.value.res = res
         if (!isAlreadyPerformed() && isApprovalRequired.value) {
-          skillInternal.value.selfReporting.requestedOn = new Date()
+          const requestedOn = new Date()
+          skillInternal.value.selfReporting.requestedOn = requestedOn
+          if (skillInternal.value.approvalHistory) {
+            skillInternal.value.approvalHistory.unshift({
+              id: '-1',
+              eventTime : requestedOn.getTime(),
+              eventStatus: 'Approval Requested',
+              description: approvalRequestedMsg
+            })
+          }
         }
         updateEarnedPoints(res)
         if (res.explanation.includes('Skill Achievement retained')) {
@@ -181,48 +201,16 @@ defineExpose({
 
 <template>
   <div>
-    <div v-if="isQuizOrSurveySkill && selfReportAvailable" class="mb-2 alert alert-info">
-      <Message :closable="false">
-        <template #container>
-          <div class="p-3">
-            <div class="flex gap-2 align-items-center">
-              <div>
-                <i class="fas fa-user-check text-2xl" aria-hidden="true"></i>
-              </div>
-              <div class="flex-1" data-cy="quizAlert">
-                {{ isSurveySkill ? 'Complete' : 'Pass' }} the<span
-                v-if="skillInternal.selfReporting.numQuizQuestions && skillInternal.selfReporting.numQuizQuestions > 0">&nbsp;{{
-                  skillInternal.selfReporting.numQuizQuestions
-                }}-question</span>&nbsp;<b>{{ skillInternal.selfReporting.quizName
-                }}</b>&nbsp;{{ isSurveySkill ? 'Survey' : 'Quiz' }} and earn <span class="font-size-1"><Tag
-                severity="info">{{ numFormat.pretty(skillInternal.totalPoints) }}</Tag></span> points!
-              </div>
-              <SkillsButton
-                :label="isQuizSkill ? 'Take Quiz' : 'Complete Survey'"
-                icon="far fa-arrow-alt-circle-right"
-                v-if="selfReportAvailable && isQuizOrSurveySkill"
-                class="skills-theme-btn"
-                :disabled="selfReportDisabled"
-                severity="info"
-                outlined
-                size="small"
-                @click="navToQuiz"
-                data-cy="takeQuizBtn" />
-            </div>
-          </div>
-        </template>
-      </Message>
-    </div>
-    <Message v-if="isHonorSystem && selfReportAvailable" class="mb-2 alert alert-info">
+    <quiz-footer :skill="skillInternal"/>
+    <Message v-if="isHonorSystem && selfReportAvailable && !isCompleted" class="mb-2 alert alert-info">
       <template #container>
-        <div class="flex gap-2 p-3 align-content-center">
+        <div class="flex gap-2 p-4 content-center">
           <div>
             <i class="fas fa-user-shield text-2xl" aria-hidden="true"></i>
           </div>
-          <div class="flex-1 font-italic pt-1" data-cy="honorSystemAlert">
-            This skill can be submitted under the <span class="font-size-1">Honor System</span>, claim <span
-            class="font-size-1"><Tag severity="info">{{ numFormat.pretty(skillInternal.pointIncrement)
-            }}</Tag></span> points once you've completed the skill.
+          <div class="flex-1 italic pt-1" data-cy="honorSystemAlert">
+            This skill can be submitted under the <span class="font-size-1">Honor System</span>, claim <span class="font-size-1">
+            <Tag severity="info">{{ numFormat.pretty(skillInternal.pointIncrement) }}</Tag></span> points once you've completed the skill.
           </div>
           <div class="col-auto">
             <SkillsButton
@@ -241,12 +229,38 @@ defineExpose({
         </div>
       </template>
     </Message>
+    <Message v-else-if="isHonorSystem && selfReportAvailable && !firstReport && isMotivationalSkill && skillInternal.expirationDate">
+      <template #container>
+        <div class="flex gap-2 p-4 content-center">
+          <div>
+            <i class="fas fa-user-shield text-2xl" aria-hidden="true"></i>
+          </div>
+          <div class="flex-1 italic pt-1" data-cy="honorSystemAlert">
+            This skill's achievement expires <span class="font-semibold">{{ timeUtils.relativeTime(skillInternal.expirationDate) }}</span>, but your <span class="font-size-1">
+            <Tag severity="info">{{ numFormat.pretty(skillInternal.totalPoints) }}</Tag></span> points can be retained by performing another <span class="font-size-1">Honor System</span> request.
+          </div>
+          <div class="col-auto">
+            <SkillsButton
+                label="Claim Points"
+                icon="fas fa-check-double"
+                class="skills-theme-btn"
+                :disabled="selfReportDisabled"
+                severity="info"
+                outlined
+                size="small"
+                :loading="requestApprovalLoading"
+                @click="reportSkill(null)"
+                data-cy="claimPointsBtn" />
+          </div>
+        </div>
+      </template>
+    </Message>
     <Message :closable="false"
-             v-if="isApprovalRequired && selfReportAvailable && !selfReportDisabled && !isRejected"
+             v-if="(firstReport || !isCompleted) && isApprovalRequired && selfReportAvailable && !selfReportDisabled && !isRejected"
              class="mb-2">
       <template #container>
-        <div class="p-3">
-          <div class="flex gap-2 sm:align-items-center flex-column sm:flex-row">
+        <div class="p-4">
+          <div class="flex gap-2 sm:items-center flex-col sm:flex-row">
             <div>
               <i class="fas fa-traffic-light text-2xl" aria-hidden="true"></i>
             </div>
@@ -273,7 +287,7 @@ defineExpose({
           <BlockUI :blocked="requestApprovalLoading">
             <justification-input v-if="showApprovalJustification"
                                  ref="justificationInput"
-                                 class="mt-3"
+                                 class="mt-4"
                                  @report-skill="reportSkill"
                                  @cancel="showApprovalJustification = false; focusOnId('beginRequestBtn')"
                                  :skill="skillInternal"
@@ -284,10 +298,51 @@ defineExpose({
         </div>
       </template>
     </Message>
+    <Message v-else-if="(!firstReport || isCompleted) && isApprovalRequired && selfReportAvailable && !selfReportDisabled && !isRejected && isMotivationalSkill">
+      <template #container>
+        <div class="p-4">
+          <div class="flex gap-2 sm:items-center flex-col sm:flex-row">
+            <div>
+              <i class="fas fa-traffic-light text-2xl" aria-hidden="true"></i>
+            </div>
+            <div class="flex-1" data-cy="requestApprovalAlert">
+              This skill's achievement expires <span class="font-semibold">{{ timeUtils.relativeTime(skillInternal.expirationDate) }}</span>, but your <span class="font-size-1">
+              <Tag severity="info">{{ numFormat.pretty(skillInternal.totalPoints) }}</Tag></span> points can be retained by submitting another <span class="font-size-1">approval</span> request.
+            </div>
+            <div class="">
+              <SkillsButton
+                  label="Begin Request"
+                  icon="far fa-arrow-alt-circle-right"
+                  v-if="!showApprovalJustification"
+                  id="beginRequestBtn"
+                  class="skills-theme-btn"
+                  :disabled="selfReportDisabled"
+                  severity="info"
+                  outlined
+                  size="small"
+                  @click="displayApprovalJustificationInput"
+                  data-cy="requestApprovalBtn" />
+            </div>
+          </div>
+          <BlockUI :blocked="requestApprovalLoading">
+            <justification-input v-if="showApprovalJustification"
+                                 ref="justificationInput"
+                                 class="mt-4"
+                                 @report-skill="reportSkill"
+                                 @cancel="showApprovalJustification = false; focusOnId('beginRequestBtn')"
+                                 :skill="skillInternal"
+                                 :is-approval-required="isApprovalRequired"
+                                 :is-honor-system="isHonorSystem"
+                                 :is-justitification-required="isJustificationRequired" />
+          </BlockUI>
+        </div>
+      </template>
+    </Message>
+
     <Message :closable="false"
              icon="far fa-clock"
              severity="warn"
-             v-if="isPendingApproval() && selfReport.msgHidden" class="mb-2 alert alert-info font-italic"
+             v-if="isPendingApproval() && !showTimeline && selfReport.msgHidden" class="mb-2 alert alert-info italic"
              data-cy="pendingApprovalStatus">
       This skill is <span class="font-size-1 normal-font">pending approval</span>.
       Submitted {{ timeUtils.relativeTime(skillInternal.selfReporting.requestedOn) }}
@@ -296,16 +351,14 @@ defineExpose({
       <BlockUI :blocked="removeRejectionLoading">
         <Message severity="error">
           <template #container>
-            <div class="flex p-3 align-content-center">
-              <div class="flex-1 align-content-center">
-                <i class="fas fa-heart-broken text-xl" aria-hidden=""></i>
+            <div class="flex p-4 content-center">
+              <div class="flex-1 content-center">
+                <i class="fas fa-heart-broken text-xl" aria-hidden="true"></i>
                 Unfortunately your request from
                 <b>{{ timeUtils.formatDate(skillInternal.selfReporting.requestedOn, 'MM/DD/YYYY') }}</b> was rejected
                 <span
                   class="text-info">{{ timeUtils.relativeTime(skillInternal.selfReporting.rejectedOn) }}</span>.
-                <span
-                  v-if="skillInternal.selfReporting.rejectionMsg">The reason is: <b>"{{ skillInternal.selfReporting.rejectionMsg
-                  }}"</b></span>
+                <span v-if="skillInternal.selfReporting.message">The reason is: <b>"{{ skillInternal.selfReporting.message}}"</b></span>
               </div>
               <div class="">
                 <SkillsButton
@@ -331,19 +384,15 @@ defineExpose({
           <Message
             icon="fas fa-birthday-cake"
             @close="selfReport.res = null"
-            v-if="isPointsEarned && !isMotivationalSkill"
+            v-if="isPointsEarned && (!isMotivationalSkill || !isRetention)"
             severity="success">
             Congrats! You just earned
             <Tag>{{ selfReport.res.pointsEarned }}</Tag>
             points<span
             v-if="isCompleted"> and <b>completed</b> the {{ attributes.skillDisplayName.toLowerCase() }}</span>!
           </Message>
-          <Message v-if="isPointsEarned && isMotivationalSkill"
-                   severity="success"
-                   icon="fas fa-birthday-cake"
-          >
-            Congratulations! You just
-            retained your <Tag>{{ skillInternal.totalPoints }}</Tag> points!
+          <Message v-if="isPointsEarned && isMotivationalSkill && !firstReport && isRetention" severity="success" icon="fas fa-birthday-cake">
+            Congratulations! You just retained your <Tag>{{ skillInternal.totalPoints }}</Tag> points!
           </Message>
           <Message
             v-if="selfReport.res && !isPointsEarned && (isAlreadyPerformed() || !isApprovalRequired)"
@@ -366,27 +415,21 @@ defineExpose({
             </div>
           </Message>
         </div>
-        <!--        <div class="col-auto">-->
-        <!--          <SkillsButton-->
-        <!--            icon="fas fa-times-circle"-->
-        <!--            aria-label="Close"-->
-        <!--            @click="selfReport.msgHidden = true"-->
-        <!--            data-cy="dismissSuccessfulSubmissionBtn" />-->
-        <!--        </div>-->
       </div>
     </div>
 
-    <div class=" pt-2">
-        <div class="btn-group" role="group" aria-label="Skills Buttons">
-          <a v-if="skillInternal.description && skillInternal.description.href" :href="skillInternal.description.href"
+    <ApprovalHistory v-if="showTimeline" :events="skillInternal.approvalHistory" />
+
+    <div v-if="skillInternal.description && skillInternal.description.href"
+         class="pt-5" >
+          <a  :href="skillInternal.description.href"
              target="_blank" rel="noopener" class="" tabindex="-1">
-            <Button outlined size="small">
+            <SkillsButton outlined size="small" aria-label="Learn More Resource">
               <i class="fas fa-question-circle mr-1" aria-hidden="true"></i>
               Learn More
               <i class="fas fa-external-link-alt ml-1" aria-hidden="true"></i>
-            </Button>
+            </SkillsButton>
           </a>
-        </div>
     </div>
   </div>
 </template>

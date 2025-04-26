@@ -50,7 +50,11 @@ const props = defineProps({
   idSuffix: {
     type: String,
     default: ''
-  }
+  },
+  showIdField: {
+    type: Boolean,
+    default: true
+  },
 })
 const emit = defineEmits(['keydown-enter'])
 
@@ -75,7 +79,7 @@ const isSubmitting = useIsSubmitting()
 <template>
   <div :class="{ 'flex flex-wrap md:flex-nowrap' : isInline }">
     <div :class="{ 'md:mr-1 flex-1' : isInline }">
-      <div class="flex gap-3 flex-column sm:flex-row">
+      <div class="flex gap-4 flex-col sm:flex-row">
         <slot name="beforeName"></slot>
         <div class="flex-1">
           <SkillsTextInput
@@ -91,7 +95,7 @@ const isSubmitting = useIsSubmitting()
         </div>
       </div>
     </div>
-    <div :class="{ 'md:ml-1 w-full md:w-min lg:w-auto' : isInline }" class="">
+    <div v-show="showIdField" :class="{ 'md:ml-1 w-full md:w-min lg:w-auto' : isInline }" class="">
       <SkillsIdInput
         ref="skillsIdInput"
         style="min-width: 14rem;"

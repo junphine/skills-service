@@ -50,15 +50,19 @@ interface QuizDefRepo extends CrudRepository<QuizDef, Long> {
         String getQuizType()
 
         Date getCreated();
+
+        String getUserCommunityEnabled()
     }
     @Query(value="""
-                SELECT 
+                SELECT DISTINCT
                     qd.quiz_id AS quizId,
                     qd.name AS name,
                     qd.type as quizType,
-                    qd.created
+                    qd.created as created,
+                    settings.value as userCommunityEnabled
                 FROM quiz_definition qd
                 JOIN user_roles ur on (ur.quiz_id = qd.quiz_id AND ur.role_name in ('ROLE_QUIZ_ADMIN'))
+                LEFT JOIN quiz_settings settings on (settings.quiz_ref_id = qd.id and settings.setting = 'user_community')  
                 WHERE ur.user_id = ?1
             """, nativeQuery = true)
     @Nullable
@@ -81,4 +85,11 @@ interface QuizDefRepo extends CrudRepository<QuizDef, Long> {
                 WHERE qd.quiz_id = ?1
             """, nativeQuery = true)
     QuizDefSummaryRes getQuizDefSummary(String quizId)
+
+    @Query(value = '''select count(id) > 0
+            from quiz_question_definition
+            where question like CONCAT('%(/api/download/', ?3, ')%')
+              and id <> ?2
+              and LOWER(quiz_id) = LOWER(?1) ''', nativeQuery = true)
+    Boolean otherQuestionsExistInQuizWithAttachmentUUID(String quizId, Integer notQuestionRefId, String attachmentUUID)
 }

@@ -48,6 +48,7 @@ class QuizDefFactory {
 
     static createChoiceQuestion(int quizNumber = 1, int questionsNumber = 1, int numberOfAnswers = 2, QuizQuestionType questionType = QuizQuestionType.SingleChoice, QuizType quizType = QuizType.Quiz) {
         String question = "This is questions #${questionsNumber}".toString()
+        String answerHint = "This is a hint for question #${questionsNumber}".toString()
         boolean isMultipleChoice = questionType == QuizQuestionType.MultipleChoice
         boolean isQuiz = quizType == QuizType.Quiz
         List answers = numberOfAnswers > 0 ? (1..numberOfAnswers).collect {
@@ -61,6 +62,7 @@ class QuizDefFactory {
         return [
                 quizId  : getDefaultQuizId(quizNumber),
                 question: question,
+                answerHint: answerHint,
                 questionType: questionType.toString(),
                 answers: answers,
         ]
@@ -74,7 +76,7 @@ class QuizDefFactory {
         return this.createChoiceQuestion(quizNumber, questionsNumber, numberOfAnswers, QuizQuestionType.SingleChoice, quizType)
     }
 
-    static createTextInputSurveyQuestion(int quizNumber = 1, int questionsNumber = 1) {
+    static createTextInputQuestion(int quizNumber = 1, int questionsNumber = 1) {
         return this.createChoiceQuestion(quizNumber, questionsNumber, 0, QuizQuestionType.TextInput, QuizType.Survey)
     }
 

@@ -82,7 +82,7 @@ const navItems = ref([])
 const buildNavItems = () => {
   const items = []
   items.push({ name: 'Overview', iconClass: 'fa-info-circle skills-color-overview', page: 'SkillOverview' })
-  items.push({ name: 'Video', iconClass: 'fa-video skills-color-video', page: 'ConfigureVideo' })
+  items.push({ name: 'Audio/Video', iconClass: 'fa-play-circle skills-color-video', page: 'ConfigureVideo' })
   items.push({
     name: 'Expiration',
     iconClass: 'fa-hourglass-end skills-color-expiration',
@@ -168,7 +168,7 @@ const skillId = computed(() => {
           <show-more :limit="54" :text="skillId"></show-more>
         </div>
         <div class="h5 text-muted" v-if="skillsState.skill && skillsState.skill.groupId">
-          <span style="font-size: 1rem">Group ID:</span> <span>{{ skillsState.skill.groupId }}</span>
+          <span style="font-size: 1rem">Group:</span> <span>{{ skillsState.skill.groupName }}</span>
         </div>
       </template>
       <template #subSubTitle v-if="!isImported">
@@ -209,6 +209,7 @@ const skillId = computed(() => {
       v-model="showEdit"
       :skill="skillsState.skill"
       :is-edit="true"
+      :project-user-community="projConfig.getProjectCommunityValue()"
       @skill-saved="skillEdited" />
   </div>
 </template>

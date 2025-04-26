@@ -16,7 +16,7 @@
 import tinycolor from 'tinycolor2';
 
 export default {
-  nonCSSConfig: ['charts', 'landingPageTitle', 'disableSkillTreeBrand', 'disableBreadcrumb', 'iconColors', 'prerequisites', 'circleProgressInteriorTextColor'],
+  nonCSSConfig: ['charts', 'landingPageTitle', 'disableSkillTreeBrand', 'disableBreadcrumb', 'iconColors', 'prerequisites', 'circleProgressInteriorTextColor', 'disableEncouragementsConfetti'],
   bothCssAndThemModule: ['progressIndicators', 'pageTitleTextColor', 'pageTitle', 'skillTreeBrandColor', 'infoCards', 'backgroundColor', 'textPrimaryColor', 'textSecondaryColor', 'tiles', 'breadcrumb'],
   selectorKey: {
     maxWidth: {
@@ -54,11 +54,11 @@ export default {
         styleName: 'color'
       }],
       borderColor: {
-        selector: '.sd-theme-home .skills-theme-page-title',
+        selector: 'body #app .sd-theme-home .p-card.p-component.skills-theme-page-title',
         styleName: 'border-color'
       },
       borderStyle: {
-        selector: 'body #app .sd-theme-home .skills-theme-page-title',
+        selector: 'body #app .sd-theme-home .p-card.p-component.skills-theme-page-title',
         styleName: 'border-style'
       },
       backgroundColor: {
@@ -86,10 +86,14 @@ export default {
     textPrimaryColor: [{
       selector: '.sd-theme-home .p-card,' +
         '.sd-theme-home .sd-theme-primary-color,' +
+        '.p-autocomplete-overlay.p-component .sd-theme-primary-color,' +
         '.sd-theme-home .p-card-subtitle,' +
         '.sd-theme-home .text-primary,' +
         '.sd-theme-home .text-color,' +
         '.sd-theme-home .skills-display-test-link a,' +
+        '.sd-theme-home .p-chip-icon,' +
+        '.sd-theme-home .p-icon,' +
+        '.sd-theme-home .p-avatar-icon,' +
         'body #app .sd-theme-home .p-datatable .p-datatable-tbody > tr,' +
         'body #app .sd-theme-home .p-datatable .p-datatable-thead > tr > th,' +
         'body #app .sd-theme-home .p-paginator.p-component .p-paginator-element.p-link,' +
@@ -107,14 +111,15 @@ export default {
         '.p-autocomplete-panel.p-component .p-autocomplete-item,' +
         '.p-autocomplete-panel.p-component .p-autocomplete-item .text-orange-600,' +
         '.p-autocomplete-panel.p-component .p-autocomplete-item .text-orange-700,' +
-        '.p-overlaypanel-content .p-panelmenu.p-component .p-panelmenu-header-content,' +
-        '.p-overlaypanel-content .p-panelmenu .p-panelmenu-content .p-menuitem-link,' +
+        '.p-popover.p-component .p-panelmenu-panel .p-panelmenu-item-link,' +
+        '.p-popover.p-component .p-panelmenu-panel .p-panelmenu-header-content,' +
         'body .sd-theme-home a, body .sd-theme-home .skills-theme-skills-progress a,' +
         '.sd-theme-home .editor-help-footer,' +
         '.sd-theme-home .editor-help-footer i',
       styleName: 'color'
     }, {
-      selector: '.toastui-editor-popup [data-type="Heading"]:hover',
+      selector: '.toastui-editor-popup [data-type="Heading"]:hover,' +
+          '.p-popover.p-component .p-panelmenu.p-component .p-panelmenu-header:focus .p-panelmenu-header-content .sd-theme-menu-header',
       styleName: 'background-color'
     }, {
       selector: '.sd-theme-home .p-avatar.p-component, ' +
@@ -134,7 +139,7 @@ export default {
       styleName: 'background-color'
     }],
     textSecondaryColor: {
-      selector: '.sd-theme-home .text-color-secondary,' +
+      selector: '.sd-theme-home .text-muted-color,' +
         '.p-autocomplete-panel.p-component i',
       styleName: 'color'
     },
@@ -167,8 +172,9 @@ export default {
           + 'body #app .sd-theme-home .p-paginator.p-component,'
           + 'body #app .sd-theme-home .p-chip.p-component,'
           + '.p-autocomplete-panel.p-component,'
-          + '.p-overlaypanel-content .p-panelmenu.p-component .p-panelmenu-header-content,'
-          + '.p-overlaypanel-content .p-panelmenu .p-panelmenu-content,'
+          + '.p-popover.p-component,'
+          + '.p-autocomplete-overlay.p-component,'
+          + '.p-popover.p-component .p-panelmenu-panel,'
           + '.sd-theme-home .apexcharts-menu.apexcharts-menu-open,'
           + '.sd-theme-home .p-avatar.p-component,'
           + '.sd-theme-home .toastui-editor-ww-container,'
@@ -179,6 +185,7 @@ export default {
         styleName: 'background-color'
       }, {
         selector: '.p-autocomplete-panel.p-component .p-autocomplete-item:hover,' +
+          '.p-autocomplete-overlay.p-component .sd-theme-primary-color:hover,' +
           '.p-autocomplete-panel.p-component .p-autocomplete-item.p-focus,' +
           '.p-autocomplete-panel.p-component .p-autocomplete-item.p-focus i,' +
           '.p-autocomplete-panel.p-component .p-autocomplete-item:hover i,' +
@@ -186,8 +193,10 @@ export default {
           '.p-autocomplete-panel.p-component .p-autocomplete-item:hover .text-orange-600,' +
           '.p-autocomplete-panel.p-component .p-autocomplete-item.p-focus .text-orange-700,' +
           '.p-autocomplete-panel.p-component .p-autocomplete-item:hover .text-orange-700,' +
+          '.p-popover.p-component .p-panelmenu-item.p-focus > .p-panelmenu-item-content .p-panelmenu-item-link,' +
+          '.p-popover.p-component .p-panelmenu.p-component .p-panelmenu-header:focus .p-panelmenu-header-content .sd-theme-menu-header,' +
+          'body #app .sd-theme-home .sd-theme-tile-background-color,' +
           'body #app .sd-theme-home .p-paginator.p-component .p-paginator-element.p-link.p-highlight,' +
-          '.p-overlaypanel-content .p-panelmenu .p-panelmenu-content .p-avatar-icon,' +
           'body #app .sd-theme-home .fa-stack .fa-stack-1x.fa-inverse,' +
           'body #app .sd-theme-home .toastui-editor-contents pre code,' +
           'body #app .sd-theme-home .toastui-editor-popup [data-type="Heading"]:hover,' +
@@ -205,11 +214,11 @@ export default {
     },
     stars: {
       unearnedColor: {
-        selector: 'body #app .sd-theme-home .p-rating .p-rating-item .p-icon.p-rating-icon',
+        selector: 'body #app .sd-theme-home .p-rating .p-rating-option .p-icon.p-rating-icon.p-rating-off-icon',
         styleName: 'color'
       },
       earnedColor: {
-        selector: 'body #app .sd-theme-home .p-rating .p-rating-item.p-rating-item-active .p-icon.p-rating-icon',
+        selector: 'body #app .sd-theme-home .p-rating .p-rating-option.p-rating-option-active .p-icon.p-rating-icon.p-rating-on-icon',
         styleName: 'color'
       }
     },
@@ -267,50 +276,51 @@ export default {
     },
     badges: {
       backgroundColor: [{
-        selector: 'body #app .p-tag.p-component',
+        selector: 'body #app .sd-theme-home .p-tag.p-component',
         styleName: 'background-color'
       }],
       backgroundColorSecondary: [{
-        selector: 'body #app .p-tag.p-component.p-tag-secondary',
+        selector: 'body #app .sd-theme-home .p-tag.p-component.p-tag-secondary',
         styleName: 'background-color'
       }],
       foregroundColor: [{
-        selector: 'body #app .sd-theme-home .badge',
+        selector: 'body #app .sd-theme-home .p-tag.p-component',
         styleName: 'color'
       }]
     },
     progressIndicators: {
       completeColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.is-completed',
+        selector: 'body #app .sd-theme-home .p-progressbar.p-component.is-completed .p-progressbar-value',
         styleName: 'background-color'
       }],
       incompleteColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.today-progress.is-not-completed',
+        selector: 'body #app .sd-theme-home .p-progressbar.p-component.p-progressbar-determinate.sd-theme-today-progress.is-not-completed,' +
+            'body #app .sd-theme-home .sd-theme-achieved-skills-progress .p-progressbar.p-component.p-progressbar-determinate.is-completed',
         styleName: 'background-color'
       }],
       beforeTodayColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.total-progress.is-not-completed .p-progressbar-value',
+        selector: 'body #app .sd-theme-home .p-progressbar.p-component.sd-theme-total-progress.is-not-completed  .p-progressbar-value',
         styleName: 'background-color'
       }],
       earnedTodayColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.today-progress.is-not-completed .p-progressbar-value',
+        selector: 'body #app .sd-theme-home .p-progressbar.p-component.p-progressbar-determinate.sd-theme-today-progress.is-not-completed .p-progressbar-value',
         styleName: 'background-color'
       }]
     },
     breadcrumb: {
       linkColor: [{
-        selector: '.sd-theme-home .skills-theme-breadcrumb-container .p-menuitem-link .sd-theme-breadcrumb-item .text-primary,' +
-          '.sd-theme-home .skills-theme-breadcrumb-container .p-menuitem-link .sd-theme-breadcrumb-item .text-color-secondary',
+        selector: '.sd-theme-home .skills-theme-breadcrumb-container .p-breadcrumb-item-link .sd-theme-breadcrumb-item .text-primary,' +
+          '.sd-theme-home .skills-theme-breadcrumb-container .p-breadcrumb-item-link .sd-theme-breadcrumb-item .text-muted-color',
         styleName: 'color'
       }],
       linkHoverColor: [{
-        selector: '.sd-theme-home .skills-theme-breadcrumb-container .p-menuitem-link .sd-theme-breadcrumb-item:hover .text-primary,' +
-          '.sd-theme-home .skills-theme-breadcrumb-container .p-menuitem-link .sd-theme-breadcrumb-item:hover .text-color-secondary',
+        selector: '.sd-theme-home .skills-theme-breadcrumb-container .p-breadcrumb-item-link .sd-theme-breadcrumb-item:hover .text-primary,' +
+          '.sd-theme-home .skills-theme-breadcrumb-container .p-breadcrumb-item-link .sd-theme-breadcrumb-item:hover .text-muted-color',
         styleName: 'color'
       }],
       currentPageColor: [{
         selector: '.sd-theme-home .skills-theme-breadcrumb-container .sd-theme-breadcrumb-item .text-color,' +
-          '.sd-theme-home .skills-theme-breadcrumb-container .sd-theme-breadcrumb-item .text-color-secondary',
+          '.sd-theme-home .skills-theme-breadcrumb-container .sd-theme-breadcrumb-item .text-muted-color',
         styleName: 'color'
       }],
       align: [{
@@ -379,14 +389,24 @@ export default {
         throw new Error(`Skills Theme Error! Failed to process provided custom theme due to invalid format! JSON key of [${key}] ${keyMsg}. Theme is ${JSON.stringify(theme)}`)
       }
     }
+
+
     const cssBasedOnKeyPathMapping = {
       'tiles.borderColor': '.sd-theme-home .p-card, .p-autocomplete-panel.p-component { border-style: solid !important; border-width: 1px !important; }',
       'tiles.backgroundColor': '.sd-theme-home .sd-theme-summary-cards .p-card.p-component { border-style: solid !important; border-width: 1px !important; } ' +
         '.sd-theme-home .badge-catalog-item .p-card { border-style: solid !important; border-width: 1px !important; } ' +
         '.sd-theme-home .toastui-editor-toolbar-group button { background-color: #f5f5f5 !important; color: #454545 !important; } ' +
         '.sd-theme-home .attachment-button.toastui-editor-toolbar-icons { color: #454545 !important; }',
-      'textPrimaryColor': '.sd-theme-home .p-avatar.p-component { border-style: solid !important; border-width: 1px !important; } body #app .sd-theme-home .p-chip.p-component  { border-style: solid !important; border-width: 1px !important; }  body #app .sd-theme-home .skills-card-theme-border { border-style: solid !important; border-width: 1px !important; }'
+      'textPrimaryColor': '.sd-theme-home .p-avatar.p-component { border-style: solid !important; border-width: 1px !important; } body #app .sd-theme-home .p-chip.p-component  { border-style: solid !important; border-width: 1px !important; }  body #app .sd-theme-home .skills-card-theme-border { border-style: solid !important; border-width: 1px !important; }',
+      'pageTitle.borderColor': '.sd-theme-home .skills-theme-page-title.p-card { border-width: 2px !important; }',
+      'pageTitle.borderStyle': '.sd-theme-home .skills-theme-page-title.p-card { border-width: 2px !important; }',
     }
+
+    if (theme?.tiles?.backgroundColor) {
+      const lighterTilesBackgroundColor = tinycolor(theme.tiles.backgroundColor).lighten(10).toString();
+      res.css += `body #app .sd-theme-home .answer-row.surface-200 { background-color: ${lighterTilesBackgroundColor} !important; } `
+    }
+
     const addCssBasedOnKeyPath = (keyPath) => {
       const cssToAdd = cssBasedOnKeyPathMapping[keyPath]
       if (cssToAdd) {
@@ -468,10 +488,10 @@ export default {
 
     const handleMenuItemLinkHoverColor = (theme, selectorKey) => {
       if (theme?.tiles?.backgroundColor && theme?.tiles?.backgroundColor !== '#fff') {
-        const hoverColor = tinycolor(theme.tiles.backgroundColor).lighten(10).toString();
-        theme.tilesMenuLinkHoverCalculatedColor=hoverColor
+        const tilesMenuHoverColor = tinycolor(theme.tiles.backgroundColor).lighten(10).toString();
+        theme.tilesMenuLinkHoverCalculatedColor=tilesMenuHoverColor
         selectorKey.tilesMenuLinkHoverCalculatedColor = {
-          selector: '.p-overlaypanel-content .p-panelmenu .p-panelmenu-content .p-menuitem-link:hover',
+          selector: '.p-popover.p-component .p-panelmenu-panel .p-panelmenu-item-content:hover, .p-popover.p-component .p-panelmenu-panel .p-panelmenu-header-content:hover',
           styleName: 'background-color'
         }
       }

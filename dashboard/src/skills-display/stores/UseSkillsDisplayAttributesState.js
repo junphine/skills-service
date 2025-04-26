@@ -30,12 +30,13 @@ export const useSkillsDisplayAttributesState = defineStore('skillsDisplayAttribu
   const isSummaryOnly = ref(false)
   const internalBackButton = ref(true)
   const userId = ref(null)
+  const version = ref(null)
 
   const log = useLog()
   const skillsDisplayInfo = useSkillsDisplayInfo()
   const route = useRoute()
   const loadConfigStateIfNeeded = (optionalToPathObj = null) => {
-    if (skillsDisplayInfo.isSkillsDisplayPath(optionalToPathObj?.path)) {
+    if (skillsDisplayInfo.isSkillsDisplayPath(optionalToPathObj)) {
       if (route.params.projectId) {
         projectId.value = route.params.projectId
       }
@@ -77,6 +78,8 @@ export const useSkillsDisplayAttributesState = defineStore('skillsDisplayAttribu
 
   const maxSelfReportMessageLength = computed(() => config.value.maxSelfReportMessageLength)
   const groupDescriptionsOn = computed(() => config.value.groupDescriptionsOn)
+  const groupInfoOnSkillPage = computed(() => config.value.groupInfoOnSkillPage)
+  const disableAchievementsCelebrations = computed(() => config.value.disableAchievementsCelebrations)
 
   const afterPropsAreSet = () => {
     return new Promise((resolve) => {
@@ -104,6 +107,7 @@ export const useSkillsDisplayAttributesState = defineStore('skillsDisplayAttribu
     isInIframe,
     maxSelfReportMessageLength,
     groupDescriptionsOn,
+    groupInfoOnSkillPage,
     projectDisplayName,
     subjectDisplayName,
     groupDisplayName,
@@ -112,7 +116,9 @@ export const useSkillsDisplayAttributesState = defineStore('skillsDisplayAttribu
     internalBackButton,
     isSummaryOnly,
     userId,
+    version,
     projectName,
-    projectUserCommunityDescriptor
+    projectUserCommunityDescriptor,
+    disableAchievementsCelebrations
   }
 })

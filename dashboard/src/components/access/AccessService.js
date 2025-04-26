@@ -24,12 +24,23 @@ const hasSupportedRole = (roles) => {
 }
 export default {
 
-  getUserRoles(projectId, roles, params) {
+  countUserRolesForProject(projectId, roles) {
+    const strRoles = roles.map((r) => `roles=${encodeURIComponent(r)}`).join('&')
+      return axios
+          .get(`/admin/projects/${encodeURIComponent(projectId)}/countUserRoles?${strRoles}`)
+          .then((response) => response.data)
+  },
+  getUserRoles(projectId, roles, params, adminGroupId) {
     const strRoles = roles.map((r) => `roles=${encodeURIComponent(r)}`).join('&')
     if (projectId) {
       return axios
         .get(`/admin/projects/${encodeURIComponent(projectId)}/userRoles?${strRoles}`, { params })
         .then((response) => response.data)
+    }
+    if (adminGroupId) {
+      return axios
+          .get(`/admin/admin-group-definitions/${adminGroupId}/userRoles?${strRoles}`, { params })
+          .then((response) => response.data)
     }
     if (roles.length === 1 && hasSupportedRole(roles)) {
       return axios
@@ -38,7 +49,7 @@ export default {
     }
     throw new Error(`unexpected user roles [${params.roles}]`)
   },
-  saveUserRole(projectId, userInfo, roleName, isPkiAuthenticated) {
+  saveUserRole(projectId, userInfo, roleName, isPkiAuthenticated, adminGroupId) {
     let { userId } = userInfo
     let userKey = userId
     if (isPkiAuthenticated) {
@@ -52,15 +63,27 @@ export default {
         { handleError: false }
       )
     }
+    if (adminGroupId) {
+      return axios.put(
+          `/admin/admin-group-definitions/${encodeURIComponent(adminGroupId)}/users/${userKey}/roles/${roleName}`,
+          null,
+          { handleError: false }
+      )
+    }
     if (hasSupportedRole(roleName)) {
       return axios.put(`/root/users/${userKey}/roles/${roleName}`, null, { handleError: false })
     }
     throw new Error(`unexpected user role [${roleName}]`)
   },
-  deleteUserRole(projectId, userId, roleName) {
+  deleteUserRole(projectId, userId, roleName, adminGroupId) {
     if (projectId) {
       return axios.delete(
         `/admin/projects/${encodeURIComponent(projectId)}/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleName)}`
+      )
+    }
+    if (adminGroupId) {
+      return axios.delete(
+          `/admin/admin-group-definitions/${encodeURIComponent(adminGroupId)}/users/${encodeURIComponent(userId)}/roles/${encodeURIComponent(roleName)}`
       )
     }
     if (hasSupportedRole(roleName)) {

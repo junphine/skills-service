@@ -107,15 +107,15 @@ const flipSelected = () => {
        @keydown.prevent.space="flipSelected"
        @click="flipSelected"
        :tabindex="a.isGraded ? -1 : 0"
-       :class="{ 'surface-200 border-primary border-round-sm font-semibold': selected, 'point-cursor hover:border-primary answer-row-editable skills-theme-quiz-selected-answer-row' : !a.isGraded }"
+       :class="{ '!bg-gray-100 dark:!bg-gray-800 !border !border-green-400 rounded-border font-semibold sd-theme-tile-background': selected, 'point-cursor hover:!border-green-400 border-dashed answer-row-editable skills-theme-quiz-selected-answer-row' : !a.isGraded }"
        :style="styleObject"
        :aria-label="ariaLabel">
     <div class="flex gap-0" :data-cy="`selected_${selected}`">
       <div class="flex">
         <SkillsOverlay v-if="a.isGraded && a.selected !== a.isCorrect" show opacity="0">
           <template #overlay>
-            <i v-if="a.selected" class="fa fa-ban text-danger skills-theme-quiz-incorrect-answer" style="font-size: 1.5rem;" data-cy="wrongSelection" aria-hidden="true"></i>
-            <i v-else class="fa fa-check text-danger skills-theme-quiz-incorrect-answer" style="font-size: 1rem;" data-cy="missedSelection" aria-hidden="true"></i>
+            <i v-if="a.selected" class="fa fa-ban text-red-800 skills-theme-quiz-incorrect-answer" style="font-size: 1.5rem;" data-cy="wrongSelection" aria-hidden="true"></i>
+            <i v-else class="fa fa-check text-red-800 skills-theme-quiz-incorrect-answer" style="font-size: 1rem;" data-cy="missedSelection" aria-hidden="true"></i>
           </template>
           <span class="checkmark">
              <i :class="selectionIconObject" aria-hidden="true"/>
@@ -147,9 +147,6 @@ const flipSelected = () => {
   cursor: pointer;
 }
 
-i {
-  color: #b6b5b5;
-}
 .checkmark {
   font-size: 1.2rem;
 }

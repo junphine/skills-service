@@ -43,6 +43,7 @@ import skills.services.admin.*
 import skills.services.admin.moveSkills.SkillsMoveService
 import skills.services.admin.skillReuse.SkillReuseIdUtil
 import skills.services.admin.skillReuse.SkillReuseService
+import skills.services.adminGroup.AdminGroupService
 import skills.services.attributes.ExpirationAttrs
 import skills.services.attributes.SkillAttributeService
 import skills.services.attributes.SkillVideoAttrs
@@ -193,8 +194,12 @@ class AdminController {
 
     @Autowired
     SkillMetricsExportResult skillMetricsExportResult
+
     @Autowired
     SubjectSkillsExportResult subjectSkillsExportResult
+
+    @Autowired
+    AdminGroupService adminGroupService
 
     @Value('#{"${skills.config.ui.maxSkillsInBulkImport}"}')
     int maxBulkImport
@@ -220,6 +225,26 @@ class AdminController {
         projectCopyService.copyProject(projectId, projectRequest)
         return new RequestResult(success: true)
     }
+
+    @RequestMapping(value = "/projects/{projectId}/copy/projects/{otherProjectId}/validateCopy", method = [RequestMethod.POST], produces = "application/json")
+    @ResponseBody
+    CopyValidationRes validateCopyItemsToAnotherProject(
+            @PathVariable("projectId") String projectId,
+            @PathVariable("otherProjectId") String otherProjectId,
+            @RequestBody CopyToAnotherProjectRequest copyToAnotherProjectRequest) {
+        return projectCopyService.validateCopyItemsToAnotherProject(projectId, otherProjectId, copyToAnotherProjectRequest)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/copy/projects/{otherProjectId}", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
+    @ResponseBody
+    RequestResult copyItemsToAnotherProject(
+            @PathVariable("projectId") String projectId,
+            @PathVariable("otherProjectId") String otherProjectId,
+            @RequestBody CopyToAnotherProjectRequest copyToAnotherProjectRequest) {
+        projectCopyService.copyItemsToAnotherProject(projectId, otherProjectId, copyToAnotherProjectRequest)
+        return new RequestResult(success: true)
+    }
+
 
     @RequestMapping(value = "/projects/{id}/invite", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
     @ResponseBody
@@ -405,6 +430,13 @@ class AdminController {
     List<SubjectResult> getSubjects(@PathVariable("projectId") String projectId) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         return subjAdminService.getSubjects(projectId)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/subjectsAndSkillsGroups", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    List<SubjectOrSkillGroupResult> getSubjectsAndSkillGroups(@PathVariable("projectId") String projectId) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        return subjAdminService.getSubjectsAndSkillGroups(projectId)
     }
 
     @RequestMapping(value = "/projects/{projectId}/subjects/{subjectId}", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -607,7 +639,9 @@ class AdminController {
                             @RequestParam(name = "videoUrl", required = false) String videoUrl,
                             @RequestParam(name = "isAlreadyHosted", required = false, defaultValue = "false") Boolean isAlreadyHosted,
                             @RequestParam(name = "captions", required = false) String captions,
-                            @RequestParam(name = "transcript", required = false) String transcript) {
+                            @RequestParam(name = "transcript", required = false) String transcript,
+                            @RequestParam(name = "width", required = false) Double width,
+                            @RequestParam(name = "height", required = false) Double height) {
 
         if (captions) {
             propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.maxVideoCaptionsLength, "Captions", captions)
@@ -616,7 +650,7 @@ class AdminController {
             propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.maxVideoTranscriptLength, "Transcript", transcript)
         }
 
-        SkillVideoAttrs res = adminVideoService.saveVideo(projectId, skillId, isAlreadyHosted, file, videoUrl, captions, transcript)
+        SkillVideoAttrs res = adminVideoService.saveVideo(projectId, skillId, isAlreadyHosted, file, videoUrl, captions, transcript, width, height)
         return res
     }
 
@@ -1040,6 +1074,13 @@ class AdminController {
 
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
         return adminUsersService.loadUsersPageForProject(projectId, query, pageRequest, minimumPoints)
+    }
+
+    @GetMapping(value = "/projects/{projectId}/users/count")
+    @ResponseBody
+    Long countProjectUsers(@PathVariable("projectId") String projectId) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        return adminUsersService.countTotalProjUsers(projectId)
     }
 
     @GetMapping(value = "/projects/{projectId}/users/export/excel")//, produces = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", name = "exportUsers")
@@ -1697,7 +1738,7 @@ class AdminController {
     }
 
     @RequestMapping(value = "/projects/{projectId}/validateEnablingCommunity", method = RequestMethod.GET, produces = "application/json")
-    EnableProjValidationRes validateProjectForEnablingCommunity(@PathVariable("projectId") String projectId) {
+    EnableUserCommunityValidationRes validateProjectForEnablingCommunity(@PathVariable("projectId") String projectId) {
         SkillsValidator.isNotBlank(projectId, "projectId")
         return projAdminService.validateProjectForEnablingCommunity(projectId)
     }
@@ -1807,6 +1848,53 @@ class AdminController {
                                            @RequestParam Boolean ascending) {
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
         return userAchievementExpirationService.findAllExpiredAchievements(projectId, userIdParam, skillName, pageRequest);
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/adminGroups", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    List<AdminGroupDefResult> getAdminGroupsForProject(@PathVariable("projectId") String projectId) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        return adminGroupService.getAdminGroupsForProject(projectId)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/users/archive", method = [RequestMethod.PUT, RequestMethod.POST], produces = MediaType.APPLICATION_JSON_VALUE)
+    RequestResult archiveUsers(@PathVariable("projectId") String projectId,
+                               @RequestBody ArchiveUsersRequest archiveUsersRequest) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+
+        projAdminService.archiveUsers(projectId, archiveUsersRequest)
+        return new RequestResult(success: true)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/users/archive", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    TableResult getArchivedUsers(@PathVariable(name = "projectId") String projectId,
+                                 @RequestParam int page,
+                                 @RequestParam int limit,
+                                 @RequestParam String orderBy,
+                                 @RequestParam Boolean ascending) {
+        PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
+        return projAdminService.findAllArchivedUsers(projectId, pageRequest);
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/users/{userKey}/restore", method = [RequestMethod.PUT, RequestMethod.POST], produces = MediaType.APPLICATION_JSON_VALUE)
+    RequestResult restoreArchivedUser(@PathVariable("projectId") String projectId,
+                                      @PathVariable("userKey") String userKey) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        SkillsValidator.isNotBlank(userKey, "userKey")
+
+        projAdminService.restoreArchiveUser(projectId, userKey)
+        return new RequestResult(success: true)
+    }
+
+
+    @RequestMapping(value = "/projects/{projectId}/users/{userKey}/isArchived", method = RequestMethod.GET, produces = "application/json")
+    RequestResult isUserArchived(@PathVariable("projectId") String projectId,
+                                 @PathVariable("userKey") String userKey) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        SkillsValidator.isNotBlank(userKey, "userKey")
+
+        return new RequestResult(success: projAdminService.isUserArchived(projectId, userKey))
     }
 }
 

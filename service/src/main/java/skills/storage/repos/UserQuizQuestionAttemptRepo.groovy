@@ -17,6 +17,7 @@ package skills.storage.repos
 
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
+import skills.storage.model.UserQuizAnswerAttempt
 import skills.storage.model.UserQuizQuestionAttempt
 
 import javax.annotation.Nullable
@@ -35,7 +36,7 @@ interface UserQuizQuestionAttemptRepo extends JpaRepository<UserQuizQuestionAtte
         where questionAttempt.quizQuestionDefinitionRefId = questionDef.id
             and questionDef.quizId = ?1
             and quizAttempt.id = questionAttempt.userQuizAttemptRefId
-            and quizAttempt.status <> 'INPROGRESS'
+            and quizAttempt.status in ('PASSED', 'FAILED')
         group by questionAttempt.quizQuestionDefinitionRefId, questionAttempt.status
      ''')
     List<IdAndStatusCount> getUserQuizQuestionAttemptCounts(String quizId)
@@ -46,7 +47,7 @@ interface UserQuizQuestionAttemptRepo extends JpaRepository<UserQuizQuestionAtte
         where answerAttempt.quizAnswerDefinitionRefId = answerDef.id
             and answerDef.quizId = ?1
             and quizAttempt.id = answerAttempt.userQuizAttemptRefId
-            and quizAttempt.status <> 'INPROGRESS' 
+            and quizAttempt.status in ('PASSED', 'FAILED')
         group by answerAttempt.quizAnswerDefinitionRefId, answerAttempt.status
      ''')
     List<IdAndStatusCount> getUserQuizAnswerAttemptCounts(String quizId)
@@ -54,4 +55,16 @@ interface UserQuizQuestionAttemptRepo extends JpaRepository<UserQuizQuestionAtte
     @Nullable
     List<UserQuizQuestionAttempt> findAllByUserQuizAttemptRefId(Integer userQuizAttemptRefId)
 
+    @Query(value = '''
+        select questionAttempt.quizQuestionDefinitionRefId from UserQuizQuestionAttempt questionAttempt
+        where questionAttempt.userQuizAttemptRefId = ?1 and questionAttempt.status = 'WRONG'
+    ''')
+    List<Integer> getWrongQuestionIdsForAttempt(Integer quizAttemptId)
+
+    @Nullable
+    @Query(value = '''
+        select count(questionAttempt.quizQuestionDefinitionRefId) from UserQuizQuestionAttempt questionAttempt
+        where questionAttempt.userQuizAttemptRefId = ?1 and questionAttempt.status = 'WRONG'
+    ''')
+    Integer countWrongQuestionIdsForAttempt(Integer quizAttemptId)
 }

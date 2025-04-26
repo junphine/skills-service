@@ -194,24 +194,6 @@ const buildData = () => {
   const sortedNodes = graph.value.nodes.sort((a, b) => a.id - b.id);
   sortedNodes.forEach((node) => {
     const isCrossProject = node.projectId !== route.params.projectId;
-    if(node.type === 'Badge') {
-      if(node.containedSkills && node.containedSkills.length > 0) {
-        const skillIds = node.containedSkills.map((it) => it.name);
-        const childNode = {
-          id: node.id + '-skills',
-          label: skillIds.join('\n'),
-          shape: 'box',
-          type: 'Badge-Skills',
-        };
-        nodes.push(childNode);
-        edges.push({
-          to: node.id,
-          from: node.id + '-skills',
-          dashes: true,
-          label: 'contains',
-        });
-      }
-    }
     const newNode = {
       id: node.id,
       label: GraphUtils.getLabel(node, isCrossProject),
@@ -282,7 +264,7 @@ const setVisNetworkTabIndex = () => {
     <Card data-cy="fullDepsSkillsGraph" style="margin-bottom: 25px;">
       <template #content>
 <!--      <loading-container :is-loading="isLoading">-->
-        <div v-if="!hasGraphData && !isLoading" class="my-5">
+        <div v-if="!hasGraphData && !isLoading" class="my-8">
           <no-content2 icon="fa fa-project-diagram" title="No Learning Path Yet..."
                        message="Here you can create and manage the project's Learning Path which may consist of skills and badges. You can get started by adding a path above."></no-content2>
         </div>

@@ -25,6 +25,9 @@ import PageHeader from '@/components/utils/pages/PageHeader.vue';
 import Navigation from '@/components/utils/Navigation.vue';
 import UserRolesUtil from '@/components/utils/UserRolesUtil.js';
 import EditQuiz from '@/components/quiz/testCreation/EditQuiz.vue';
+import QuizType from "@/skills-display/components/quiz/QuizType.js";
+import Avatar from 'primevue/avatar';
+import { useAppConfig } from '@/common-components/stores/UseAppConfig.js';
 
 const announcer = useSkillsAnnouncer()
 const router = useRouter()
@@ -32,6 +35,7 @@ const route = useRoute()
 const quizSummaryState = useQuizSummaryState()
 const quizConfig = useQuizConfig()
 const focusState = useFocusState()
+const appConfig = useAppConfig()
 
 onMounted(() => {
   if (!quizSummaryState.quizSummary || quizSummaryState.quizSummary.quizId !== route.params.quizId) {
@@ -43,19 +47,24 @@ onMounted(() => {
   }
 })
 
+const isQuiz = computed(() => QuizType.isQuiz(quizSummaryState.quizSummary?.type))
+const isSurvey = computed(() => QuizType.isSurvey(quizSummaryState.quizSummary?.type))
 const isLoading = computed(() => quizSummaryState.loadingQuizSummary || quizConfig.loadingQuizConfig)
 const navItems = computed(() => {
   const res = [
-    { name: 'Questions', iconClass: 'fa-graduation-cap skills-color-skills', page: 'Questions' },
-    { name: 'Results', iconClass: 'fa-chart-bar skills-color-metrics', page: 'QuizMetrics' },
-    { name: 'Runs', iconClass: 'fa-users skills-color-users', page: 'QuizRunsHistoryPage' },
+    { name: 'Questions', iconClass: 'fa-graduation-cap', page: 'Questions' },
+    { name: 'Results', iconClass: 'fa-chart-bar', page: 'QuizMetrics' },
+    { name: 'Runs', iconClass: 'fa-users', page: 'QuizRunsHistoryPage' },
     { name: 'Skills', iconClass: 'fa-graduation-cap skills-color-skills', page: 'QuizSkillsPage' },
   ];
 
   if (!quizConfig.isReadOnlyQuiz) {
-    res.push({ name: 'Access', iconClass: 'fas fa-shield-alt skills-color-access', page: 'QuizAccessPage' });
-    res.push({ name: 'Settings', iconClass: 'fa-cogs skills-color-settings', page: 'QuizSettings' });
-    res.push({ name: 'Activity History', iconClass: 'fa-users-cog text-success', page: 'QuizActivityHistory' });
+    if (isQuiz.value) {
+      res.push({ name: 'Grading', iconClass: 'fas fa-user-check', page: 'GradeQuizzesPage' });
+    }
+    res.push({ name: 'Access', iconClass: 'fas fa-shield-alt', page: 'QuizAccessPage' });
+    res.push({ name: 'Settings', iconClass: 'fa-cogs', page: 'QuizSettings' });
+    res.push({ name: 'Activity History', iconClass: 'fa-users-cog', page: 'QuizActivityHistory' });
   }
 
   return res;
@@ -65,9 +74,8 @@ const headerOptions = computed(() => {
   if (!quizSummary) {
     return {};
   }
-  const isSurvey = quizSummary.type === 'Survey';
-  const typeDesc = isSurvey ? 'Collect Info' : 'Graded Questions';
-  const typeIcon = isSurvey ? 'fas fa-chart-pie' : 'fas fa-tasks';
+  const typeDesc = isSurvey.value ? 'Collect Info' : 'Graded Questions';
+  const typeIcon = isSurvey.value ? 'fas fa-chart-pie' : 'fas fa-tasks';
   return {
     icon: 'fas fa-spell-check skills-color-subjects',
     title: `${quizSummary.name}`,
@@ -97,6 +105,7 @@ function updateEditQuizInfo(quizSummary) {
   editQuizInfo.value.quizDef.quizId = quizSummary.quizId
   editQuizInfo.value.quizDef.name = quizSummary.name
   editQuizInfo.value.quizDef.type = quizSummary.type
+  editQuizInfo.value.quizDef.userCommunity = quizSummary.userCommunity
 }
 
 function updateQuizDef(quizDef) {
@@ -113,6 +122,7 @@ function updateQuizDef(quizDef) {
   updateEditQuizInfo(quizDef)
   quizSummaryState.quizSummary.name = quizDef.name
   quizSummaryState.quizSummary.quizId = quizDef.quizId
+  quizSummaryState.quizSummary.userCommunity = quizDef.userCommunity
   announcer.polite(`${quizDef.type} named ${quizDef.name} was saved`)
 }
 </script>
@@ -122,6 +132,15 @@ function updateQuizDef(quizDef) {
     <PageHeader :loading="isLoading" :options="headerOptions">
       <template #subSubTitle v-if="quizSummaryState.quizSummary">
         <div>
+          <div>
+            <div v-if="quizSummaryState.quizSummary.userCommunity" class="my-1" data-cy="userCommunity">
+              <Avatar icon="fas fa-shield-alt" class="text-red-500"></Avatar>
+              <span
+                class="text-secondary font-italic ml-1">{{ appConfig.userCommunityBeforeLabel }}</span> <span
+                class="text-primary">{{ quizSummaryState.quizSummary.userCommunity }}</span> <span
+                class="text-secondary font-italic">{{ appConfig.userCommunityAfterLabel }}</span>
+            </div>
+          </div>
           <div v-if="!quizConfig.isReadOnlyQuiz" class="mt-2">
             <SkillsButton
                 id="editQuizButton"
@@ -153,9 +172,9 @@ function updateQuizDef(quizDef) {
               </SkillsButton>
             </router-link>
           </div>
-          <div class="mt-3" v-if="!isLoading">
-            <i class="fas fa-user-shield text-success header-status-icon" aria-hidden="true"/>
-            <span class="text-secondary font-italic small">Role:</span>
+          <div class="mt-4" v-if="!isLoading">
+            <i class="fas fa-user-shield header-status-icon text-primary" aria-hidden="true"/>
+            <span class="text-secondary italic small mx-1">Role:</span>
             <span class="small text-primary" data-cy="userRole">{{ userRoleForDisplay }}</span>
           </div>
         </div>

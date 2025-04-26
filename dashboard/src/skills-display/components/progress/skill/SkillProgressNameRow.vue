@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import dayjs from 'dayjs'
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
 import { useTimeUtils } from '@/common-components/utilities/UseTimeUtils.js'
@@ -36,8 +36,13 @@ const props = defineProps({
   childSkillHighlightString: {
     type: String,
     default: ''
+  },
+  isExpanded: {
+    type: Boolean,
+    default: true
   }
 })
+const emit = defineEmits(['toggle-row']);
 const numFormat = useNumberFormat()
 const timeUtils = useTimeUtils()
 const appConfig = useAppConfig()
@@ -118,10 +123,14 @@ const skillId = computed(() => {
   }
   return res
 })
+
+const isAudio = computed(() => {
+  return props.skill.videoSummary?.videoType?.includes('audio/')
+})
 </script>
 
 <template>
-  <div class="md:flex flex-wrap align-content-end"
+  <div class="md:flex flex-wrap content-end"
        :data-cy="`skillProgressTitle-${skillId}`"
        :id="`skillProgressTitle-${skillId}`">
     <div class=" flex-1 text-2xl w-min-12rem">
@@ -129,13 +138,12 @@ const skillId = computed(() => {
         <div class="sd-theme-primary-color font-medium flex">
           <div class="mr-1">
             <i  v-if="skill.isSkillsGroupType" class="fas fa-layer-group"></i>
-            <i v-if="!skill.copiedFromProjectId && !skill.isSkillsGroupType"
-               class="fas fa-graduation-cap text-color-secondary"></i>
+            <i v-if="!skill.copiedFromProjectId && !skill.isSkillsGroupType" class="fas fa-graduation-cap text-muted-color"></i>
             <i v-if="skill.copiedFromProjectId" class="fas fa-book text-secondary"></i>
           </div>
-          <div class="">
+          <div>
             <div v-if="skillDisplayInfo.isGlobalBadgePage.value">
-              <span class="font-italic text-color-secondary">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}
+              <span class="italic text-muted-color">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}
             </div>
             <router-link
               :id="`skillProgressTitleLink-${skillId}`"
@@ -148,28 +156,37 @@ const skillId = computed(() => {
             <div v-else class="inline-block" data-cy="skillProgressTitle">
               <highlighted-value :value="skill.skill" :filter="childSkillHighlightString" />
             </div>
+            <SkillsButton :icon="!isExpanded ? 'fas fa-plus' : 'fas fa-minus'"
+                    v-if="skill.isSkillsGroupType"
+                    outlined
+                    :aria-label="!isExpanded ? 'Expand Group' : 'Collapse Group'"
+                    style="padding: 0.3rem 0.3rem 0.3rem 0.3rem;"
+                    class="ml-2"
+                    :data-cy="`toggleGroup-${skillId}`"
+                    @click="emit('toggle-row')">
+            </SkillsButton>
           </div>
         </div>
         <div v-if="skill.copiedFromProjectId" class="ml-2"
-             style="max-width: 15rem;"><span class="text-secondary font-italic"> in </span>
-          <span class="font-italic" data-cy="importedFromProj">{{ skill.copiedFromProjectName }}</span>
+             style="max-width: 15rem;"><span class="text-secondary italic"> in </span>
+          <span class="italic" data-cy="importedFromProj">{{ skill.copiedFromProjectName }}</span>
         </div>
 
         <div
           v-if="skill.isSkillsGroupType && skill.numSkillsRequired > 0 && skill.numSkillsRequired < skill.children.length"
           :title="`A ${attributes.groupDisplayName} allows a ${attributes.skillDisplayName} to be defined by the collection ` +
                             `of other ${attributes.skillDisplayName}s within a ${attributes.projectDisplayName}. A ${attributes.skillDisplayName} Group can require the completion of some or all of the included ${attributes.skillDisplayName}s before the group be achieved.`"
-          class="text-sm align-content-center ml-2"
+          class="text-sm content-center ml-2"
           data-cy="groupSkillsRequiredBadge">
-          <span class="">Requires </span>
+          <span class="mr-1">Requires </span>
           <Tag severity="success">{{ skill.numSkillsRequired }}</Tag>
-          <span class="font-italic"> out of </span>
+          <span class="italic mx-1"> out of </span>
           <Tag severity="secondary">{{ skill.children.length }}</Tag>
           skills
         </div>
 
         <Tag v-if="skill.selfReporting && skill.selfReporting.enabled"
-             class="self-report-badge ml-2">
+             class="self-report-badge ml-2 max-h-8">
           <i
             class="fas fa-user-check mr-1"></i><span class="sr-spelled-out mr-1">Self Reportable:</span>
           <span v-if="skill.selfReporting.type === 'Quiz'" data-cy="selfReportQuizTag"><span
@@ -180,19 +197,20 @@ const skillId = computed(() => {
             class="sr-spelled-out ml-1">System</span></span>
           <span v-if="skill.selfReporting.type === 'Approval'" data-cy="selfReportApprovalTag"><span
             class="sr-spelled-out mr-1">Request</span>Approval</span>
-          <span v-if="skill.selfReporting.type === 'Video'" data-cy="selfReportApprovalTag"><span
-            class="sr-spelled-out mr-1">Watch</span>Video</span>
+          <span v-if="skill.selfReporting.type === 'Video'" data-cy="selfReportApprovalTag">
+            <span v-if="isAudio"><span class="sr-spelled-out mr-1">Listen to </span>Audio</span>
+            <span v-else><span class="sr-spelled-out mr-1">Watch </span>Video</span>
+          </span>
         </Tag>
         <Tag v-if="showLastViewedIndicator" id="lastViewedIndicator"
              data-cy="lastViewedIndicator" severity="info"
-             size="small"
-             class="ml-2 overflow-hidden max-h-2rem">
+             class="ml-2 overflow-hidden max-h-8">
           <i class="fas fa-eye mr-1"></i> Last Viewed
         </Tag>
       </div>
     </div>
-    <div class="text-right justify-content-end flex flex-column"
-         :class="{ 'text-color-success' : isSkillComplete }"
+    <div class="text-right justify-end flex flex-col"
+         :class="{ 'text-green-700 dark:text-green-400' : isSkillComplete }"
          data-cy="skillProgress-ptsOverProgressBard">
 
       <div>
@@ -205,7 +223,7 @@ const skillId = computed(() => {
           / {{ numFormat.pretty(numSkillsRequired) }} Skill{{ (numSkillsRequired === 1) ? '' : 's' }}
           {{ someSkillsAreOptional ? 'Required' : '' }}
         </span>
-        <span v-else class="align-content-end">
+        <span v-else class="content-end">
           <animated-number :num="skill.points" />
           / {{ numFormat.pretty(skill.totalPoints) }} {{ attributes.pointDisplayName }}s
         </span>
@@ -231,12 +249,17 @@ const skillId = computed(() => {
         </div>
       </div>
 
-      <div v-if="skill.selfReporting && skill.selfReporting.requestedOn"
-           data-cy="approvalPending">
-        <span v-if="!skill.selfReporting.rejectedOn" class="text-orange-500"><i class="far fa-clock"
-                                                                                aria-hidden="true" /> Pending Approval</span>
-        <span v-else class="text-red-500"><i class="fas fa-heart-broken skills-theme-primary-color"
-                                             aria-hidden="true"></i> Request Rejected</span>
+      <div v-if="skill.selfReporting && skill.selfReporting.requestedOn && !skill.selfReporting.approved" data-cy="approvalPending">
+        <span v-if="!skill.selfReporting.rejectedOn" class="text-orange-500">
+          <i class="far fa-clock" aria-hidden="true" /> Pending Approval
+        </span>
+        <span v-else-if="skill.selfReporting.rejectedOn" class="text-red-500">
+          <i class="fas fa-heart-broken skills-theme-primary-color" aria-hidden="true"></i> Request Rejected
+        </span>
+      </div>
+
+      <div v-if="skill.selfReporting && skill.selfReporting.quizNeedsGrading" class="text-orange-500" data-cy="requiresGrading">
+        <i class="fas fa-user-clock" aria-hidden="true"/> Awaiting Grading
       </div>
     </div>
   </div>

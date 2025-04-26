@@ -13,7 +13,9 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-// import TruncateFilter from '../../../filters/TruncateFilter';
+import { useStringUtils } from '@/common-components/utilities/UseStringUtils.js'
+
+const stringUtils = useStringUtils();
 
 export default {
   getTitle(skillItem, isCrossProject) {
@@ -28,17 +30,35 @@ export default {
                 <span style="font-style: italic; color: #444444">ID:</span> ${skillItem.skillId}<br/>`;
     if(skillItem.type === 'Skill') {
       html += `<span style="font-style: italic; color: #444444">Point Increment:</span> ${skillItem.pointIncrement}<br/>
-      <span style="font-style: italic; color: #444444">Total Points:</span> ${skillItem.totalPoints}`;
+      <span style="font-style: italic; color: #444444">Total Points:</span> ${skillItem.totalPoints}<br/>`;
+    }
+    if(skillItem.type === 'Badge') {
+      if(skillItem.containedSkills && skillItem.containedSkills.length > 0) {
+        const skillNames = skillItem.containedSkills.map((it) => it.name);
+        html += `<span style="font-style: italic; color: #444444">Skills:</span>`
+        for (const [index, skillName] of skillNames.entries()) {
+          html += `<br/><span style="padding: 1rem;">${skillName}</span>`
+          if (index >= 9 && skillNames.length > 11) {
+            // stop at 10 and truncate if there's more than 11
+            html += `<br/><span style="padding: 1rem;">and ${skillNames.length-(index+1)} more skills...</span>`
+            break
+          }
+        }
+      }
     }
     container.innerHTML = html;
     return container;
   },
   getLabel(skillItem, isCrossProject) {
-    return isCrossProject ? `Shared from\n<b>${this.truncate(skillItem.projectName)}</b>\n${skillItem.name} ` : skillItem.name;
+    return isCrossProject ? `Shared from\n<b>${this.truncate(skillItem.projectName)}</b>\n${this.truncate(skillItem.name)} ` : this.truncate(skillItem.name);
   },
-  truncate(strValue, truncateTo = 35) {
-    // return TruncateFilter(strValue, truncateTo);
+  truncate(strValue, truncateTo = 25) {
+    let chunks = strValue.split(' ');
+    if(chunks.length > 1) {
+      return stringUtils.addNewlinesToChunks(chunks, truncateTo)
+    } else if (strValue.length > truncateTo) {
+      return stringUtils.addNewlinesToString(strValue, truncateTo)
+    }
     return strValue;
   },
-
 };

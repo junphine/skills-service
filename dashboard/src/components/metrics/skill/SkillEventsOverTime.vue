@@ -21,9 +21,21 @@ import TimeLengthSelector from "@/components/metrics/common/TimeLengthSelector.v
 import MetricsOverlay from "@/components/metrics/utils/MetricsOverlay.vue";
 import MetricsService from "@/components/metrics/MetricsService.js";
 import NumberFormatter from '@/components/utils/NumberFormatter.js'
+import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js';
+import { useThemesHelper } from '@/components/header/UseThemesHelper.js';
+
+const props = defineProps(['skillName']);
 
 const route = useRoute();
-const props = defineProps(['skillName']);
+const themeState = useSkillsDisplayThemeState()
+const themeHelper = useThemesHelper()
+
+const chartAxisColor = () => {
+  if (themeState.theme.charts.axisLabelColor) {
+    return themeState.theme.charts.axisLabelColor
+  }
+  return themeHelper.isDarkTheme ? 'white' : undefined
+}
 
 const title = 'Skill events';
 const loading = ref(true);
@@ -76,11 +88,15 @@ const chartOptions = {
     type: 'datetime',
   },
   yaxis: {
+    forceNiceScale: true,
     min: 0,
     labels: {
       formatter(val) {
         return NumberFormatter.format(val);
       },
+      style: {
+        colors: chartAxisColor()
+      }
     },
     title: {
       text: '# of Applied Skill Events',
@@ -88,6 +104,9 @@ const chartOptions = {
   },
   legend: {
     position: 'top',
+  },
+  tooltip: {
+    theme: themeHelper.isDarkTheme ? 'dark' : 'light',
   },
 };
 
@@ -151,7 +170,7 @@ const updateTimeRange = (timeEvent) => {
     </template>
     <template #content>
       <metrics-overlay :loading="loading" :has-data="hasData" no-data-msg="This chart needs at least 2 days of user activity.">
-        <apexchart type="line" height="350" :options="chartOptions" :series="series" class="mt-4"></apexchart>
+        <apexchart type="line" height="350" :options="chartOptions" :series="series" class="mt-6"></apexchart>
       </metrics-overlay>
       <div class="font-light text-sm">Please Note: Only 'applied' events contribute to users' points and achievements. An event will not be applied if that skill has already reached its maximum points or has unfulfilled dependencies.</div>
     </template>

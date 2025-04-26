@@ -20,6 +20,7 @@ import org.apache.commons.lang3.BooleanUtils
 import org.apache.commons.lang3.StringUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.core.env.Environment
 import org.springframework.security.oauth2.client.registration.ClientRegistrationRepository
 import org.springframework.web.bind.annotation.*
 import skills.HealthChecker
@@ -66,6 +67,9 @@ class PublicConfigController {
     @Value('${skills.config.ui.enablePageVisitReporting:#{false}}')
     Boolean enablePageVisitReporting
 
+    @Value('${spring.security.saml2.registrationId:#{null}}')
+    String regId
+
     @Autowired
     SettingsService settingsService
 
@@ -82,7 +86,8 @@ class PublicConfigController {
     UserCommunityService userCommunityService
 
     @Autowired
-    private ClientRegistrationRepository clientRegistrationRepository;
+    private ClientRegistrationRepository clientRegistrationRepository
+
 
     @RequestMapping(value = "/config", method = RequestMethod.GET, produces = "application/json")
     @ResponseBody
@@ -107,6 +112,10 @@ class PublicConfigController {
         if (oAuthProviders) {
             res['oAuthProviders'] = oAuthProviders
         }
+
+        if(authMode.name() == 'SAML2'){
+            res['saml2RegistrationId'] = regId
+        }
         return res
     }
 
@@ -115,7 +124,7 @@ class PublicConfigController {
     @ResponseBody
     Map<String,Object> getClientDisplayConfig(@RequestParam(required = false) String projectId){
         String docsHost = uiConfigProperties.ui.docsHost
-        Map<String,String> res = new HashMap<>()
+        Map<String,Object> res = new HashMap<>()
         configureUserCommunityProps(res)
         res["docsHost"] = docsHost
         res["maxSelfReportMessageLength"] = uiConfigProperties.ui.maxSelfReportMessageLength
@@ -134,6 +143,7 @@ class PublicConfigController {
         res["levelDisplayName"] = 'Level'
         res["pointDisplayName"] = 'Point'
         res["groupDescriptionsOn"] = false
+        res["groupInfoOnSkillPage"] = false
         res["displayProjectDescription"] = true
         if (Boolean.valueOf(uiConfigProperties.dbUpgradeInProgress)) {
             res["dbUpgradeInProgress"] = uiConfigProperties.dbUpgradeInProgress
@@ -147,7 +157,10 @@ class PublicConfigController {
                     'level.displayName',
                     'point.displayName',
                     Settings.GROUP_DESCRIPTIONS.settingName,
-                    Settings.SHOW_PROJECT_DESCRIPTION_EVERYWHERE.settingName
+                    Settings.SHOW_PROJECT_DESCRIPTION_EVERYWHERE.settingName,
+                    Settings.GROUP_INFO_ON_SKILL_PAGE.settingName,
+                    Settings.SHOW_PROJECT_DESCRIPTION_EVERYWHERE.settingName,
+                    Settings.DISABLE_SKILLS_DISPLAY_ACHIEVEMENTS_CELEBRATIONS.settingName
             ])?.collectEntries {
                 [it.setting, it.value]
             }
@@ -180,12 +193,19 @@ class PublicConfigController {
             if (groupDescriptionsOn) {
                 res["groupDescriptionsOn"] = groupDescriptionsOn
             }
+            Boolean groupInfoOnSkillPage = Boolean.valueOf(projectSettings?[Settings.GROUP_INFO_ON_SKILL_PAGE.settingName])
+            if (groupInfoOnSkillPage) {
+                res["groupInfoOnSkillPage"] = groupInfoOnSkillPage
+            }
             Boolean showDescription = Boolean.valueOf(projectSettings?[Settings.SHOW_PROJECT_DESCRIPTION_EVERYWHERE.settingName])
             if (showDescription) {
                 res["displayProjectDescription"] = true
             } else {
                 res["displayProjectDescription"] = false
             }
+
+            Boolean disableAchievementsCelebrations = Boolean.valueOf(projectSettings?[Settings.DISABLE_SKILLS_DISPLAY_ACHIEVEMENTS_CELEBRATIONS.settingName])
+            res["disableAchievementsCelebrations"] = disableAchievementsCelebrations
 
             String name = projAdminService.lookupProjectName(projectId)
             res["projectName"] = name
