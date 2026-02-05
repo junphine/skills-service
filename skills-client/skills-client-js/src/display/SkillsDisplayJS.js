@@ -48,6 +48,11 @@ export default class SkillsDisplayJS {
   }
 
   attachTo(selectorOrElement) {
+    if (SkillsConfiguration.isDisabled()) {
+      log.info('SkillsClient::SkillsDisplayJS::attachTo: SkillsConfiguration is disabled Skills Display will not be initialized');
+      return;
+    }
+
     log.info(`SkillsClient::SkillsDisplayJS::attaching to [${selectorOrElement ? selectorOrElement.toString() : selectorOrElement}]`);
     let iframeContainer = selectorOrElement;
     if (typeof selectorOrElement === 'string') {
@@ -80,6 +85,7 @@ export default class SkillsDisplayJS {
     });
     const iframe = document.querySelector(`.${className}`);
     iframe.setAttribute('style', 'border: 0; height: 100%; width: 100%');
+    iframe.setAttribute('aria-label', 'SkillTree Skills Display')
 
     iframeContainer.height = 0;
     iframeContainer.style.height = '0px';

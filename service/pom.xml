@@ -5,7 +5,7 @@
     <parent>
         <artifactId>skills-service-parent</artifactId>
         <groupId>skill-tree</groupId>
-        <version>3.2.0-SNAPSHOT</version>
+        <version>3.6.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -18,6 +18,8 @@
            clientLibVersion: @maven.build.timestamp@
            -->
         <maven.build.timestamp.format>yyyy-MM-dd'T'HH:mm:ss'Z'</maven.build.timestamp.format>
+        <mojo.maven.license.plugin.version>2.5.0</mojo.maven.license.plugin.version>
+        <mycila.maven.license.plugin.version>4.6</mycila.maven.license.plugin.version>
     </properties>
     <dependencyManagement>
         <dependencies>
@@ -30,6 +32,7 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
+
     <dependencies>
         <dependency>
             <groupId>commons-codec</groupId>
@@ -182,8 +185,14 @@
         </dependency>
 
         <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-access</artifactId>
+            <groupId>ch.qos.logback.access</groupId>
+            <artifactId>logback-access-common</artifactId>
+            <version>${logback-access.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback.access</groupId>
+            <artifactId>logback-access-tomcat</artifactId>
+            <version>${logback-access.version}</version>
         </dependency>
 
         <dependency>
@@ -220,15 +229,13 @@
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi</artifactId>
-            <version>5.3.0</version>
+            <version>${poi.version}</version>
         </dependency>
         <dependency>
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-ooxml</artifactId>
-            <version>5.3.0</version>
+            <version>${poi.version}</version>
         </dependency>
-
-
         <dependency>
             <groupId>org.spockframework</groupId>
             <artifactId>spock-core</artifactId>
@@ -362,6 +369,75 @@
             <version>${pretty-time.version}</version>
         </dependency>
 
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-saml2-service-provider</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.bouncycastle</groupId>
+                    <artifactId>bcprov-jdk18on</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.bouncycastle</groupId>
+                    <artifactId>bcpkix-jdk18on</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>org.apache.velocity</groupId>
+                    <artifactId>velocity-engine-core</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcprov-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.bouncycastle</groupId>
+            <artifactId>bcpkix-jdk18on</artifactId>
+            <version>${bouncycastle.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.velocity</groupId>
+            <artifactId>velocity-engine-core</artifactId>
+            <version>${velocity.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>1.20.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.dasniko</groupId>
+            <artifactId>testcontainers-keycloak</artifactId>
+            <version>3.5.1</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <artifactId>selenium-java</artifactId>
+            <version>4.26.0</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.seleniumhq.selenium</groupId>
+            <artifactId>htmlunit3-driver</artifactId>
+            <version>4.26.0</version>
+            <scope>test</scope>
+        </dependency>
+
 
     </dependencies>
 
@@ -444,7 +520,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.0.0-M3</version>
+                <version>${surefire.version}</version>
                 <configuration>
                     <includes>
                         <include>**/*Spec*.java</include>
@@ -456,10 +532,17 @@
                     </includes>
                 </configuration>
             </plugin>
-
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>${surefire.version}</version>
+                <configuration>
+                    <reportsDirectory>target/surefire-reports</reportsDirectory>
+                </configuration>
+            </plugin>
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
-                <version>2.22.2</version>
+                <version>${surefire.version}</version>
                 <configuration>
                     <includes>
                         <include>**/*IT</include>
@@ -498,25 +581,25 @@
                             </resources>
                         </configuration>
                     </execution>
-<!--                    <execution>-->
-<!--                        <id>copy Vue.js client-display content</id>-->
-<!--                        <phase>generate-resources</phase>-->
-<!--                        <goals>-->
-<!--                            <goal>copy-resources</goal>-->
-<!--                        </goals>-->
-<!--                        <configuration>-->
-<!--                            <outputDirectory>${basedir}/src/main/resources/public/static/clientPortal</outputDirectory>-->
-<!--                            <overwrite>true</overwrite>-->
-<!--                            <resources>-->
-<!--                                <resource>-->
-<!--                                    <directory>${project.parent.basedir}/client-display/dist</directory>-->
-<!--                                    <includes>-->
-<!--                                        <include>/*/</include>-->
-<!--                                    </includes>-->
-<!--                                </resource>-->
-<!--                            </resources>-->
-<!--                        </configuration>-->
-<!--                    </execution>-->
+                    <!--                    <execution>-->
+                    <!--                        <id>copy Vue.js client-display content</id>-->
+                    <!--                        <phase>generate-resources</phase>-->
+                    <!--                        <goals>-->
+                    <!--                            <goal>copy-resources</goal>-->
+                    <!--                        </goals>-->
+                    <!--                        <configuration>-->
+                    <!--                            <outputDirectory>${basedir}/src/main/resources/public/static/clientPortal</outputDirectory>-->
+                    <!--                            <overwrite>true</overwrite>-->
+                    <!--                            <resources>-->
+                    <!--                                <resource>-->
+                    <!--                                    <directory>${project.parent.basedir}/client-display/dist</directory>-->
+                    <!--                                    <includes>-->
+                    <!--                                        <include>/*/</include>-->
+                    <!--                                    </includes>-->
+                    <!--                                </resource>-->
+                    <!--                            </resources>-->
+                    <!--                        </configuration>-->
+                    <!--                    </execution>-->
                 </executions>
             </plugin>
 
@@ -547,8 +630,42 @@
                     <skipStaging>true</skipStaging>
                 </configuration>
             </plugin>
-
         </plugins>
     </build>
-
+    <profiles>
+        <profile>
+            <id>skipLicensePlugin</id>
+            <activation>
+                <property>
+                    <name>skipLicensePlugin</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>license-maven-plugin</artifactId>
+                        <version>${mojo.maven.license.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>default-cli</id>
+                                <phase>none</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>com.mycila</groupId>
+                        <artifactId>license-maven-plugin</artifactId>
+                        <version>${mycila.maven.license.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>license-check</id>
+                                <phase>none</phase>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

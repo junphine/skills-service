@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm install && npm run licenseCheck && npm run getDashboardVersion && vite build",
+    "build": "npm run getDashboardVersion && vite build",
     "preview": "vite preview",
     "test:unit": "vitest",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
@@ -48,8 +48,10 @@
     "video.js": "8.17.4",
     "vis-network": "9.1.9",
     "vue": "3.5.13",
+    "vue-demi": "^0.14.10",
     "vue-router": "4.5.0",
     "vue3-apexcharts": "1.8.0",
+    "vue3-i18n": "^1.1.5",
     "webvtt-parser": "2.2.0",
     "yup": "1.4.0"
   },
