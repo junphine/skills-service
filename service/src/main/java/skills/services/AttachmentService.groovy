@@ -16,12 +16,18 @@
 package skills.services
 
 import groovy.util.logging.Slf4j
+import org.apache.commons.lang3.StringUtils
 import org.hibernate.engine.jdbc.BlobProxy
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.util.unit.DataSize
 import org.springframework.web.multipart.MultipartFile
 import skills.auth.UserInfoService
+import skills.controller.exceptions.AttachmentValidator
+import skills.controller.exceptions.SkillsValidator
 import skills.controller.result.model.UploadAttachmentResult
 import skills.storage.model.Attachment
 import skills.storage.repos.AttachmentRepo
@@ -44,11 +50,24 @@ class AttachmentService {
     @Autowired
     SkillDefWithExtraRepo skillDefWithExtraRepo
 
+    @Value('${skills.config.allowedAttachmentMimeTypes}')
+    List<MediaType> allowedAttachmentMimeTypes;
+
+    @Value('${skills.config.maxAttachmentSize:10MB}')
+    DataSize maxAttachmentSize;
+
     @Transactional
     UploadAttachmentResult saveAttachment(MultipartFile file,
                                           String projectId,
                                           String quizId,
                                           String skillId) {
+        boolean isAtLeastOneIdPresent = !StringUtils.isBlank(projectId) || !StringUtils.isBlank(quizId) || !StringUtils.isBlank(skillId);
+        SkillsValidator.isTrue(isAtLeastOneIdPresent,
+                "Attachment must be associated to either a projectId or a quizId or a skillId");
+
+        AttachmentValidator.isWithinMaxAttachmentSize(file.getSize(), maxAttachmentSize);
+        AttachmentValidator.isAllowedAttachmentMimeType(file.getContentType(), allowedAttachmentMimeTypes);
+
         String userId = userInfoService.getCurrentUserId();
         String uuid = UUID.randomUUID().toString()
 
@@ -62,7 +81,7 @@ class AttachmentService {
                 quizId: quizId,
                 skillId: skillId)
         attachment.setContent(BlobProxy.generateProxy(file.inputStream, file.size))
-        attachmentRepo.save(attachment);
+        persistAttachment(attachment);
         return new UploadAttachmentResult(
                 filename: file.originalFilename,
                 contentType: file.contentType,
@@ -78,6 +97,12 @@ class AttachmentService {
 
     @Transactional
     Attachment copyAttachmentWithNewUuid(Attachment attachment, String newProjectId = null, String newQuizId = null, String skillId = null) {
+        Attachment res = constructNewAttachmentWithNewUuid(attachment, newProjectId, newQuizId, skillId)
+        persistAttachment(res)
+        return res
+    }
+
+    static Attachment constructNewAttachmentWithNewUuid(Attachment attachment, String newProjectId = null, String newQuizId = null, String skillId = null) {
         String uuid = UUID.randomUUID().toString()
         Attachment res = new Attachment(
                 filename: attachment.filename,
@@ -90,9 +115,9 @@ class AttachmentService {
                 skillId: skillId ?: (newProjectId ? null : attachment.skillId), // if a new project then skillId may not exist
                 content: attachment.content
         )
-        attachmentRepo.save(res)
         return res
     }
+
 
     @Transactional(readOnly = true)
     Attachment getAttachment(String uuid) {
@@ -155,7 +180,7 @@ class AttachmentService {
                     changed = true
                 }
                 if (changed) {
-                    attachmentRepo.save(attachment)
+                    persistAttachment(attachment)
                 }
             }
         }
@@ -166,6 +191,10 @@ class AttachmentService {
             return UUID_PATTERN.matcher(description).findAll().collect { it[1] }
         }
         return []
+    }
+
+    void persistAttachment(Attachment attachment) {
+        attachmentRepo.save(attachment)
     }
 
 }

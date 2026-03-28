@@ -29,6 +29,7 @@ import { useDialogMessages } from '@/components/utils/modal/UseDialogMessages.js
 import SkillsDataTable from '@/components/utils/table/SkillsDataTable.vue'
 import { FilterMatchMode } from '@primevue/core/api'
 import HighlightedValue from '@/components/utils/table/HighlightedValue.vue'
+import {useStorage} from "@vueuse/core";
 
 const route = useRoute()
 const responsive = useResponsiveBreakpoints()
@@ -52,7 +53,7 @@ const reset = () => {
 const tableIsBusy = ref(false)
 const data = ref([])
 const loadingData = ref(true)
-const pageSize = ref(5)
+const pageSize = useStorage('revokeUserAccess-pageSize', 5)
 const possiblePageSizes = [5, 10, 15, 20]
 const sortInfo = ref({ sortOrder: -1, sortBy: 'userId' })
 const totalRows = ref(0)
@@ -149,7 +150,7 @@ const tableFilters = ref({
 </script>
 
 <template>
-  <Card :pt="{ body: { class: '!p-0' } }">
+  <Card :pt="{ body: { class: 'p-0!' } }">
     <template #header>
       <SkillsCardHeader title="Project User: Revoke">
         <template #headerIcon><i class="fas fa-user-lock mr-2 text-red-500"
@@ -199,13 +200,20 @@ const tableFilters = ref({
                   <i class="fas fa-envelope-open-text mr-1" :class="colors.getTextClass(0)" aria-hidden="true"></i>
                 </template>
                 <template #filter="{ filterModel, filterCallback }">
-                  <InputText v-model="filterModel.value"
+                  <div class="flex gap-1">
+                    <InputText v-model="filterModel.value"
                              type="text"
                              class="p-column-filter"
                              data-cy="privateProjectUsers-userIdFilter"
                              style="min-width: 10rem"
                              @input="filterCallback()"
                              placeholder="Search by User ID" />
+                    <SkillsButton
+                        label="Clear"
+                        icon="fas fa-filter"
+                        data-cy="clearFilterBtn"
+                        @click="filterModel.value = ''; filterCallback()"/>
+                  </div>
                 </template>
                 <template #body="slotProps">
                   <div class="flex">

@@ -31,6 +31,8 @@ import SkillVideo from '@/skills-display/components/progress/SkillVideo.vue';
 import dayjs from 'dayjs';
 import {useStorage} from "@vueuse/core";
 import {useSkillsAnnouncer} from "@/common-components/utilities/UseSkillsAnnouncer.js";
+import SkillSlides from "@/skills-display/components/progress/SkillSlides.vue";
+import SelfReportType from "@/components/skills/selfReport/SelfReportType.js";
 
 const props = defineProps({
   skill: Object,
@@ -72,6 +74,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
     required: false
+  },
+  index: {
+    type: Number,
+    default: -1
   }
 })
 const emit = defineEmits(['add-tag-filter', 'points-earned', 'reset-group-expansion'])
@@ -87,17 +93,24 @@ const buildToRoute = () => {
     return null
   }
   let name = 'skillDetails'
+  const query = {}
   const params = { skillId: props.skill.skillId }
   if (route.params.subjectId) {
     params.subjectId = route.params.subjectId
   } else if (route.params.badgeId) {
     params.badgeId = route.params.badgeId
     name = (skillsDisplayInfo.isGlobalBadgePage.value) ? 'globalBadgeSkillDetails' : 'badgeSkillDetails'
+
+    if (skillsDisplayInfo.isGlobalBadgePage.value && props.skill.crossProject) {
+      name = 'globalBadgeSkillDetailsUnderAnotherProject'
+      params.crossProjectId = props.skill.projectId
+      params.dependentSkillId = props.skill.skillId
+    }
   } else if (props.skill.crossProject && props.skill.projectId) {
     params.crossProjectId = props.skill.projectId
   }
   name = skillsDisplayInfo.getContextSpecificRouteName(name)
-  return { name, params }
+  return { name, params, query }
 }
 const toRoute = buildToRoute()
 
@@ -147,26 +160,26 @@ watch(() => props.expandGroups, (newValue) => {
     expanded.value = newValue
   }
 })
+
+const skillDispNameLower = computed(() => attributes.skillDisplayName.toLowerCase())
+const projDispNameLower = computed(() => attributes.projectDisplayName.toLowerCase())
+const canSkillBeSelfReported = computed(() => SelfReportType.isSelfReportType(props.skill.selfReporting.type))
 </script>
 
 <template>
   <div class="text-left skills-theme-skills-progress" data-cy="skillProgress">
     <div v-if="skill.crossProject && !skillsDisplayInfo.isGlobalBadgePage.value" class="flex gap-4 flex-wrap">
       <div class="flex-1">
-        <div class="text-xl"><span class="text-muted-color italic">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}</div>
+        <div class="text-xl"><span class="text-muted-color italic" data-cy="crossProjName">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}</div>
       </div>
       <div class="">
         <div class="text-xl"><i class="fa fa-vector-square" aria-hidden="true"/> Cross-{{ attributes.projectDisplayName }} {{ attributes.skillDisplayName }}</div>
       </div>
     </div>
-    <Message v-if="skill.crossProject && !isSkillComplete && !skillsDisplayInfo.isGlobalBadgePage.value"
+    <Message v-if="skill.crossProject && !isSkillComplete && !canSkillBeSelfReported && !skillsDisplayInfo.isGlobalBadgePage.value"
              icon="fas fa-hands-helping"
              data-cy="crossProjAlert" :closable="false">
-      This is a cross-{{ attributes.projectDisplayName.toLowerCase() }} {{ attributes.skillDisplayName.toLowerCase()
-      }}! In order to complete
-      this {{ attributes.skillDisplayName.toLowerCase() }} please visit <strong>{{
-        skill.projectName
-      }}</strong> {{ attributes.projectDisplayName.toLowerCase() }}! Happy playing!!
+      This {{  skillDispNameLower }} is shared from another {{ projDispNameLower}}. Visit the <strong>{{ skill.projectName }}</strong> {{ projDispNameLower}} to complete this skill.
     </Message>
 
     <skill-progress-name-row
@@ -175,6 +188,7 @@ watch(() => props.expandGroups, (newValue) => {
       :to-route="toRoute"
       :is-expanded="expanded"
       @toggle-row="toggleRow"
+      :index="index"
       :child-skill-highlight-string="childSkillHighlightString"
       :type="type" />
     <div class="mt-1">
@@ -217,7 +231,7 @@ watch(() => props.expandGroups, (newValue) => {
       </div>
       <div v-if="skill.type === 'Skill'">
         <div v-if="isSkillLocked && skill.dependencyInfo" class="text-center text-muted locked-text">
-          *** Skill has
+          *** {{ attributes.skillDisplayName }} has
           <Tag>{{ skill.dependencyInfo.numDirectDependents }}</Tag>
           direct prerequisite(s).
           <span v-if="enableDrillDown">Click <i class="fas fa-lock icon"></i> to see its prerequisites.</span>
@@ -241,6 +255,10 @@ watch(() => props.expandGroups, (newValue) => {
                      :video-collapsed-by-default="videoCollapsedByDefault"
                      @points-earned="pointsEarned"
                      class="mt-2" />
+        <skill-slides v-if="skill"
+                      :skill="skill"
+                      class="mt-2"
+        />
         <p class="skills-text-description text-primary mt-4" style="font-size: 0.9rem;">
           <markdown-text
             :instance-id="`skillDescription-${skill.skillId}`"
@@ -273,6 +291,7 @@ watch(() => props.expandGroups, (newValue) => {
           :child-skill-highlight-string="childSkillHighlightString"
           :data-cy="`group-${skill.skillId}_skillProgress-${childSkill.skillId}`"
           @add-tag-filter="addTagFilter"
+          :index="index"
         ></skill-progress>
       </div>
     </div>

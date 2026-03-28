@@ -49,6 +49,7 @@ import skills.dbupgrade.DBUpgradeSafe;
 import skills.icons.CustomIconFacade;
 import skills.services.*;
 import skills.services.admin.InviteOnlyProjectService;
+import skills.services.admin.SkillsDepsService;
 import skills.services.events.SkillEventResult;
 import skills.services.events.SkillEventsService;
 import skills.skillLoading.RankingLoader;
@@ -56,6 +57,7 @@ import skills.skillLoading.SkillsLoader;
 import skills.skillLoading.SkillsService;
 import skills.skillLoading.model.*;
 import skills.storage.model.Attachment;
+import skills.storage.repos.SkillDefRepo;
 import skills.utils.MetricsLogger;
 import skills.utils.TablePageUtil;
 
@@ -63,7 +65,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -109,6 +110,12 @@ class UserSkillsController {
     AddSkillHelper addSkillHelper;
 
     @Autowired
+    SkillsDepsService skillsDepsService;
+
+    @Autowired
+    GlobalBadgesService globalBadgesService;
+
+    @Autowired
     MetricsLogger metricsLogger;
 
     @Autowired
@@ -116,6 +123,9 @@ class UserSkillsController {
 
     @Autowired
     AttachmentService attachmentService;
+
+    @Autowired
+    VideoStreamService videoStreamService;
 
     @Autowired
     InviteOnlyProjectService inviteOnlyProjectService;
@@ -126,14 +136,11 @@ class UserSkillsController {
     @Autowired
     VideoCaptionsService videoCaptionsService;
 
-    @Value("${skills.config.allowedAttachmentMimeTypes}")
-    List<MediaType> allowedAttachmentMimeTypes;
+    @Autowired
+    GlobalBadgesService globalBadgeService;
 
     @Value("${skills.config.allowedVideoUploadMimeTypes}")
-    List<MediaType> allowedMediaUploadTypes;
-
-    @Value("${skills.config.maxAttachmentSize:10MB}")
-    DataSize maxAttachmentSize;
+    List<MediaType> allowedVideoUploadMimeTypes;
 
     private int getProvidedVersionOrReturnDefault(Integer versionParam) {
         if (versionParam != null) {
@@ -187,6 +194,16 @@ class UserSkillsController {
         String userId = userInfoService.getUserName(userIdParam, true, idType);
 
         return skillsService.getSkillsForProject(userId, projectId, query, pageRequest);
+    }
+    @RequestMapping(value = "/projects/{projectId}/skillsSubjectsAndBadges", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    @Profile
+    public List<SkillDefRepo.SkillWithAchievementDetails> getAllProjectSkillsSubjectsAndBadges(HttpServletRequest request,
+                                                                                               @PathVariable("projectId") String projectId,
+                                                                                               @RequestParam(name = "userId", required = false) String userIdParam,
+                                                                                               @RequestParam(name = "idType", required = false) String idType) {
+        String userId = userInfoService.getUserName(userIdParam, true, idType);
+        return skillsService.getAllSkillsSubjectsAndBadgesWithAchievementDetails(projectId, userId);
     }
 
     @RequestMapping(value = "/projects/{projectId}/summary", method = RequestMethod.GET, produces = "application/json")
@@ -323,6 +340,9 @@ class UserSkillsController {
                                                              @RequestParam(name = "global", required = false) Boolean isGlobal) {
         String userId = userInfoService.getUserName(userIdParam, true);
         if (isGlobal != null && isGlobal) {
+            if (!globalBadgeService.isProjectUsedInGlobalBadge(projectId)) {
+                throw new SkillException("Project ID [" + projectId + "] does not participate in this global badge [" + badgeId + "]");
+            }
             return skillsLoader.loadGlobalBadgeDescriptions(badgeId, userId, getProvidedVersionOrReturnDefault(version));
         } else {
             return skillsLoader.loadBadgeDescriptions(projectId, badgeId, userId, getProvidedVersionOrReturnDefault(version));
@@ -340,6 +360,9 @@ class UserSkillsController {
                                              @RequestParam(name = "includeSkills", required = false, defaultValue = "true") String includeSkills) {
         String userId = userInfoService.getUserName(userIdParam, true, idType);
         if (isGlobal != null && isGlobal) {
+            if (!globalBadgeService.isProjectUsedInGlobalBadge(projectId)) {
+                throw new SkillException("Project ID [" + projectId + "] does not participate in this global badge [" + badgeId + "]");
+            }
             return skillsLoader.loadGlobalBadge(userId, projectId, badgeId, getProvidedVersionOrReturnDefault(version), Boolean.valueOf(includeSkills));
         } else {
             return skillsLoader.loadBadge(projectId, userId, badgeId, getProvidedVersionOrReturnDefault(version), Boolean.valueOf(includeSkills));
@@ -351,10 +374,11 @@ class UserSkillsController {
     public UserPointHistorySummary getProjectsPointHistory(@PathVariable("projectId") String projectId,
                                                            @RequestParam(name = "userId", required = false) String userIdParam,
                                                            @RequestParam(name = "version", required = false) Integer version,
-                                                           @RequestParam(name = "idType", required = false) String idType
+                                                           @RequestParam(name = "idType", required = false) String idType,
+                                                           @RequestParam(name = "minNumOfDaysBeforeReturningHistory", required = false, defaultValue = "2") Integer minNumOfDaysBeforeReturningHistory
                                                            ) {
         String userId = userInfoService.getUserName(userIdParam, true, idType);
-        return skillsLoader.loadPointHistorySummary(projectId, userId, maxDaysBack, null, getProvidedVersionOrReturnDefault(version));
+        return skillsLoader.loadPointHistorySummary(projectId, userId, maxDaysBack, null, getProvidedVersionOrReturnDefault(version), minNumOfDaysBeforeReturningHistory);
     }
 
     @RequestMapping(value = "/projects/{projectId}/subjects/{subjectId}/pointHistory", method = RequestMethod.GET, produces = "application/json")
@@ -363,9 +387,10 @@ class UserSkillsController {
                                                            @PathVariable("subjectId") String subjectId,
                                                            @RequestParam(name = "userId", required = false) String userIdParam,
                                                            @RequestParam(name = "version", required = false) Integer version,
-                                                           @RequestParam(name = "idType", required = false) String idType) {
+                                                           @RequestParam(name = "idType", required = false) String idType,
+                                                           @RequestParam(name = "minNumOfDaysBeforeReturningHistory", required = false, defaultValue = "2") Integer minNumOfDaysBeforeReturningHistory) {
         String userId = userInfoService.getUserName(userIdParam, true, idType);
-        return skillsLoader.loadPointHistorySummary(projectId, userId, maxDaysBack, subjectId, getProvidedVersionOrReturnDefault(version));
+        return skillsLoader.loadPointHistorySummary(projectId, userId, maxDaysBack, subjectId, getProvidedVersionOrReturnDefault(version), minNumOfDaysBeforeReturningHistory);
     }
 
     @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/dependencies", method = RequestMethod.GET, produces = "application/json")
@@ -385,6 +410,19 @@ class UserSkillsController {
                                      @PathVariable("skillId") String skillId,
                                      @RequestBody(required = false) SkillEventRequest skillEventRequest) {
         return addSkillHelper.addSkill(projectId, skillId, skillEventRequest);
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/crossProject/{crossProjectId}/skills/{skillId}", method = {RequestMethod.PUT, RequestMethod.POST}, produces = "application/json")
+    @ResponseBody
+    @Profile
+    public SkillEventResult addCrossProjectSkill(@PathVariable("projectId") String projectId,
+                                     @PathVariable("crossProjectId") String crossProjectId,
+                                     @PathVariable("skillId") String skillId,
+                                     @RequestBody(required = false) SkillEventRequest skillEventRequest) {
+        boolean partOfLP = skillsDepsService.checkIfSkillInAnotherProjectPartOfLearningPath(projectId, crossProjectId, skillId);
+        boolean partOfGB = globalBadgesService.checkIfSkillBelongsToBadgeThatThisProjectIsPartOf(projectId, crossProjectId, skillId);
+        SkillsValidator.isTrue(partOfLP || partOfGB, "The provided crossProjectId and skillId must be associated with this project either through a Learning Path chain or via a Global Badge");
+        return addSkillHelper.addSkill(crossProjectId, skillId, skillEventRequest);
     }
 
     @RequestMapping(value = "/projects/{projectId}/rank", method = RequestMethod.GET, produces = "application/json")
@@ -444,10 +482,10 @@ class UserSkillsController {
         return customIconFacade.generateCss(projectId);
     }
 
-    @RequestMapping(value = "/icons/customIconCss", method = RequestMethod.GET, produces = "text/css")
+    @RequestMapping(value = "/badges/{id}/customIconCss", method = RequestMethod.GET, produces = "text/css")
     @ResponseBody
-    public String getCustomGlogbalIconCss() {
-        return customIconFacade.generateGlobalCss();
+    public String getCustomGlobalIconCss(@PathVariable("id") String globalBadgeId) {
+        return customIconFacade.generateGlobalBadgeCss(globalBadgeId);
     }
 
     private String toDateString(Long timestamp) {
@@ -509,19 +547,13 @@ class UserSkillsController {
         return RequestResult.success();
     }
 
-    @RequestMapping(value = "/upload", method = {RequestMethod.PUT, RequestMethod.POST}, produces = "application/json")
+    @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/upload", method = {RequestMethod.PUT, RequestMethod.POST}, produces = "application/json")
     @ResponseBody
     @Profile
-    public UploadAttachmentResult uploadFile(@RequestParam("file") MultipartFile file,
-                                             @RequestParam(name = "projectId", required = false) String projectId,
-                                             @RequestParam(name = "quizId", required = false) String quizId,
-                                             @RequestParam(name = "skillId", required = false) String skillId) {
-        log.info("Project ID ["+projectId+"], quizId ["+quizId+"], skillId ["+skillId+"]");
-        SkillsValidator.isTrue(StringUtils.isBlank(projectId) || StringUtils.isBlank(quizId),
-                "Attachment cannot be associated to both a projectId and a quizId");
-        AttachmentValidator.isWithinMaxAttachmentSize(file.getSize(), maxAttachmentSize);
-        AttachmentValidator.isAllowedAttachmentMimeType(file.getContentType(), allowedAttachmentMimeTypes);
-        return attachmentService.saveAttachment(file, projectId, quizId, skillId);
+    public UploadAttachmentResult uploadFileForSkill(@RequestParam("file") MultipartFile file,
+                                             @PathVariable("projectId") String projectId,
+                                             @PathVariable("skillId") String skillId) {
+        return attachmentService.saveAttachment(file, projectId, null, skillId);
     }
 
     @GetMapping(value = "/projects/{projectId}/skills/{skillId}/videoCaptions", produces = MediaType.TEXT_PLAIN_VALUE)
@@ -541,6 +573,8 @@ class UserSkillsController {
     @RequestMapping(value = "/download/{uuid}", method = RequestMethod.GET, produces = MediaType.APPLICATION_OCTET_STREAM_VALUE)
     @Transactional(readOnly = true)
     public void download(@PathVariable("uuid") String uuid,
+                         @RequestParam(name = "alwaysReturnContentDispositionForPdf", required = false, defaultValue = "false") Boolean alwaysReturnContentDispositionForPdf,
+                         @RequestHeader(value = "Range", required = false) String rangeHeader,
                          HttpServletResponse response) {
         Attachment attachment = attachmentService.getAttachment(uuid);
         if (attachment == null) {
@@ -549,28 +583,27 @@ class UserSkillsController {
 
         if (attachment.getProjectId() != null && inviteOnlyProjectService.isInviteOnlyProject(attachment.getProjectId())) {
             String userId = userInfoService.getCurrentUserId();
-            if (!inviteOnlyProjectService.isPrivateProjRoleOrAdminRole(attachment.getProjectId(), userId)) {
+            if (!inviteOnlyProjectService.isPrivateProjRoleOrAdminRole(attachment.getProjectId(), userId) && !userInfoService.isCurrentUserASuperDuperUser()) {
                 throw new InviteOnlyAccessDeniedException("Access is denied", attachment.getProjectId());
             }
         }
 
-        try (InputStream inputStream = attachment.getContent().getBinaryStream();
-             OutputStream outputStream = response.getOutputStream()) {
-            response.setContentType(attachment.getContentType());
-            if (!StringUtils.equalsIgnoreCase(attachment.getContentType(), "application/pdf")) {
-                response.setHeader("Content-Disposition", "attachment; filename=\"" + attachment.getFilename() + "\"");
-            }
+        String contentType = attachment.getContentType().toLowerCase();
+        boolean isVideoType = AttachmentValidator.isAllowedAttachmentMimeTypeBoolean(contentType, allowedVideoUploadMimeTypes);
+        if (isVideoType) {
+            videoStreamService.streamVideo(attachment, rangeHeader, response);
+        } else {
+            try (InputStream inputStream = attachment.getContent().getBinaryStream();
+                 OutputStream outputStream = response.getOutputStream()) {
+                response.setContentType(attachment.getContentType());
+                if (alwaysReturnContentDispositionForPdf || !StringUtils.equalsIgnoreCase(attachment.getContentType(), "application/pdf")) {
+                    response.setHeader("Content-Disposition", "attachment; filename=\"" + attachment.getFilename() + "\"");
+                }
 
-            String contentType = attachment.getContentType().toLowerCase();
-            if (AttachmentValidator.isAllowedAttachmentMimeTypeBoolean(contentType, allowedMediaUploadTypes)) {
-                response.setHeader("Content-Length", attachment.getSize().toString());
-                long attachmentSize = attachment.getSize() - 1;
-                response.setHeader("Content-Range", "bytes 0-" + attachmentSize + "/" + attachment.getSize().toString());
-                response.setStatus(HttpServletResponse.SC_PARTIAL_CONTENT);
+                IOUtils.copy(inputStream, outputStream);
+            } catch (Exception e) {
+                throw new SkillException("Error closing stream resources", e);
             }
-            IOUtils.copy(inputStream, outputStream);
-        } catch (Exception e) {
-            throw new SkillException("Error closing stream resources", e);
         }
     }
 

@@ -26,6 +26,8 @@ import InputText from 'primevue/inputtext'
 import Column from 'primevue/column'
 import DateCell from '@/components/utils/table/DateCell.vue'
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useStorage} from "@vueuse/core";
 
 const route = useRoute()
 const userInfo = useUserInfo()
@@ -70,11 +72,11 @@ const tableOptions = ref({
     server: true,
     currentPage: 1,
     totalRows: 1,
-    pageSize: 10,
     possiblePageSizes: [10, 25, 50],
   },
   items: [],
 })
+const pageSize = useStorage('expirationHistory-tablePageSize', 10)
 
 onMounted(() => {
   loadData();
@@ -83,7 +85,7 @@ onMounted(() => {
 const loadData = () => {
   tableOptions.value.busy = true
   const params = {
-    limit: tableOptions.value.pagination.pageSize,
+    limit: pageSize.value,
     page: tableOptions.value.pagination.currentPage,
     orderBy: sortInfo.value.sortBy,
     ascending: sortInfo.value.sortOrder === 1,
@@ -106,7 +108,7 @@ const onFilter = (filterEvent) => {
   loadData().then(() => filtering.value = true)
 }
 const pageChanged = (pagingInfo) => {
-  tableOptions.value.pagination.pageSize = pagingInfo.rows
+  pageSize.value = pagingInfo.rows
   tableOptions.value.pagination.currentPage = pagingInfo.page + 1
   loadData()
 }
@@ -137,7 +139,7 @@ const calculateClientDisplayRoute = (props) => {
 <template>
   <SubPageHeader title="Skill Expiration History" />
 
-  <Card :pt="{ body: { class: '!p-0' } }">
+  <Card :pt="{ body: { class: 'p-0!' } }">
     <template #content>
       <SkillsDataTable
           tableStoredStateId="expirationHistoryTable"
@@ -155,7 +157,7 @@ const calculateClientDisplayRoute = (props) => {
           @filter="onFilter"
           @page="pageChanged"
           @sort="sortField"
-          :rows="tableOptions.pagination.pageSize"
+          :rows="pageSize"
           :rowsPerPageOptions="tableOptions.pagination.possiblePageSizes"
           :total-records="tableOptions.pagination.totalRows"
           v-model:sort-field="sortInfo.sortBy"
@@ -166,22 +168,7 @@ const calculateClientDisplayRoute = (props) => {
         </template>
 
         <template #empty>
-          <div class="flex justify-center flex-wrap h-48">
-            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle fa-3x"
-               aria-hidden="true"></i>
-            <span class="w-full">
-                <span class="flex items-center justify-center">There are no records to show</span>
-                <span v-if="filtering" class="flex items-center justify-center">  Click
-                    <SkillsButton class="flex flex items-center justify-center px-1"
-                                  label="Reset"
-                                  link
-                                  size="small"
-                                  @click="clearFilter"
-                                  :aria-label="`Reset filter for $ {quizType} results`"
-                                  data-cy="userResetBtn" /> to clear the existing filter.
-              </span>
-            </span>
-          </div>
+          <table-no-res :showResetFilter="filtering" @resetFilter="clearFilter"/>
         </template>
         <Column field="skillName" header="Skill Name" :showFilterMenu="false" :sortable="true" :class="{'flex': responsive.md.value }">
           <template #header>

@@ -24,9 +24,12 @@ import skills.auth.UserNameService
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
 import skills.controller.exceptions.SkillQuizException
+import skills.controller.result.model.GlobalBadgeResult
 import skills.controller.result.model.ProjectResult
 import skills.controller.result.model.UserRoleRes
 import skills.services.AccessSettingsStorageService
+import skills.services.GlobalBadgeRoleService
+import skills.services.GlobalBadgesService
 import skills.services.admin.ProjAdminService
 import skills.services.admin.UserCommunityService
 import skills.services.quiz.QuizDefService
@@ -64,6 +67,12 @@ class AdminGroupRoleService {
 
     @Autowired
     ProjAdminService projAdminService
+
+    @Autowired
+    GlobalBadgesService globalBadgesService
+
+    @Autowired
+    GlobalBadgeRoleService globalBadgeRoleService
 
     @Autowired
     UserNameService userNameService
@@ -113,6 +122,10 @@ class AdminGroupRoleService {
             projectIds.each { projectId ->
                 accessSettingsStorageService.addUserRole(userId, projectId, RoleName.ROLE_PROJECT_ADMIN, true, adminGroupDef.adminGroupId)
             }
+            List<String> globalBadgeIds = userRoleRepo.findGlobalBadgeIdsByAdminGroupId(adminGroupDef.adminGroupId)
+            globalBadgeIds.each { globalBadgeId ->
+                globalBadgeRoleService.addGlobalBadgeAdminRole(userIdParam, globalBadgeId, RoleName.ROLE_GLOBAL_BADGE_ADMIN, adminGroupDef.adminGroupId)
+            }
         }
 
         UserAttrs userAttrs = userAttrsRepo.findByUserIdIgnoreCase(userId)
@@ -134,8 +147,11 @@ class AdminGroupRoleService {
         ensureValidRole(roleName, adminGroupDef.adminGroupId)
         String userId = userIdParam?.toLowerCase()
         String currentUser = userInfoService.getCurrentUserId()
-        if (currentUser?.toLowerCase() == userId?.toLowerCase()) {
-            throw new SkillException("Cannot remove roles from yourself. userId=[${userId}], adminGroupName=[${adminGroupDef.name}]", ErrorCode.AccessDenied)
+        Integer numberOfOwners = userRoleRepo.countUserRolesByAdminGroupIdAndUserRoles(adminGroupId, [RoleName.ROLE_ADMIN_GROUP_OWNER, RoleName.ROLE_SUPER_DUPER_USER])
+        Boolean canDeleteSelf = numberOfOwners > 1
+
+        if (currentUser?.toLowerCase() == userId?.toLowerCase() && !canDeleteSelf) {
+            throw new SkillException("Cannot delete roles for myself when there are no other admins. userId=[${userId}], adminGroupName=[${adminGroupDef.name}]", ErrorCode.AccessDenied)
         }
         accessSettingsStorageService.deleteAdminGroupUserRole(userId, adminGroupDef.adminGroupId, roleName)
         accessSettingsStorageService.deleteProjectAndQuizAdminUserRolesWithAdminGroupIdForUser(userId, adminGroupDef.adminGroupId)
@@ -171,7 +187,7 @@ class AdminGroupRoleService {
     @Transactional()
     void removeQuizFromAdminGroup(String adminGroupId, String quizId) {
         QuizDef quizDef = quizDefService.findQuizDef(quizId)
-        removeProjectOrQuizFromAdminGroup(adminGroupId, quizDef.quizId, RoleName.ROLE_QUIZ_ADMIN)
+        removeProjectOrQuizOrGlobalBadgeFromAdminGroup(adminGroupId, quizDef.quizId, RoleName.ROLE_QUIZ_ADMIN)
     }
 
     @Transactional()
@@ -189,24 +205,49 @@ class AdminGroupRoleService {
     }
 
     @Transactional()
-    void removeProjectFromAdminGroup(String adminGroupId, String quizId) {
-        ProjDef projDef = projectDefRepo.findByProjectId(quizId)
-        removeProjectOrQuizFromAdminGroup(adminGroupId, projDef.projectId, RoleName.ROLE_PROJECT_ADMIN)
+    void removeProjectFromAdminGroup(String adminGroupId, String projectId) {
+        ProjDef projDef = projectDefRepo.findByProjectId(projectId)
+        removeProjectOrQuizOrGlobalBadgeFromAdminGroup(adminGroupId, projDef.projectId, RoleName.ROLE_PROJECT_ADMIN)
     }
 
-    private void removeProjectOrQuizFromAdminGroup(String adminGroupId, String projectOrQuizId, RoleName roleName) {
+    @Transactional()
+    void addGlobalBadgeToAdminGroup(String adminGroupId, String globalBadgeId) {
+        AdminGroupDef adminGroupDef = findAdminGroupDef(adminGroupId)
+        GlobalBadgeResult globalBadgeDef = findGlobalBadgeResult(globalBadgeId)
+
+        if (userCommunityService.isUserCommunityOnlyGlobalBadge(globalBadgeId) && !userCommunityService.isUserCommunityOnlyAdminGroup(adminGroupId)) {
+            throw new SkillException("Global Badge [${globalBadgeDef.name}] is not allowed to be assigned [${adminGroupDef.name}] Admin Group", ErrorCode.AccessDenied)
+        }
+
+        accessSettingsStorageService.findAllAdminGroupMembers(adminGroupDef.adminGroupId).each { UserRoleRes userRoleRes ->
+            accessSettingsStorageService.addGlobalBadgeAdminUserRoleForUser(userRoleRes.userId, globalBadgeDef.badgeId, RoleName.ROLE_GLOBAL_BADGE_ADMIN, adminGroupId)
+        }
+    }
+
+    @Transactional()
+    void removeGlobalBadgeFromAdminGroup(String adminGroupId, String badgeId) {
+        GlobalBadgeResult globalBadgeDef = findGlobalBadgeResult(badgeId)
+        removeProjectOrQuizOrGlobalBadgeFromAdminGroup(adminGroupId, globalBadgeDef.badgeId, RoleName.ROLE_GLOBAL_BADGE_ADMIN)
+    }
+
+    private void removeProjectOrQuizOrGlobalBadgeFromAdminGroup(String adminGroupId, String projectOrQuizOrGlobalBadgeId, RoleName roleName) {
         AdminGroupDef adminGroupDef = findAdminGroupDef(adminGroupId)
         String currentUser = userInfoService.getCurrentUserId()
         // remove all members of this admin group, except current user (unless the current user remains an admin from a different group)
         if (roleName == RoleName.ROLE_QUIZ_ADMIN) {
-            userRoleRepo.deleteByQuizIdAndAdminGroupIdAndRoleName(projectOrQuizId, adminGroupDef.adminGroupId, RoleName.ROLE_QUIZ_ADMIN)
-            if (!userRoleRepo.isUserQuizGroupAdmin(currentUser, projectOrQuizId)) {
-                accessSettingsStorageService.addQuizDefUserRoleForUser(currentUser, projectOrQuizId, RoleName.ROLE_QUIZ_ADMIN)
+            userRoleRepo.deleteByQuizIdAndAdminGroupIdAndRoleName(projectOrQuizOrGlobalBadgeId, adminGroupDef.adminGroupId, RoleName.ROLE_QUIZ_ADMIN)
+            if (!userRoleRepo.isUserQuizGroupAdmin(currentUser, projectOrQuizOrGlobalBadgeId)) {
+                accessSettingsStorageService.addQuizDefUserRoleForUser(currentUser, projectOrQuizOrGlobalBadgeId, RoleName.ROLE_QUIZ_ADMIN)
             }
         } else if (roleName == RoleName.ROLE_PROJECT_ADMIN) {
-            userRoleRepo.deleteByProjectIdAndAdminGroupIdAndRoleName(projectOrQuizId, adminGroupDef.adminGroupId, RoleName.ROLE_PROJECT_ADMIN)
-            if (!userRoleRepo.isUserProjectGroupAdmin(currentUser, projectOrQuizId)) {
-                accessSettingsStorageService.addUserRole(currentUser, projectOrQuizId, RoleName.ROLE_PROJECT_ADMIN)
+            userRoleRepo.deleteByProjectIdAndAdminGroupIdAndRoleName(projectOrQuizOrGlobalBadgeId, adminGroupDef.adminGroupId, RoleName.ROLE_PROJECT_ADMIN)
+            if (!userRoleRepo.isUserProjectGroupAdmin(currentUser, projectOrQuizOrGlobalBadgeId)) {
+                accessSettingsStorageService.addUserRole(currentUser, projectOrQuizOrGlobalBadgeId, RoleName.ROLE_PROJECT_ADMIN)
+            }
+        } else if (roleName == RoleName.ROLE_GLOBAL_BADGE_ADMIN) {
+            userRoleRepo.deleteByGlobalBadgeIdAndAdminGroupIdAndRoleName(projectOrQuizOrGlobalBadgeId, adminGroupDef.adminGroupId, RoleName.ROLE_GLOBAL_BADGE_ADMIN)
+            if (!userRoleRepo.isUserGlobalBadgeGroupAdmin(currentUser, projectOrQuizOrGlobalBadgeId)) {
+                accessSettingsStorageService.addGlobalBadgeAdminUserRoleForUser(currentUser, projectOrQuizOrGlobalBadgeId, RoleName.ROLE_GLOBAL_BADGE_ADMIN)
             }
         } else {
             throw new SkillException("Unexpected role [${roleName}] removing project or quiz from admin group, adminGroupName=[${adminGroupDef.name}]", ErrorCode.BadParam)
@@ -245,5 +286,13 @@ class AdminGroupRoleService {
             throw new SkillException("Failed to find project with id [${projectId}].", ErrorCode.BadParam)
         }
         return projectDef
+    }
+
+    private GlobalBadgeResult findGlobalBadgeResult(String globalBadgeId) {
+        GlobalBadgeResult globalBadgeDef = globalBadgesService.getBadge(globalBadgeId)
+        if (!globalBadgeDef) {
+            throw new SkillException("Failed to find global badge with id [${globalBadgeId}].", ErrorCode.BadParam)
+        }
+        return globalBadgeDef
     }
 }

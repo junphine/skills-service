@@ -23,9 +23,10 @@ import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.query.Param
 import org.springframework.lang.Nullable
 import skills.controller.result.model.MyQuizAttempt
-import skills.controller.result.model.QuizRun
 import skills.storage.model.UserQuizAttempt
 import skills.storage.model.UserQuizAttempt.QuizAttemptStatus
+
+import java.util.stream.Stream
 
 interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
 
@@ -35,15 +36,16 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
         Integer getNumDistinctUsers()
     }
     @Nullable
-    @Query('''select
-        quizAttempt.status as status, count(quizAttempt.id) as numAttempts, count(distinct quizAttempt.userId) as numDistinctUsers
-        from UserQuizAttempt quizAttempt, QuizDef quizDef
-        where quizAttempt.quizDefinitionRefId = quizDef.id
-            and quizDef.quizId = ?1
+    @Query(value='''select
+        quizAttempt.status as status, count(quizAttempt.id) as numAttempts, count(distinct quizAttempt.user_id) as numDistinctUsers
+        from user_quiz_attempt quizAttempt, quiz_definition quizDef
+        where quizAttempt.quiz_definition_ref_id = quizDef.id
+            and quizDef.quiz_id = ?1
             and quizAttempt.status in ('PASSED', 'FAILED')
+            and quizAttempt.completed >= ?2 and quizAttempt.completed <= ?3
         group by quizAttempt.status
-     ''')
-    List<QuizCounts> getUserQuizAttemptCounts(String quizId)
+     ''', nativeQuery = true)
+    List<QuizCounts> getUserQuizAttemptCounts(String quizId, Date startDate, Date endDate)
 
     @Nullable
     @Query(value = '''select AVG((extract('epoch' from quizAttempt.completed) * 1000)- (extract('epoch' from quizAttempt.started) * 1000))
@@ -52,17 +54,19 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
             where quizAttempt.quiz_definition_ref_id = quizDef.id
                     and quizDef.quiz_id = ?1
                     and quizAttempt.status  in ('PASSED', 'FAILED')
+                    and quizAttempt.completed >= ?2 and quizAttempt.completed <= ?3
      ''', nativeQuery = true)
-    Double getAverageMsRuntimeForQuiz(String quizId)
+    Double getAverageMsRuntimeForQuiz(String quizId, Date startDate, Date endDate)
 
 
-    @Query('''select count(distinct quizAttempt.userId)
-        from UserQuizAttempt quizAttempt, QuizDef quizDef
-        where quizAttempt.quizDefinitionRefId = quizDef.id
-            and quizDef.quizId = ?1
+    @Query(value='''select count(distinct quizAttempt.user_id)
+        from user_quiz_attempt quizAttempt, quiz_definition quizDef
+        where quizAttempt.quiz_definition_ref_id = quizDef.id
+            and quizDef.quiz_id = ?1
             and quizAttempt.status in ('PASSED', 'FAILED')
-     ''')
-    Integer getDistinctNumUsersByQuizId(String quizId)
+            and quizAttempt.completed >= ?2 and quizAttempt.completed <= ?3
+     ''', nativeQuery = true)
+    Integer getDistinctNumUsersByQuizId(String quizId, Date startDate, Date endDate)
 
     @Nullable
     @Query('''select quizAttempt      
@@ -75,9 +79,13 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
     UserQuizAttempt getByUserIdAndQuizIdAndState(String userId, String quizId, QuizAttemptStatus quizAttemptStatus)
 
     static interface UserQuizAttemptStats {
+        @Nullable
         Boolean getIsAttemptAlreadyInProgress()
+        @Nullable
         Integer getUserNumPreviousQuizAttempts()
+        @Nullable
         Boolean getUserQuizPassed()
+        @Nullable
         Date getUserLastQuizAttemptCompleted()
     }
 
@@ -116,23 +124,57 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
      ''')
     boolean checkQuizStatus(String userId, Integer id, String quizId, QuizAttemptStatus quizStatus)
 
-    @Query('''select count(quizAttempt)
-        from UserQuizAttempt quizAttempt, QuizDef quizDef
-        where quizAttempt.quizDefinitionRefId = quizDef.id
-            and quizDef.quizId = ?1
-     ''')
-    long countByQuizId(String quizId)
 
-    @Query(value = '''select quizAttempt.id                as attemptId,
+    static interface QuizRun {
+        Integer getAttemptId()
+        String getUserId()
+        @Nullable
+        String getUserIdForDisplay()
+        Date getStarted()
+        @Nullable
+        Date getCompleted()
+        String getStatus()
+        @Nullable
+        String getUserTag()
+        @Nullable
+        String getFirstName()
+        @Nullable
+        String getLastName()
+        @Nullable
+        String getQuizType()
+        @Nullable
+        String getQuizName()
+        @Nullable
+        String getQuizId()
+
+        @Nullable
+        Integer getNumberCorrect()
+        @Nullable
+        Integer getTotalAnswers()
+    }
+    final static String FIND_QUIZ_RUNS_SQL = '''select quizAttempt.id                as attemptId,
                            quizAttempt.started           as started,
                            quizAttempt.completed         as completed,
-                           quizAttempt.status            as status,
+                           case when quizDef.type = 'Survey' and quizAttempt.status = 'PASSED' then 'COMPLETED' else quizAttempt.status end as status,
                            userAttrs.user_id             as userId,
                            userAttrs.user_id_for_display as userIdForDisplay,
                            ut.value                      as userTag, 
                            userAttrs.first_name          as firstName,
-                           userAttrs.last_name           as lastName
-                    from user_quiz_attempt quizAttempt,
+                           userAttrs.last_name           as lastName,
+                           quizDef.type                  as quizType,
+                           quizDef.quiz_id               as quizId,
+                           quizDef.name                  as quizName,
+                           COALESCE(uqa.numberCorrect, 0) as numberCorrect,
+                           COALESCE(uqa.totalAnswers, 0) as totalAnswers
+                    from user_quiz_attempt quizAttempt
+                        left join (
+                                 select 
+                                     user_quiz_attempt_ref_id,
+                                     sum(case when status = 'CORRECT' then 1 else 0 end) as numberCorrect,
+                                     count(*) as totalAnswers
+                                 from user_quiz_question_attempt 
+                                 group by user_quiz_attempt_ref_id
+                             ) uqa on uqa.user_quiz_attempt_ref_id = quizAttempt.id,
                          quiz_definition quizDef,
                          user_attrs userAttrs
                              left join (SELECT ut.user_id, max(ut.value) AS value
@@ -142,16 +184,36 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
                     where quizAttempt.quiz_definition_ref_id = quizDef.id
                       and quizAttempt.user_id = userAttrs.user_id
                       and (quizAttempt.status = :quizAttemptStatus OR :quizAttemptStatus IS NULL)
+                      and (quizAttempt.started >= :startDate and quizAttempt.started <= :endDate)
+                      and (:userIdFilter = '' OR quizAttempt.user_id = :userIdFilter)
+                      and (:nameQuery = '' OR lower(quizDef.name) like lower(CONCAT('%', :nameQuery, '%')))
                       and (lower(userAttrs.user_id_for_display) like lower(CONCAT('%', :userQuery, '%')) or
                       (lower(CONCAT(userAttrs.first_name, ' ', userAttrs.last_name, ' (',  userAttrs.user_id_for_display, ')')) like lower(CONCAT(\'%\', :userQuery, \'%\'))) OR
                       (lower(CONCAT(userAttrs.user_id_for_display, ' (', userAttrs.last_name, ', ', userAttrs.first_name,  ')')) like lower(CONCAT(\'%\', :userQuery, \'%\'))))
-                      and quizDef.quiz_id = :quizId
-     ''', nativeQuery = true)
-    Page<QuizRun> findQuizRuns(@Param('quizId')  String quizId,
+                      and quizDef.quiz_id in :quizIds
+     '''
+
+    @Query(value = FIND_QUIZ_RUNS_SQL, nativeQuery = true)
+    Page<QuizRun> findQuizRuns(@Param('quizIds') List<String> quizIds,
                                @Param('userQuery') String userQuery,
+                               @Param('userIdFilter') String userIdFilter,
+                               @Param('nameQuery') String nameQuery,
                                @Param('usersTableAdditionalUserTagKey') String usersTableAdditionalUserTagKey,
                                @Nullable@Param('quizAttemptStatus') String quizAttemptStatus,
+                               @Param('startDate') Date startDate,
+                               @Param('endDate') Date endDate,
                                PageRequest pageRequest)
+
+    @Query(value = FIND_QUIZ_RUNS_SQL, nativeQuery = true)
+    Stream<QuizRun> streamQuizRuns(@Param('quizIds') List<String> quizIds,
+                                   @Param('userQuery') String userQuery,
+                                   @Param('userIdFilter') String userIdFilter,
+                                   @Param('nameQuery') String nameQuery,
+                                   @Param('usersTableAdditionalUserTagKey') String usersTableAdditionalUserTagKey,
+                                   @Nullable@Param('quizAttemptStatus') String quizAttemptStatus,
+                                   @Param('startDate') Date startDate,
+                                   @Param('endDate') Date endDate,
+                                   PageRequest pageRequest)
 
     @Query(value = '''
         select attempts.id as attemptId,
@@ -246,10 +308,11 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
                          user_tags tags
                     where attempt.user_id = tags.user_id
                         and attempt.quiz_definition_ref_id = quizDef.id
+                      and (attempt.started >= ?3 and attempt.started <= ?4)
                       and quizDef.quiz_id = ?1
                       and tags.key = ?2
                     group by tags.value''', nativeQuery = true)
-    List<TagValueCount> getUserTagCounts(String quizId, String userTag, PageRequest pageRequest)
+    List<TagValueCount> getUserTagCounts(String quizId, String userTag, Date startDate, Date endDate, PageRequest pageRequest)
 
 
     static interface DateCount {
@@ -262,10 +325,11 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
                 from user_quiz_attempt attempt,
                 quiz_definition quizDef
                 where attempt.quiz_definition_ref_id = quizDef.id
-                        and quizDef.quiz_id = ?
+                        and quizDef.quiz_id = ?1
+                        and (attempt.started >= ?2 and attempt.started <= ?3)
                 group by DATE_TRUNC ('day', attempt.started)
                 order by dateVal''', nativeQuery = true)
-    List<DateCount> getUsageOverTime(String quizId)
+    List<DateCount> getUsageOverTime(String quizId, Date startDate, Date endDate)
 
     static interface AttemptCounts {
         Integer getNumAttempts()
@@ -273,7 +337,7 @@ interface UserQuizAttemptRepo extends JpaRepository<UserQuizAttempt, Long> {
     }
     @Query('''select 
             count(*) as numAttempts,
-            sum(case when quizDef.type = 'Quiz' then 1 else 0 end) as numQuizAttempts 
+            COALESCE(sum(case when quizDef.type = 'Quiz' then 1 else 0 end), 0) as numQuizAttempts 
         from UserQuizAttempt attempt, QuizDef quizDef 
         where attempt.userId = ?1
             and attempt.status in ('PASSED', 'FAILED')

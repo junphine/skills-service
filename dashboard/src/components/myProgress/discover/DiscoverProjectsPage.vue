@@ -23,7 +23,6 @@ import {FilterMatchMode} from '@primevue/core/api'
 import {useSkillsAnnouncer} from '@/common-components/utilities/UseSkillsAnnouncer.js'
 import MediaInfoCard from '@/components/utils/cards/MediaInfoCard.vue'
 import {useAppInfoState} from '@/stores/UseAppInfoState.js'
-import ContactOwnersDialog from '@/components/myProgress/ContactOwnersDialog.vue'
 import ProjectDescriptionRow from '@/components/myProgress/discover/ProjectDescriptionRow.vue'
 import {useMyProgressState} from '@/stores/UseMyProgressState.js'
 import NoProjectsInCatalogMsg from '@/components/myProgress/discover/NoProjectsInCatalogMsg.vue'
@@ -31,19 +30,23 @@ import HighlightedValue from '@/components/utils/table/HighlightedValue.vue'
 import {useColors} from '@/skills-display/components/utilities/UseColors.js'
 import MyProgressTitle from "@/components/myProgress/MyProgressTitle.vue";
 import BackToMyProgressBtn from "@/components/myProgress/BackToMyProgressBtn.vue";
+import ContactProjectAdminsDialog from "@/components/contact/ContactProjectAdminsDialog.vue";
+import {useNumberFormat} from "@/common-components/filter/UseNumberFormat.js";
+import {useStorage} from "@vueuse/core";
 
 const responsive = useResponsiveBreakpoints()
 const announcer = useSkillsAnnouncer()
 const appInfoState = useAppInfoState()
 const myProgressState = useMyProgressState()
 const colors = useColors()
+const numberFormat = useNumberFormat()
 
 const isLoading = ref(true)
 const searchValue = ref('')
 const originalProjects = ref([])
 const projects = ref([])
 const totalRows = ref(0)
-const pageSize = ref(5)
+const pageSize = useStorage('discoverProjects-pageSize', 5)
 const possiblePageSizes = [5, 10, 15, 25, 50]
 const filters = ref({
   global: {value: null, matchMode: FilterMatchMode.CONTAINS}
@@ -298,15 +301,15 @@ const contactProject = (name, id) => {
               <template #expansion="slotProps">
                 <div>
                   <p>
-                    <Tag>{{ slotProps.data.numSubjects }}</Tag>
+                    <Tag>{{ numberFormat.pretty(slotProps.data.numSubjects) }}</Tag>
                     Subjects
                   </p>
                   <p class="my-1">
-                    <Tag>{{ slotProps.data.numBadges }}</Tag>
+                    <Tag>{{ numberFormat.pretty(slotProps.data.numBadges) }}</Tag>
                     Badges
                   </p>
                   <p>
-                    <Tag>{{ slotProps.data.totalPoints }}</Tag>
+                    <Tag>{{ numberFormat.pretty(slotProps.data.totalPoints) }}</Tag>
                     Points
                   </p>
                   <project-description-row :project-id="slotProps.data.projectId"/>
@@ -321,10 +324,9 @@ const contactProject = (name, id) => {
           </div>
         </div>
 
-        <contact-owners-dialog
+        <contact-project-admins-dialog
             v-if="contactModal.show && appInfoState.emailEnabled"
             v-model="contactModal.show"
-            :projectName="contactModal.projectName"
             :projectId="contactModal.projectId"/>
       </template>
     </Card>

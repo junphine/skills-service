@@ -37,6 +37,9 @@ import UsersService from '@/components/users/UsersService.js'
 import StringHighlighter from '@/common-components/utilities/StringHighlighter.js'
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useStorage} from "@vueuse/core";
+import SkillNameRouterLink from "@/components/skills/SkillNameRouterLink.vue";
 
 const dialogMessages = useDialogMessages()
 const timeUtils = useTimeUtils()
@@ -67,11 +70,11 @@ const table = ref({
       server: true,
       currentPage: 1,
       totalRows: 1,
-      pageSize: 10,
       possiblePageSizes: [5, 10, 15, 20, 50],
     },
   },
 });
+const pageSize = useStorage('userSkillsPerformed-tablePageSize', 10)
 const sortInfo = ref({ sortOrder: -1, sortBy: 'performedOn' })
 const filtering = ref(false)
 const filters = ref({
@@ -93,7 +96,7 @@ const onFilter = (filterEvent) => {
   loadData()
 }
 const pageChanged = (pagingInfo) => {
-  table.value.options.pagination.pageSize = pagingInfo.rows
+  pageSize.value = pagingInfo.rows
   table.value.options.pagination.currentPage = pagingInfo.page + 1
   loadData()
 }
@@ -147,7 +150,7 @@ const loadTableData = () => {
   const url = getUrl();
   UsersService.ajaxCall(url, {
     query: filters.value.global.value ? filters.value.global.value.trim() : '',
-    limit: table.value.options.pagination.pageSize,
+    limit: pageSize.value,
     ascending: sortInfo.value.sortOrder === 1,
     page: table.value.options.pagination.currentPage,
     byColumn: 0,
@@ -269,7 +272,7 @@ const selectedSkills = ref([]);
   <SubPageHeader title="Performed Skills" aria-label="Performed Skills" />
 
   <Message v-if="overallErrMsg" severity="error">{{overallErrMsg}}</Message>
-  <Card :pt="{ body: { class: '!p-0' } }">
+  <Card :pt="{ body: { class: 'p-0!' } }">
     <template #content>
 
       <SkillsSpinner :is-loading="!table.options.fields"/>
@@ -290,7 +293,7 @@ const selectedSkills = ref([]);
             @filter="onFilter"
             @page="pageChanged"
             @sort="sortField"
-            :rows="table.options.pagination.pageSize"
+            :rows="pageSize"
             :rowsPerPageOptions="table.options.pagination.possiblePageSizes"
             :total-records="table.options.pagination.totalRows"
             v-model:sort-field="sortInfo.sortBy"
@@ -357,22 +360,7 @@ const selectedSkills = ref([]);
           </template>
 
           <template #empty>
-            <div class="flex justify-center flex-wrap h-48">
-              <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle fa-3x"
-                 aria-hidden="true"></i>
-              <span class="w-full">
-                  <span class="flex items-center justify-center">There are no records to show</span>
-                  <span v-if="filtering" class="flex items-center justify-center">  Click
-                      <SkillsButton class="flex flex items-center justify-center px-1"
-                                    label="Reset"
-                                    link
-                                    size="small"
-                                    @click="clearFilter"
-                                    aria-label="Reset filter for performed skills"
-                                    data-cy="noResults-performedSkills-resetBtn" /> to clear the existing filter.
-                </span>
-              </span>
-            </div>
+            <table-no-res :showResetFilter="filtering" @resetFilter="clearFilter"/>
           </template>
           <Column selectionMode="multiple" :class="{'flex': responsive.md.value }" v-if="!projConfig.isReadOnlyProj">
             <template #header>
@@ -392,8 +380,7 @@ const selectedSkills = ref([]);
                    :data-cy="`row${slotProps.index}-skillCell`">
                 <div class="flex flex-col">
                   <div class="flex items-start justify-start">
-                    <highlighted-value :value="slotProps.data.skillName"
-                                       :filter="filters.global.value"/>
+                    <highlighted-value :value="slotProps.data.skillName" :filter="filters.global.value"/>
                     <Tag v-if="slotProps.data.importedSkill === true" severity="success" class="uppercase ml-1"
                          data-cy="importedTag">Imported
                     </Tag>
@@ -404,12 +391,23 @@ const selectedSkills = ref([]);
                   </div>
                 </div>
                 <div class="flex grow items-start justify-end">
+                  <router-link :aria-label="`View Skill ${slotProps.data.skillName}`"
+                               :to="{ name:'SkillOverview', params: { projectId: projectId, subjectId: slotProps.data.subjectId, skillId: slotProps.data.skillId }}">
+                    <SkillsButton outlined
+                                  size="small"
+                                  data-cy="viewSkillBtn"
+                                  id="viewSkillBtn"
+                                  :aria-label="`View Skill ${slotProps.data.skillName}`"
+                                  label="View Skill">
+                    </SkillsButton>
+                  </router-link>
                   <SkillsButton icon="fas fa-search-plus"
                                 outlined
                                 class="ml-2"
                                 @click="setSkillFilter(slotProps.data.skillName)"
                                 aria-label="Filter by Skill Name"
                                 data-cy="addSkillFilter"
+                                label="Add to Filter"
                                 size="small" />
                 </div>
               </div>

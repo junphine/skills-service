@@ -20,13 +20,24 @@ import SelectCorrectAnswer from '@/components/quiz/testCreation/SelectCorrectAns
 import QuestionType from '@/skills-display/components/quiz/QuestionType.js';
 import SkillsOverlay from "@/components/utils/SkillsOverlay.vue";
 import { useTimeUtils } from "@/common-components/utilities/UseTimeUtils.js";
+import {useAppConfig} from "@/common-components/stores/UseAppConfig.js";
+import AiConfidenceTag from "@/components/quiz/testCreation/AiConfidenceTag.vue";
+import GradingStatusMessage from "@/components/quiz/runsHistory/GradingStatusMessage.vue";
+import OverrideTextInputQuestionGradeDialog
+  from "@/components/quiz/runsHistory/OverrideTextInputQuestionGradeDialog.vue";
 
 const props = defineProps({
   quizType: String,
   question: Object,
   questionNum: Number,
+  showAiGradingMeta: {
+    type: Boolean,
+    default: false,
+  }
 })
+const emit = defineEmits(['need-to-reload'])
 
+const appConfig = useAppConfig()
 const timeUtils = useTimeUtils();
 
 const answerText = ref(props.question.answers[0].answer)
@@ -40,14 +51,29 @@ const isTextInputType = computed(() => {
 const isRatingType = computed(() => {
   return props.question.questionType === QuestionType.Rating;
 })
+const isMatchingType = computed(() => {
+  return props.question.questionType === QuestionType.Matching;
+})
 const hasAnswer = computed(() => {
+  if (isMatchingType.value) {
+    return props.question.answers.find((a) => a.answer?.selectedMatch === null || a.answer?.selectedMatch === undefined || a.answer?.selectedMatch === '') === undefined;
+  }
   return props.question.answers.find((a) => a.isSelected === true) !== undefined;
 })
 const needsGrading = computed(() => {
   return props.question.needsGrading
 })
+const aiGradingInfo = computed(() => {
+  if (!appConfig.enableOpenAIIntegration || !props.question || props.question.length === 0) {
+    return null
+  }
+  return props.question.answers[0]?.aiGradingStatus
+})
+
+const doShowAiGradingMeta = computed(() => appConfig.enableOpenAIIntegration && props.showAiGradingMeta)
+const showAiGradedTag = computed(() => doShowAiGradingMeta.value && needsGrading.value && props.question.aiGradingConfigured && !aiGradingInfo.value?.failed)
 const isWrong = computed(() => {
-  return !needsGrading.value && !props.question.isCorrect
+  return hasAnswer.value && !needsGrading.value && !props.question.isCorrect
 })
 const isSurvey = computed(() => {
   return props.quizType === 'Survey';
@@ -65,14 +91,39 @@ const manuallyGradedInfo = computed(() => {
   }
   return props.question.answers[0].gradingResult
 })
+const isAiGraded = computed(() => {
+  const aiAssistant = 'AI Assistant'
+  const gradeInfo = manuallyGradedInfo.value
+  return gradeInfo?.graderUserIdForDisplay === aiAssistant || gradeInfo?.graderUserId === aiAssistant
+})
+const showOverrideGradeDialog = ref(false)
+const openOverrideGradeDialog = () => {
+  showOverrideGradeDialog.value = true
+}
+const onGradeOverridden = (res) => {
+  emit('need-to-reload', res)
+}
 </script>
 
 <template>
   <div data-cy="questionDisplayCard">
     <div :data-cy="`questionDisplayCard-${questionNum}`">
-      <div v-if="needsGrading" class="flex flex-row" data-cy="noAnswer">
-        <Tag severity="warn" class="uppercase" data-cy="needsGradingTag"><i class="fas fa-user-check mr-1" aria-hidden="true"></i> Needs Grading</Tag>
+      <div class="flex items-center gap-2">
+        <div v-if="needsGrading" class="flex flex-row" data-cy="noAnswer">
+          <Tag severity="warn" class="uppercase" data-cy="needsGradingTag"><i class="fas fa-user-check mr-1" aria-hidden="true"></i> Needs Grading</Tag>
+        </div>
+        <div v-if="showAiGradedTag">
+          <Tag severity="info">
+            <div class="flex items-center gap-1" data-cy="queuedForAiGradingTag">
+              <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+              <div>Queued for AI grading</div>
+            </div>
+          </Tag>
+        </div>
+
       </div>
+      <grading-status-message :question="question" />
+
       <div v-if="!hasAnswer" class="flex flex-row" data-cy="noAnswer">
         <Tag severity="warn">No Answer</Tag>
       </div>
@@ -93,7 +144,7 @@ const manuallyGradedInfo = computed(() => {
                 :instance-id="`question_${question.id}`"
                 data-cy="questionDisplayText"/>
           </div>
-          <div v-if="!isTextInputType && !isRatingType">
+          <div v-if="!isTextInputType && !isRatingType && !isMatchingType">
             <div v-for="(a, index) in question.answers" :key="a.id" class="flex flex-row flex-wrap mt-1 pl-1">
               <div class="flex items-center justify-center pb-1" :data-cy="`answerDisplay-${index}`">
                 <SelectCorrectAnswer v-model="a.isSelected"
@@ -116,8 +167,56 @@ const manuallyGradedInfo = computed(() => {
                 :text="answerText"
                 :instance-id="`${question.id}_answer`"/>
           </div>
-          <div v-if="manuallyGradedInfo" class="mt-4 w-full border p-4 rounded-border border-surface" data-cy="manuallyGradedInfo">
-            <div class="text-xl mb-4 font-semibold">Manually Graded</div>
+
+          <div v-if="isMatchingType">
+            <InlineMessage v-if="!hasAnswer" data-cy="noAnswerYet">Answer is not provided yet</InlineMessage>
+            <div v-else class="flex gap-2">
+              <ul>
+                <li v-for="(answer, index) in question.answers"
+                    :key="answer.id"
+                    :data-cy="`term-${index}`"
+                    class="min-h-[3rem] px-3 py-1 flex items-center mb-2">{{ answer.answer.term }}:</li>
+              </ul>
+              <ul>
+                <li v-for="(answer, index) in question.answers"
+                    :key="answer.id"
+                    :class="{
+                      'bg-red-50 border-red-200 dark:bg-red-900 text-red-950 dark:text-red-100': !answer.isSelected && isWrong,
+                      'bg-green-50 border-green-200 dark:bg-green-800 text-green-950 dark:text-green-100': !(!answer.isSelected && isWrong),
+                    }"
+                    :aria-label="`Answer ${answer.matchedAnswer} is ${!answer.isSelected && isWrong ? 'wrong' : 'correct'}`"
+                    :data-cy="`match-${index}`"
+                    class="min-h-[3rem] items-center mb-2 border-2 rounded px-3 py-1 flex gap-2">
+                  <i v-if="!answer.isSelected && isWrong" class="fas fa-ban text-red-500" aria-hidden="true" data-cy="matchIsWrong"></i>
+                  <i v-else class="fas fa-check text-green-500" aria-hidden="true" data-cy="matchIsCorrect"></i>
+                  <span data-cy="matchVal">{{ answer.answer.selectedMatch }}</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <div v-if="manuallyGradedInfo" class="mt-4 w-full border p-4 rounded-border border-surface sd-theme-primary-color" data-cy="manuallyGradedInfo">
+
+            <div class="flex gap-1 items-start mb-4">
+            <div class="text-xl font-semibold flex-1">
+              <div v-if="isAiGraded" class="flex gap-2" data-cy="aiGraded">
+                <Avatar icon="fa-solid fa-wand-magic-sparkles" shape="circle" class="bg-indigo-600! text-purple-100!" aria-hidden="true"/>
+                <div>AI Graded</div>
+              </div>
+              <div v-else class="flex gap-2" data-cy="adminGraded">
+                <Avatar icon="fa-solid fa-pen-to-square" shape="circle" class="bg-teal-600! text-teal-100!" aria-hidden="true"/>
+                <div>Manually Graded</div>
+              </div>
+            </div>
+            <div v-if="isTextInputType && !needsGrading && showAiGradingMeta">
+              <SkillsButton :id="`overrideGradeBtn-q${question.id}`"
+                            :track-for-focus="true"
+                            label="Override Grade"
+                            icon="fa-solid fa-pen-to-square"
+                            size="small"
+                            data-cy="overrideGradeBtn"
+                            @click="openOverrideGradeDialog"/>
+            </div>
+            </div>
 
             <div class="flex gap-4">
               <div class="flex-1" data-cy="grader">Grader:
@@ -133,11 +232,21 @@ const manuallyGradedInfo = computed(() => {
                   :instance-id="`${question.id}_feedback`"
                   :data-cy="`feedbackDisplayText_q${question.id}`"/>
             </div>
+
+            <div v-if="doShowAiGradingMeta && typeof(manuallyGradedInfo.aiConfidenceLevel) === 'number'" class="mt-3">
+              <div class="flex gap-2 items-center"><span>AI Confidence Level:</span>
+                <div class="flex gap-2 items-center">
+                  <span class="font-bold" data-cy="gradeResConfidence">{{ manuallyGradedInfo.aiConfidenceLevel }}%</span>
+                  <ai-confidence-tag :confidence-percent="manuallyGradedInfo.aiConfidenceLevel" />
+                </div>
+              </div>
+            </div>
           </div>
 
         </div>
       </div>
     </div>
+    <override-text-input-question-grade-dialog v-model="showOverrideGradeDialog" :question="question" @grade-overridden="onGradeOverridden"/>
   </div>
 </template>
 

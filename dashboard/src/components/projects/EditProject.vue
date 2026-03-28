@@ -27,6 +27,7 @@ import SkillsInputFormDialog from '@/components/utils/inputForm/SkillsInputFormD
 import { useAccessState } from '@/stores/UseAccessState.js'
 import CommunityProtectionControls from '@/components/projects/CommunityProtectionControls.vue'
 import { useDescriptionValidatorService } from '@/common-components/validators/UseDescriptionValidatorService.js'
+import GenerateDescriptionType from "@/common-components/utilities/learning-conent-gen/GenerateDescriptionType.js";
 
 const model = defineModel()
 const props = defineProps(['project', 'isEdit', 'isCopy'])
@@ -47,9 +48,15 @@ const appConfig = useAppConfig()
 const communityLabels = useCommunityLabels()
 const initialValueForEnableProtectedUserCommunity = communityLabels.isRestrictedUserCommunity(props.project.userCommunity)
 const enableProtectedUserCommunity = ref(initialValueForEnableProtectedUserCommunity)
-// if (props.isCopy && initialValueForEnableProtectedUserCommunity) {
-//   this.originalProject.enableProtectedUserCommunity = this.initialValueForEnableProtectedUserCommunity;
-// }
+const userCommunityDescriptor = computed(() => {
+  return enableProtectedUserCommunity.value ? appConfig.userCommunityRestrictedDescriptor : appConfig.defaultCommunityDescriptor
+})
+const userCommunityVal = computed(() => {
+    if (props.isEdit) {
+      return enableProtectedUserCommunity.value ? userCommunityDescriptor.value : props.project.userCommunity
+    }
+    return userCommunityDescriptor.value
+})
 
 const checkProjNameUnique = useDebounceFn((value) => {
   if (!value || value.length === 0) {
@@ -216,7 +223,12 @@ const onSavedProject = () => {
         :is-copy="isCopy" />
       <markdown-editor
         class="mt-8"
-        :allow-attachments="isEdit || !communityLabels.showManageUserCommunity.value"
+        :upload-url="isEdit   ? `/admin/projects/${props.project.projectId}/upload` : null"
+        :allow-attachments="isEdit"
+        :user-community="userCommunityVal"
+        :allow-community-elevation="true"
+        :request-community-elevation="enableProtectedUserCommunity"
+        :ai-prompt-type="GenerateDescriptionType.Project"
         name="description" />
 
     </template>

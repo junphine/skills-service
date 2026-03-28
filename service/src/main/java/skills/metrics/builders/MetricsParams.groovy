@@ -31,6 +31,7 @@ class MetricsParams {
     public static final String P_SKILL_ID = "skillId"
     public static final String P_SUBJECT_ID = "subjectId"
     public static final String P_PROJECT_IDS = "projIds"
+    public static final String P_QUIZ_IDS = "quizIds"
     public static final String P_PROJECT_IDS_AND_LEVEL = "projIdsAndLevel"
     public static final String P_START_TIMESTAMP = "start"
     public static final String P_ACHIEVEMENT_TYPES = "achievementTypes"
@@ -41,9 +42,14 @@ class MetricsParams {
     public static final String P_TO_DAY_FILTER = "toDayFilter"
     public static final String P_TAG_KEY = "tagKey"
     public static final String P_TAG_FILTER = "tagFilter"
+    public static final String P_BY_MONTH = "byMonth"
     public static final DateFormat DAY_FORMAT = new SimpleDateFormat("yyyy-MM-dd")
 
     static String ACHIEVEMENT_TYPE_OVERALL = "Overall"
+
+    static Boolean getByMonth(Map<String, String> props) {
+        return props[P_BY_MONTH] == "true"
+    }
 
     static String getSkillId(String projectId, String chartId, Map<String, String> props) {
         return getParam(props, P_SKILL_ID, chartId, projectId)
@@ -81,6 +87,16 @@ class MetricsParams {
         return res
     }
 
+    static String getFromDayFilterAsString(String projectId, String chartId, Map<String, String> props) {
+        String fromStr = getParam(props, P_FROM_DAY_FILTER, chartId, projectId, true)
+        return fromStr
+    }
+
+    static String getToDayFilterAsString(String projectId, String chartId, Map<String, String> props) {
+        String toStr = getParam(props, P_TO_DAY_FILTER, chartId, projectId, true)
+        return toStr
+    }
+
     static String getNameFilter(String projectId, String chartId, Map<String, String> props) {
         return getParam(props, P_NAME_FILTER, chartId, projectId, true) ?: "ALL"
     }
@@ -98,8 +114,12 @@ class MetricsParams {
         return achievementTypesStr.split(",").toList()
     }
 
-    static List<String> getProjectIds(String chartId, Map<String, String> props) {
-        String listStr = getParam(props, P_PROJECT_IDS, chartId)
+    static List<String> getProjectIds(String chartId, Map<String, String> props, boolean isOptional = false) {
+        String listStr = getParam(props, P_PROJECT_IDS, chartId, null, isOptional)
+        return listStr.split(",").toList()
+    }
+    static List<String> getQuizIds(String chartId, Map<String, String> props, boolean isOptional = false) {
+        String listStr = getParam(props, P_QUIZ_IDS, chartId, null, isOptional)
         return listStr.split(",").toList()
     }
 

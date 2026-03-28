@@ -24,7 +24,7 @@ const createCustomIconStyleElementIfNotExist = (projectId) => {
   let existingStyles = document.getElementById(lookupId)
   if (!existingStyles) {
     existingStyles = document.createElement('style')
-    existingStyles.id = 'skill-custom-icons'
+    existingStyles.id = lookupId
     existingStyles.type = 'text/css'
     head.appendChild(existingStyles)
   }
@@ -33,17 +33,24 @@ const createCustomIconStyleElementIfNotExist = (projectId) => {
 }
 
 export default {
-  getIconIndex(projectId) {
-    let url = `/app/projects/${encodeURIComponent(projectId)}/customIcons`
-    if (!projectId) {
-      url = '/supervisor/icons/customIcons'
-    }
-    return axios.get(url).then((response) => response.data)
+  getIconSetIndexes() {
+    return axios.get('/public/iconSetIndexes').then((response) => response.data)
   },
-  deleteIcon(iconName, projectId) {
+  getIconIndex(projectId, badgeId) {
+    if (projectId || badgeId) {
+      let url = `/app/projects/${encodeURIComponent(projectId)}/customIcons`
+      if (!projectId) {
+        url = `/admin/badges/${encodeURIComponent(badgeId)}/icons/customIcons`
+      }
+      return axios.get(url).then((response) => response.data)
+    } else {
+      return new Promise((resolve) => resolve([]))
+    }
+  },
+  deleteIcon(iconName, projectId, badgeId) {
     let url = `/admin/projects/${encodeURIComponent(projectId)}/icons/${iconName}`
     if (!projectId) {
-      url = `/supervisor/icons/${iconName}`
+      url = `/admin/badges/${encodeURIComponent(badgeId)}/icons/${iconName}`
     }
     return axios.delete(url)
   },
@@ -51,16 +58,20 @@ export default {
     const existingStyles = createCustomIconStyleElementIfNotExist()
     existingStyles.innerText += css
   },
-  refreshCustomIconCss(projectId, isSupervisor) {
-    const existingStyles = createCustomIconStyleElementIfNotExist(projectId)
-    CustomIconService.getCustomIconCss(projectId, isSupervisor).then((response) => {
+  refreshCustomIconCss(projectId, globalBadgeId) {
+    const existingStyles = createCustomIconStyleElementIfNotExist(projectId || globalBadgeId)
+    CustomIconService.getCustomIconCss(projectId, globalBadgeId).then((response) => {
       if (response) {
         existingStyles.innerText = response
       }
     })
   },
   findUsages(projectId, iconClass) {
-    let url = `/admin/projects/${encodeURIComponent(projectId)}/icons/${iconClass}/usage`
-    return axios.get(url).then((response) => response.data)
+    if (projectId) {
+      const url = `/admin/projects/${encodeURIComponent(projectId)}/icons/${iconClass}/usage`
+      return axios.get(url).then((response) => response.data)
+    } else {
+      return new Promise((resolve) => resolve([]))
+    }
   }
 }

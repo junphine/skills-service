@@ -15,12 +15,18 @@
  */
 package skills.controller
 
+
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.data.domain.PageRequest
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.multipart.MultipartFile
+import org.springframework.web.servlet.ModelAndView
+import skills.PublicProps
+import skills.controller.request.model.TextInputAIGradingRequest
+import skills.services.openai.OpenAIService
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.QuizValidator
 import skills.controller.exceptions.SkillQuizException
@@ -30,20 +36,31 @@ import skills.controller.request.model.QuizDefRequest
 import skills.controller.request.model.QuizPreference
 import skills.controller.request.model.QuizQuestionDefRequest
 import skills.controller.request.model.QuizSettingsRequest
+import skills.controller.request.model.TextInputAiGradingConfRequest
 import skills.controller.result.model.*
 import skills.quizLoading.QuizRunService
 import skills.quizLoading.QuizSettings
 import skills.quizLoading.model.*
+import skills.services.AttachmentService
+import skills.services.VideoCaptionsService
 import skills.services.adminGroup.AdminGroupService
+import skills.services.attributes.SkillAttributeService
+import skills.services.attributes.SkillVideoAttrs
+import skills.services.attributes.SlidesAttrs
+import skills.services.attributes.TextInputAiGradingAttrs
+import skills.services.quiz.QuizAttributesService
 import skills.services.quiz.QuizDefService
 import skills.services.quiz.QuizRoleService
 import skills.services.quiz.QuizSettingsService
+import skills.services.slides.QuizSlidesService
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionsHistoryService
+import skills.services.video.QuizVideoService
 import skills.storage.model.UserQuizAttempt
 import skills.storage.model.auth.RoleName
 import skills.utils.TablePageUtil
+import skills.utils.TimeRangeFormatterUtil
 
 import java.nio.charset.StandardCharsets
 
@@ -73,6 +90,33 @@ class QuizController {
 
     @Autowired
     AdminGroupService adminGroupService
+
+    @Autowired
+    AttachmentService attachmentService
+
+    @Autowired
+    SkillAttributeService skillAttributeService
+
+    @Autowired
+    PublicPropsBasedValidator propsBasedValidator
+
+    @Autowired
+    QuizVideoService quizVideoService
+
+    @Autowired
+    QuizAttributesService quizAttributesService
+
+    @Autowired
+    VideoCaptionsService videoCaptionsService;
+
+    @Autowired
+    QuizSlidesService quizSlidesService
+
+    @Autowired
+    OpenAIService openAIService
+
+    @Autowired
+    QuizRunsExportResult quizRunsExportResult
 
     @RequestMapping(value = "/{quizId}", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
     @ResponseBody
@@ -122,6 +166,32 @@ class QuizController {
         return quizDefService.getQuizDefSummary(quizId)
     }
 
+    @RequestMapping(value = "/{quizId}/slides", method = [RequestMethod.POST, RequestMethod.PUT], produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    SlidesAttrs saveQuizSlidesAttrs(@PathVariable("quizId") String quizId,
+                                    @RequestParam(name = "file", required = false) MultipartFile file,
+                                    @RequestParam(name = "url", required = false) String slidesUrl,
+                                    @RequestParam(name = "isAlreadyHosted", required = false, defaultValue = "false") Boolean isAlreadyHosted,
+                                    @RequestParam(name = "width", required = false) Double width) {
+        if (width != null && width > 100000) {
+            throw new SkillQuizException("Width cannot be greater than 100000", quizId, ErrorCode.BadParam)
+        }
+        return quizSlidesService.saveSlides(quizId, isAlreadyHosted, file, slidesUrl, width)
+    }
+
+    @RequestMapping(value = "/{quizId}/slides", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    SlidesAttrs getSlidesAttrs(@PathVariable("quizId") String quizId) {
+        return quizSlidesService.getSlidesAttrs(quizId)
+    }
+
+    @RequestMapping(value = "/{quizId}/slides", method = RequestMethod.DELETE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    RequestResult deleteSlidesAttrs(@PathVariable("quizId") String quizId) {
+        quizSlidesService.deleteSlidesAttrs(quizId)
+        return RequestResult.success()
+    }
+
     @RequestMapping(value = "/{quizId}/create-question", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
     @ResponseBody
     QuizQuestionDefResult saveQuestionDef(@PathVariable("quizId") String quizId,
@@ -157,6 +227,55 @@ class QuizController {
         return RequestResult.success()
     }
 
+    @RequestMapping(value = "/{quizId}/questions/{questionId}/video", method = RequestMethod.DELETE)
+    RequestResult deleteQuestionVideoAttrs(@PathVariable("quizId") String quizId, @PathVariable("questionId") Integer questionId) {
+        quizVideoService.deleteVideoAttrs(quizId, questionId)
+        return new RequestResult(success: true)
+    }
+
+    @RequestMapping(value = "/{quizId}/questions/{questionId}/video", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    SkillVideoAttrs getQuestionVideoAttrs(@PathVariable("quizId") String quizId, @PathVariable("questionId") Integer questionId) {
+        return quizVideoService.getVideoAttrs(quizId, questionId)
+    }
+
+    @RequestMapping(value = "/{quizId}/questions/{questionId}/video", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
+    @ResponseBody
+    SkillVideoAttrs updateVideoForQuestion(@PathVariable("quizId") String quizId,
+                                                 @PathVariable("questionId") Integer questionId,
+                                                 @RequestParam(name = "file", required = false) MultipartFile file,
+                                                 @RequestParam(name = "videoUrl", required = false) String videoUrl,
+                                                 @RequestParam(name = "isAlreadyHosted", required = false, defaultValue = "false") Boolean isAlreadyHosted,
+                                                 @RequestParam(name = "captions", required = false) String captions,
+                                                 @RequestParam(name = "transcript", required = false) String transcript,
+                                                 @RequestParam(name = "width", required = false) Double width,
+                                                 @RequestParam(name = "height", required = false) Double height) {
+
+        if (captions) {
+            propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.maxVideoCaptionsLength, "Captions", captions)
+        }
+        if (transcript) {
+            propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.maxVideoTranscriptLength, "Transcript", transcript)
+        }
+
+        SkillVideoAttrs res = quizVideoService.saveVideo(quizId, questionId, isAlreadyHosted, file, videoUrl, captions, transcript, width, height)
+        return res
+    }
+
+    @PostMapping('/{quizId}/questions/{questionId}/textInputAiGradingConf')
+    TextInputAiGradingAttrs saveTextInputAiGradingAttrs(@PathVariable("quizId") String quizId,
+                                                        @PathVariable("questionId") Integer questionId,
+                                                        @RequestBody TextInputAiGradingConfRequest gradingConfRequest) {
+
+        return quizAttributesService.saveTextInputAiGradingAttrs(quizId, questionId, gradingConfRequest)
+    }
+
+    @GetMapping('/{quizId}/questions/{questionId}/textInputAiGradingConf')
+    TextInputAiGradingAttrs getTextInputAiGradingAttrs(@PathVariable("quizId") String quizId,
+                                                        @PathVariable("questionId") Integer questionId) {
+        return quizAttributesService.getTextInputAiGradingAttrs(quizId, questionId)
+    }
+
     @RequestMapping(value = "/{quizId}/questions", method = [RequestMethod.GET], produces = "application/json")
     @ResponseBody
     QuizQuestionsResult getQuestionDefs(@PathVariable("quizId") String quizId) {
@@ -177,15 +296,19 @@ class QuizController {
                                        @RequestParam int limit,
                                        @RequestParam int page,
                                        @RequestParam String orderBy,
-                                       @RequestParam Boolean ascending) {
+                                       @RequestParam Boolean ascending,
+                                       @RequestParam(required = false) String startDate,
+                                       @RequestParam(required = false) String endDate) {
         PageRequest pageRequest = TablePageUtil.validateAndConstructQuizPageRequest(limit, page, orderBy, ascending)
-        return quizDefService.getUserQuestionAnswers(quizId, answerDefId, pageRequest)
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate)
+        return quizDefService.getUserQuestionAnswers(quizId, answerDefId, pageRequest, dates[0], dates[1])
     }
 
     @RequestMapping(value = "/{quizId}/metrics", method = RequestMethod.GET, produces = "application/json")
     @ResponseBody
-    QuizMetrics getQuizMetrics(@PathVariable("quizId") String quizId) {
-        return quizDefService.getMetrics(quizId);
+    QuizMetrics getQuizMetrics(@PathVariable("quizId") String quizId, @RequestParam(required = false) String startDate, @RequestParam(required = false) String endDate) {
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate)
+        return quizDefService.getMetrics(quizId, dates[0], dates[1]);
     }
 
     @RequestMapping(value = "/{quizId}/runs", method = RequestMethod.GET, produces = "application/json")
@@ -196,9 +319,32 @@ class QuizController {
                             @RequestParam int limit,
                             @RequestParam int page,
                             @RequestParam String orderBy,
-                            @RequestParam Boolean ascending) {
+                            @RequestParam Boolean ascending,
+                            @RequestParam(required = false) String startDate,
+                            @RequestParam(required = false) String endDate) {
         PageRequest pageRequest = TablePageUtil.validateAndConstructQuizPageRequest(limit, page, orderBy, ascending)
-        return quizDefService.getQuizRuns(quizId, query, quizAttemptStatus, pageRequest);
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate, false)
+        return quizDefService.getQuizRuns([quizId], query, "", "", quizAttemptStatus, pageRequest, dates[0], dates[1]);
+    }
+
+    @RequestMapping(value = "/{quizId}/runs/export/excel", method = RequestMethod.GET)
+    ModelAndView exportQuizRuns(@PathVariable("quizId") String quizId,
+                                @RequestParam String userQuery,
+                                @RequestParam String orderBy,
+                                @RequestParam Boolean ascending,
+                                @RequestParam(required = false) String startDate,
+                                @RequestParam(required = false) String endDate) {
+        PageRequest pageRequest = TablePageUtil.createPagingRequest(Integer.MAX_VALUE, 1, orderBy, ascending)
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate, false)
+
+        ModelAndView mav = new ModelAndView(quizRunsExportResult)
+        mav.addObject(QuizRunsExportResult.QUIZ_IDS, [quizId])
+        mav.addObject(QuizRunsExportResult.USER_QUERY, userQuery)
+        mav.addObject(QuizRunsExportResult.NAME_QUERY, '')
+        mav.addObject(QuizRunsExportResult.PAGE_REQUEST, pageRequest)
+        mav.addObject(QuizRunsExportResult.START_DATE, dates[0])
+        mav.addObject(QuizRunsExportResult.END_DATE, dates[1])
+        return mav
     }
 
     @RequestMapping(value = "/{quizId}/runs/{attemptId}", method = RequestMethod.DELETE, produces = "application/json")
@@ -334,17 +480,24 @@ class QuizController {
 
     @RequestMapping(value = "/{quizId}/userTagCounts", method = [RequestMethod.GET], produces = "application/json")
     @ResponseBody
-    List<LabelCountItem> getUserTagCounts(@PathVariable("quizId") String quizId, @RequestParam String userTagKey) {
+    List<LabelCountItem> getUserTagCounts(@PathVariable("quizId") String quizId,
+                                          @RequestParam String userTagKey,
+                                          @RequestParam(required = false) String startDate,
+                                          @RequestParam(required = false) String endDate) {
         QuizValidator.isNotBlank(quizId, "Quiz Id")
         QuizValidator.isNotBlank(userTagKey, "User Tag Key")
-        return quizDefService.getUserTagCounts(quizId, userTagKey)
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate, false)
+        return quizDefService.getUserTagCounts(quizId, userTagKey, dates[0], dates[1])
     }
 
     @RequestMapping(value = "/{quizId}/usageOverTime", method = [RequestMethod.GET], produces = "application/json")
     @ResponseBody
-    List<TimestampCountItem> getUsageOverTime(@PathVariable("quizId") String quizId) {
+    List<TimestampCountItem> getUsageOverTime(@PathVariable("quizId") String quizId,
+                                              @RequestParam(required = false) String startDate,
+                                              @RequestParam(required = false) String endDate) {
         QuizValidator.isNotBlank(quizId, "Quiz Id")
-        List<TimestampCountItem> res = quizDefService.getUsageOverTime(quizId)
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate, false)
+        List<TimestampCountItem> res = quizDefService.getUsageOverTime(quizId, dates[0], dates[1])
         return res
     }
 
@@ -392,4 +545,28 @@ class QuizController {
         SkillsValidator.isNotBlank(quizId, "Quiz Id")
         return adminGroupService.getAdminGroupsForQuiz(quizId)
     }
+
+    @RequestMapping(value = "/{quizId}/upload", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
+    @ResponseBody
+    UploadAttachmentResult uploadFileToQuiz(@RequestParam("file") MultipartFile file,
+                                               @PathVariable("quizId") String quizId) {
+        return attachmentService.saveAttachment(file, null, quizId, null);
+    }
+
+    @RequestMapping(value = "/{quizId}/testTextInputAiGrading/{questionId}", method = [RequestMethod.PUT, RequestMethod.POST], produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    TextInputAIGradingResult testTextInputAiGrading(@PathVariable("quizId") String quizId,
+                                                    @PathVariable("questionId") Integer questionId,
+                                                    @RequestBody TextInputAIGradingRequest textInputAIGradingRequest) {
+        QuizValidator.isNotBlank(quizId, "Quiz Id", quizId)
+        QuizValidator.isNotNull(questionId, "Question Id", quizId)
+        QuizValidator.isNotBlank(quizId, "Quiz Id", quizId)
+        QuizValidator.isNotNull(questionId, "Minimum Confidence Level", quizId)
+        QuizValidator.isTrue(textInputAIGradingRequest?.minimumConfidenceLevel >= 0, "minimumConfidenceLevel must be greater than or equal to 0", quizId)
+        QuizValidator.isTrue(textInputAIGradingRequest?.minimumConfidenceLevel <= 100, "minimumConfidenceLevel must be less than or equal to 100", quizId)
+        QuizValidator.isNotBlank(textInputAIGradingRequest?.correctAnswer, "Correct Answer", quizId)
+        QuizQuestionDefResult questionDef = quizDefService.getQuestionDef(quizId, questionId)
+        return openAIService.gradeTextInputQuizAnswer(questionDef.question, textInputAIGradingRequest.correctAnswer, textInputAIGradingRequest.minimumConfidenceLevel, textInputAIGradingRequest.studentAnswer)
+    }
+
 }

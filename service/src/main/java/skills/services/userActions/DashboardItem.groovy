@@ -28,6 +28,7 @@ enum DashboardItem {
     Question,
     Tag,
     VideoSettings,
+    SlidesSettings,
     ExpirationSettings,
     Level,
     LearningPathItem,
@@ -39,5 +40,6 @@ enum DashboardItem {
     ProjectIssue,
     TrustedClientSecret,
     ProjectInvite,
-    UserPreference
+    UserPreference,
+    AiGradingConfig
 }

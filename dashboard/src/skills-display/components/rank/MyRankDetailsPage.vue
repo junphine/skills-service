@@ -67,6 +67,9 @@ const myRankPosition = computed(() => {
   if (!myRank.value) {
     return 0
   }
+  if (myRank.value.archivedUser) {
+    return 'N/A (Archived)'
+  }
   return myRank.value.optedOut ? 'Opted-Out' : numFormat.pretty(myRank.value.position)
 })
 const totalNumUsers = computed(() => {
@@ -139,6 +142,7 @@ const numUsersBehindMe = computed(() => {
               <div class="flex-1">
                 <media-info-card v-if="rankingDistribution.pointsToPassNextUser === -1"
                                  title="You are in the lead!"
+                                 heading-tag-to-use="h2"
                                  class="h-full"
                                  :icon-class="`fas fa-user-friends ${colors.getTextClass(4)}`"
                                  data-cy="myRankTotalUsersStatCard">
@@ -158,6 +162,7 @@ const numUsersBehindMe = computed(() => {
               <div class="flex-1">
                 <media-info-card v-if="rankingDistribution.pointsAnotherUserToPassMe === -1"
                                  title="You just got started!!"
+                                 heading-tag-to-use="h2"
                                  class="h-full"
                                  :icon-class="`fas fa-running ${colors.getTextClass(5)}`"
                                  data-cy="myRankTotalUsersStatCard">
@@ -165,18 +170,20 @@ const numUsersBehindMe = computed(() => {
                 </media-info-card>
                 <media-info-card v-else
                                  title="Your Rank may drop"
+                                 heading-tag-to-use="h2"
                                  class="h-full"
                                  :icon-class="`fas fa-running ${colors.getTextClass(5)}`"
                                  data-cy="myRankTotalUsersStatCard">
                  <span class="text-lg">There is a competitor right behind you, only
                   <Tag>{{ numFormat.pretty(rankingDistribution.pointsAnotherUserToPassMe) }}</Tag>
-                  points behind. Don't let them pass you!</span>
+                  {{ attributes.pointDisplayNamePlural?.toLowerCase() }} behind. Don't let them pass you!</span>
                 </media-info-card>
               </div>
               <div class="flex-1">
                 <media-info-card v-if="numUsersBehindMe <= 0"
                                  :title="`Earn those ${ attributes.pointDisplayName.toLowerCase() } riches!`"
                                  class="h-full"
+                                 heading-tag-to-use="h2"
                                  :icon-class="`fas fa-glass-cheers ${colors.getTextClass(6)}`"
                                  data-cy="myRankTotalUsersStatCard">
                   <span class="text-lg">Earn {{ attributes.skillDisplayName }} and you will pass your fellow users <i class="fas fa-user-tie" aria-hidden="true"></i> in no time!</span>

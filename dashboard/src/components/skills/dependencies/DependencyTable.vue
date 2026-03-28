@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import {computed, nextTick, onMounted, ref} from 'vue'
+import {computed, nextTick, onMounted, ref, watch} from 'vue'
 import { useSkillsAnnouncer } from '@/common-components/utilities/UseSkillsAnnouncer.js'
 import SkillsService from '@/components/skills/SkillsService'
 import NoContent2 from '@/components/utils/NoContent2.vue'
@@ -26,7 +26,7 @@ import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
 const dialogMessages = useDialogMessages()
 const projConfig = useProjConfig();
 const props = defineProps(['isLoading', 'data'])
-const emit = defineEmits(['update'])
+const emit = defineEmits(['update', 'panToNode'])
 const announcer = useSkillsAnnouncer()
 
 const isReadOnlyProj = computed(() => projConfig.isReadOnlyProj);
@@ -36,17 +36,42 @@ const isProcessing = ref(true)
 const sortField = ref('')
 const sortOrder = ref(0)
 
-onMounted(() => {
-  if (props.data && props.data.edges && props.data.edges.length > 0) {
-    const { nodes, edges } = props.data
+const getNode = (nodes, id) => {
+  const foundNode = nodes.get({
+    filter: (node) => {
+      return node.id === id && node.type !== 'Badge-Skills'
+    }
+  })
+  if(foundNode && foundNode.length > 0) {
+    return foundNode[0];
+  } else {
+    return null;
+  }
+}
 
+onMounted(() => {
+
+    loadPaths()
+    isProcessing.value = false
+})
+
+watch(() => props.data?.edges?.length, (newLen) => {
+  if (newLen !== learningPaths.value.length) {
+    loadPaths()
+  }
+})
+
+const loadPaths = () => {
+  const learningPathsTmp = []
+  if (props.data && props.data.edges && props.data.edges.length > 0) {
+    const {nodes, edges} = props.data
     if (edges && edges.length > 0) {
       edges.forEach((edge) => {
-        const fromNode = nodes.find((node) => node.id === edge.from && node.type !== 'Badge-Skills')
-        const toNode = nodes.find((node) => node.id === edge.to && node.type !== 'Badge-Skills')
+        const fromNode = getNode(nodes, edge.from)
+        const toNode = getNode(nodes, edge.to)
 
-        if( fromNode && toNode ) {
-          learningPaths.value.push({
+        if (fromNode && toNode) {
+          learningPathsTmp.push({
             fromItem: fromNode?.details?.name,
             fromNode: fromNode?.details,
             toItem: toNode?.details?.name,
@@ -55,9 +80,9 @@ onMounted(() => {
         }
       })
     }
-    isProcessing.value = false
+    learningPaths.value = learningPathsTmp
   }
-})
+}
 
 const removeLearningPath = (data) => {
   const message = `Do you want to remove the path from ${data.fromItem} to ${data.toItem}?`
@@ -94,20 +119,25 @@ const sortTable = (criteria) => {
 
 const responsive = useResponsiveBreakpoints()
 const isFlex = computed(() => responsive.sm.value)
+
+const jumpToNode = (value) => {
+  emit('panToNode', value.fromNode.id, true)
+}
 </script>
 
 <template>
-  <Card class="mb-4" :pt="{ body: { class: '!p-0' } }">
+  <Card class="mb-4" :pt="{ body: { class: 'p-0!' } }">
     <template #header>
       <SkillsCardHeader title="Learning Path Routes"></SkillsCardHeader>
     </template>
     <template #content>
-      <div v-if="!isLoading && !isProcessing && learningPaths.length > 0">
+      <div v-if="!isProcessing && learningPaths.length > 0">
         <SkillsDataTable
           tableStoredStateId="dependencies"
           aria-label="Learning Path Routes"
           :value="learningPaths"
           v-if="!isProcessing"
+          :loading="isLoading"
           data-cy="learningPathTable"
           paginator :rows="5" :rowsPerPageOptions="[5, 10, 15, 20]"
           show-gridlines
@@ -123,6 +153,12 @@ const isFlex = computed(() => responsive.sm.value)
           <Column field="toItem" header="To" sortable :class="{'flex': isFlex }">
             <template #body="slotProps">
               <a :href="getUrl(slotProps.data.toNode)">{{ slotProps.data.toItem }}</a>
+            </template>
+          </Column>
+          <Column field="edit" header="View Route" v-if="!isReadOnlyProj" :class="{'flex': isFlex }">
+            <template #body="slotProps">
+              <SkillsButton @click="jumpToNode(slotProps.data)" variant="outline-info" size="small" class="text-info mr-2" icon="fa fa-network-wired"
+                            :aria-label="`View route of ${slotProps.data.fromItem} to ${slotProps.data.toItem} in graph`" title="View route in graph"></SkillsButton>
             </template>
           </Column>
           <Column field="edit" header="Edit" v-if="!isReadOnlyProj" :class="{'flex': isFlex }">

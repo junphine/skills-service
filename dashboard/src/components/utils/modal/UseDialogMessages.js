@@ -42,7 +42,7 @@ export const useDialogMessages = () => {
       accept: () => {
         focusState.focusOnLastElement()
       },
-      rejectClass: '!hidden',
+      rejectClass: 'hidden!',
       acceptLabel: okButtonTitle,
     });
   }
@@ -53,8 +53,13 @@ export const useDialogMessages = () => {
                         accept = null,
                         reject = null,
                         acceptLabel = 'OK',
+                        acceptIcon = 'far fa-check-circle',
+                        acceptClass = 'p-button-success p-button-outlined',
                         rejectLabel = 'Cancel',
+                        rejectClass= 'p-button-warn p-button-outlined',
+                        rejectIcon= 'far fa-times-circle',
                         targetElement = undefined,
+                        appendTo = null,
                         onShowHandler = () => {},
                         onHideHandler = () => {},
                       }) => {
@@ -65,10 +70,11 @@ export const useDialogMessages = () => {
       position: 'center',
       icon: 'fas fa-exclamation-triangle',
       acceptLabel: acceptLabel,
-      acceptClass: 'p-button-success p-button-outlined',
-      acceptIcon: 'far fa-check-circle',
-      rejectLabel: rejectLabel,
-      rejectClass: 'p-button-warn p-button-outlined',
+      acceptClass,
+      acceptIcon,
+      rejectLabel,
+      rejectClass,
+      appendTo,
       rejectIcon: 'far fa-times-circle',
       onShow: () => {
         announcer.polite(message);

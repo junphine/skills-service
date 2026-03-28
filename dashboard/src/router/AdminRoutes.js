@@ -17,10 +17,12 @@ import AdminHomePage from '@/components/AdminHomePage.vue'
 import MyProjects from '@/components/projects/MyProjects.vue'
 import QuizDefinitionsPage from '@/components/quiz/QuizDefinitionsPage.vue'
 import UserActionsPage from '@/components/userActions/UserActionsPage.vue'
-import MultipleProjectsMetricsPage from '@/components/metrics/multipleProjects/MultipleProjectsMetricsPage.vue'
 import EmaillProjectAdmins from '@/components/projects/EmaillProjectAdmins.vue'
 import GlobalBadges from '@/components/badges/global/GlobalBadges.vue'
-import AdminGroupsPage from "@/components/access/groups/AdminGroupsPage.vue";
+import AdminGroupsPage from '@/components/access/groups/AdminGroupsPage.vue'
+import UsersOverallProgressPage from "@/components/users/UsersOverallProgressPage.vue";
+import OverallMetricsPage from "@/components/metrics/OverallMetricsPage.vue";
+import GlobalQuizRunsHistoryPage from "@/components/quiz/runsHistory/GlobalQuizRunsHistoryPage.vue";
 
 const createAdminRoutes = () => {
   return {
@@ -64,6 +66,36 @@ const createAdminRoutes = () => {
           },
         },
       }, {
+        name: 'UsersOverallProgressPage',
+        path: 'users-progress',
+        component: UsersOverallProgressPage,
+        meta: {
+          requiresAuth: true,
+          announcer: {
+            message: 'Cross-projects users',
+          },
+        },
+      }, {
+        name: 'GlobalQuizRunsHistoryPage',
+        path: 'quiz-runs',
+        component: GlobalQuizRunsHistoryPage,
+        meta: {
+          requiresAuth: true,
+          announcer: {
+            message: 'Quiz and Survey Runs',
+          },
+        },
+      }, {
+        name: 'OverallMetricsPage',
+        path: 'overall-metrics',
+        component: OverallMetricsPage,
+        meta: {
+          requiresAuth: true,
+          announcer: {
+            message: 'Overall Metrics',
+          },
+        },
+      }, {
         name: 'UserActions',
         path: 'userActions',
         component: UserActionsPage,
@@ -71,16 +103,6 @@ const createAdminRoutes = () => {
           requiresAuth: true,
           announcer: {
             message: 'User Actions History',
-          },
-        },
-      }, {
-        name: 'MultipleProjectsMetricsPage',
-        path: 'metrics',
-        component: MultipleProjectsMetricsPage,
-        meta: {
-          requiresAuth: true,
-          announcer: {
-            message: 'All Projects Metrics',
           },
         },
       }, {

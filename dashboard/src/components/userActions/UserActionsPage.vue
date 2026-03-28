@@ -30,6 +30,8 @@ import SkillsDataTable from '@/components/utils/table/SkillsDataTable.vue'
 import { useContentMaxWidthState } from '@/stores/UseContentMaxWidthState.js'
 import { useResponsiveBreakpoints } from '@/components/utils/misc/UseResponsiveBreakpoints.js';
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useDebounceFn, useStorage} from "@vueuse/core";
 
 const route = useRoute()
 const userInfo = useUserInfo()
@@ -37,15 +39,6 @@ const contentMaxWidthState = useContentMaxWidthState()
 const responsive = useResponsiveBreakpoints()
 const numberFormat = useNumberFormat()
 
-const filters = ref({
-  user: '',
-  action: '',
-  item: '',
-  itemId: '',
-  projectId: '',
-  quizId: ''
-})
-const filtering = ref(false)
 const filterOptions = ref({
   loading: true,
   actions: [],
@@ -64,10 +57,11 @@ const tableOptions = ref({
     server: true,
     currentPage: 1,
     totalRows: 1,
-    pageSize: 10,
     possiblePageSizes: [10, 25, 50],
   }
 })
+
+const pageSize = useStorage('userActionsPage-table', 10)
 
 const sortInfo = ref({ sortOrder: -1, sortBy: 'created' })
 const isAllEvents = ref(true)
@@ -132,7 +126,7 @@ onMounted(() => {
 const loadData = () => {
   tableOptions.value.busy = true
   const params = {
-    limit: tableOptions.value.pagination.pageSize,
+    limit: pageSize.value,
     page: tableOptions.value.pagination.currentPage,
     orderBy: sortInfo.value.sortBy,
     ascending: sortInfo.value.sortOrder === 1,
@@ -170,16 +164,28 @@ const formatLabel = (originalLabel) => {
       .replace(/^./, (match) => match.toUpperCase());
 }
 
+const userEnteredFilter = computed(() => {
+  const f = tableFilters.value
+  return f.global.value || f.userIdForDisplay.value || f.action.value ||
+      f.item.value || f.itemId.value || f.projectId.value ||
+      f.quizId.value
+})
 const clearFilter = () => {
-  filters.value.global.value = null
-  loadData().then(() => filtering.value = false)
+  tableFilters.value.global.value = null
+  tableFilters.value.userIdForDisplay.value = null
+  tableFilters.value.action.value = null
+  tableFilters.value.item.value = null
+  tableFilters.value.itemId.value = null
+  tableFilters.value.projectId.value = null
+  tableFilters.value.quizId.value = null
+  loadData()
 }
-const onFilter = (filterEvent) => {
+const onFilter = useDebounceFn((filterEvent) => {
   tableOptions.value.pagination.currentPage = 1
-  loadData().then(() => filtering.value = true)
-}
+  loadData()
+}, 300)
 const pageChanged = (pagingInfo) => {
-  tableOptions.value.pagination.pageSize = pagingInfo.rows
+  pageSize.value = pagingInfo.rows
   tableOptions.value.pagination.currentPage = pagingInfo.page + 1
   loadData()
 }
@@ -209,7 +215,7 @@ const pageAwareTitleLevel = computed(() => route.params.projectId ? 2 : 1)
       </template>
     </SubPageHeader>
 
-    <Card :pt="{ body: { class: '!p-0' } }">
+    <Card :pt="{ body: { class: 'p-0!' } }">
       <template #content>
         <div :style="contentMaxWidthState.main2ContentMaxWidthStyleObj">
             <SkillsDataTable
@@ -229,7 +235,7 @@ const pageAwareTitleLevel = computed(() => route.params.projectId ? 2 : 1)
             @filter="onFilter"
             @page="pageChanged"
             @sort="sortField"
-            :rows="tableOptions.pagination.pageSize"
+            :rows="pageSize"
             :rowsPerPageOptions="tableOptions.pagination.possiblePageSizes"
             :total-records="tableOptions.pagination.totalRows"
             v-model:sort-field="sortInfo.sortBy"
@@ -240,22 +246,7 @@ const pageAwareTitleLevel = computed(() => route.params.projectId ? 2 : 1)
           </template>
 
           <template #empty>
-            <div class="flex justify-center flex-wrap h-48">
-              <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle fa-3x"
-                 aria-hidden="true"></i>
-              <span class="w-full">
-                <span class="flex items-center justify-center">There are no records to show</span>
-                <span v-if="filtering" class="flex items-center justify-center">  Click
-                    <SkillsButton class="flex flex items-center justify-center px-1"
-                                  label="Reset"
-                                  link
-                                  size="small"
-                                  @click="clearFilter"
-                                  :aria-label="`Reset filter for $ {quizType} results`"
-                                  data-cy="userResetBtn" /> to clear the existing filter.
-              </span>
-            </span>
-            </div>
+            <table-no-res :show-reset-filter="userEnteredFilter" @reset-filter="clearFilter"/>
           </template>
 
           <Column expander style="width: 20rem" :showFilterMenu="false" :class="{'flex': responsive.md.value }">
@@ -330,7 +321,13 @@ const pageAwareTitleLevel = computed(() => route.params.projectId ? 2 : 1)
               <i class="fas fa-fingerprint skills-color-points mr-1" aria-hidden="true"></i>
             </template>
             <template #body="slotProps">
-              <span :data-cy="`row${slotProps.index}-${slotProps.field}`">{{ slotProps.data.itemId }}</span>
+              <div v-if="slotProps.data.itemId" :data-cy="`row${slotProps.index}-${slotProps.field}`">
+                <router-link v-if="slotProps.data.item === 'QuizAttempt'"
+                             :to="{ name:'QuizSingleRunPage', params: { quizId: slotProps.data.quizId, runId: slotProps.data.itemId }}"
+                             class="underline">{{ slotProps.data.itemId }}
+                </router-link>
+                <div v-else>{{ slotProps.data.itemId }}</div>
+              </div>
             </template>
             <template #filter="{ filterModel, filterCallback }">
               <InputText v-model="filterModel.value"
@@ -347,7 +344,9 @@ const pageAwareTitleLevel = computed(() => route.params.projectId ? 2 : 1)
               <i class="fas fa-tasks skills-color-projects mr-1" aria-hidden="true"></i>
             </template>
             <template #body="slotProps">
-              <span :data-cy="`row${slotProps.index}-${slotProps.field}`">{{ slotProps.data.projectId }}</span>
+              <span :data-cy="`row${slotProps.index}-${slotProps.field}`">
+                <router-link v-if="slotProps.data.projectId" :to="{ name:'Subjects', params: { projectId: slotProps.data.projectId }}"
+                             class="underline">{{ slotProps.data.projectId }}</router-link></span>
             </template>
             <template #filter="{ filterModel, filterCallback }">
               <InputText v-model="filterModel.value"
@@ -364,7 +363,11 @@ const pageAwareTitleLevel = computed(() => route.params.projectId ? 2 : 1)
               <i class="fas fa-spell-check skills-color-subjects mr-1" aria-hidden="true"></i>
             </template>
             <template #body="slotProps">
-              <span :data-cy="`row${slotProps.index}-${slotProps.field}`">{{ slotProps.data.quizId }}</span>
+              <span :data-cy="`row${slotProps.index}-${slotProps.field}`">
+                <router-link v-if="slotProps.data.quizId"
+                             :to="{ name:'Questions', params: { quizId: slotProps.data.quizId }}"
+                             class="underline">{{ slotProps.data.quizId }}</router-link>
+              </span>
             </template>
             <template #filter="{ filterModel, filterCallback }">
               <InputText v-model="filterModel.value"

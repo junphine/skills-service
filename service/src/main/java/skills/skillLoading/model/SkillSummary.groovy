@@ -45,6 +45,7 @@ class SkillSummary extends SkillSummaryParent {
     List<SkillTag> tags = []
 
     VideoSummary videoSummary
+    SlidesSummary slidesSummary
 
     Boolean isMotivationalSkill
     int daysOfInactivityBeforeExp
@@ -56,4 +57,6 @@ class SkillSummary extends SkillSummaryParent {
     String groupSkillId
 
     List<ApprovalEvent> approvalHistory = []
+
+    String iconClass
 }

@@ -24,6 +24,8 @@ import NumberFormatter from '@/components/utils/NumberFormatter.js'
 import { useResponsiveBreakpoints } from '@/components/utils/misc/UseResponsiveBreakpoints.js'
 import Column from 'primevue/column'
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useStorage} from "@vueuse/core";
 
 const route = useRoute();
 const numberFormat = useNumberFormat()
@@ -47,7 +49,7 @@ const filters = ref({
 const loading = ref(false);
 const isExporting = ref(false)
 
-const pageSize = 5;
+const pageSize = useStorage('skillUsageMetrics-pageSize', 5)
 const possiblePageSizes = [5, 10, 15, 20, 50];
 
 const tableOptions = ref({
@@ -99,7 +101,7 @@ const totalRows = computed(() => items.value.length);
 </script>
 
 <template>
-  <Card data-cy="skillsNavigator" :pt="{ body: { class: '!p-0' } }">
+  <Card data-cy="skillsNavigator" :pt="{ body: { class: 'p-0!' } }">
     <template #header>
       <SkillsCardHeader title="Skills"></SkillsCardHeader>
     </template>
@@ -183,7 +185,7 @@ const totalRows = computed(() => items.value.length);
             <div class="flex gap-2 flex-wrap">
               <div class="flex flex-1 flex-col">
                 {{ slotProps.data.skillName }}
-                <Badge v-if="slotProps.data.isReusedSkill" variant="success" class="text-uppercase"><i class="fas fa-recycle"></i> Reused</Badge>
+                <Badge v-if="slotProps.data.isReusedSkill" variant="success" class="text-uppercase"><i class="fas fa-recycle" aria-hidden="true"></i> Reused</Badge>
                 <div v-if="slotProps.data.skillTags && slotProps.data.skillTags.length > 0">
                   <Badge v-for="tag in slotProps.data.skillTags" :key="tag.tagId" variant="info" class="mr-2 mt-1">
                     <i :class="'fas fa-tag'" class="ml-1" style="margin-left: 0 !important;" aria-hidden="true"></i> {{ tag.tagValue }}
@@ -236,10 +238,7 @@ const totalRows = computed(() => items.value.length);
         </template>
 
         <template #empty>
-          <div class="flex justify-center flex-wrap" data-cy="emptyTable">
-            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle" aria-hidden="true"></i>
-            <span class="flex items-center justify-center">There are no records to show</span>
-          </div>
+          <table-no-res data-cy="emptyTable" />
         </template>
       </SkillsDataTable>
     </template>

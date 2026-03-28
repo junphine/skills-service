@@ -146,14 +146,15 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
         s.displayOrder as displayOrder,
         s.created as created,
         s.updated as updated
-        from SkillDef s, SkillDef subjectDef, SkillRelDef srd 
+        from SkillRelDef srd 
+            join SkillDef subjectDef on subjectDef.id = srd.parent.id
+            join SkillDef s on s.id = srd.child.id
         where
-        subjectDef = srd.parent and s = srd.child and 
-        srd.type = 'RuleSetDefinition' and subjectDef.type = 'Subject' and  
-        s.type = ?1 and lower(s.name) like lower(CONCAT('%', ?2, '%')) and
-        not exists (select 1 from Setting s2 where s.projectId = s2.projectId and s2.setting = 'user_community' and s2.value = 'true') and
+        srd.type IN ('RuleSetDefinition', 'GroupSkillToSubject') and subjectDef.type = 'Subject' and  
+        s.type = ?1 and lower(s.name) like lower(CONCAT('%', ?2, '%')) and s.projectId in (:projectIds) and
+        not exists (select 1 from Setting s2 where s.projectId = s2.projectId and s2.setting = 'invite_only' and s2.value = 'true') and
         s.readOnly != true''')
-    List<SkillDefPartial> findAllByTypeAndNameLikeNoImportedSkills(SkillDef.ContainerType type, String name)
+    List<SkillDefPartial> findAllByTypeAndNameLikeNoImportedOrInviteOnlySkills(SkillDef.ContainerType type, String name, List<String> projectIds)
 
     @Nullable
     @Query('''select max(displayOrder) from SkillDef where projectId = ?1 and type = ?2''')
@@ -165,6 +166,9 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
 
     @Nullable
     List<SkillDef> findAllByProjectIdAndType(@Nullable String id, SkillDef.ContainerType type)
+
+    @Nullable
+    List<SkillDef> findAllByProjectIdAndTypeAndEnabled(@Nullable String id, SkillDef.ContainerType type, String enabled)
 
     List<SkillDef> findAllByProjectIdAndTypeIn(@Nullable String id, List<SkillDef.ContainerType> type)
 
@@ -227,16 +231,35 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
     List<SkillDef> findPreviousSkillDefs(String projectId, String skillId, int beforeDisplayOrder, List<RelationshipType> relationshipType, Pageable pageable)
 
     @Nullable
-    @Query(value='''select child.skill_id as skillId, child.display_order as displayOrder, skillGroup.display_order as skillGroupDisplayOrder, child.group_id as groupId, child.type as type
-                from skill_definition subj,
-                     skill_relationship_definition rel,
-                     skill_definition child left join skill_definition skillGroup on (child.group_id = skillGroup.skill_id and skillGroup.project_id = child.project_id)
-                where subj.project_id = ?1
-                  and subj.skill_id = ?2
-                  and child.type = 'Skill'
-                  and subj.id = rel.parent_ref_id
-                  and child.id = rel.child_ref_id''', nativeQuery=true)
-    List<DisplayOrderRes> findDisplayOrderByProjectIdAndSubjectId(String projectId, String subjectId)
+    @Query(value='''select * from (
+                        select skillId,
+                               lag(skillId, 1) over ( order by displayOrder, skillGroupDisplayOrder ) as previousSkillId,
+                               lead(skillId, 1) over (order by displayOrder, skillGroupDisplayOrder)  as nextSkillId,
+                               row_number() over () as overallOrder,
+                               count(*) over() as totalCount
+                        from (
+                            select child.skill_id           as skillId,
+                                   (case when skillGroup.display_order is null then child.display_order else skillGroup.display_order end) as displayOrder,
+                                   (case when skillGroup.display_order is not null then child.display_order else skillGroup.display_order end) as skillGroupDisplayOrder,
+                                   child.group_id           as groupId,
+                                   child.type               as type
+                            from skill_definition subj,
+                                 skill_relationship_definition rel,
+                                 skill_definition child
+                            left join skill_definition skillGroup
+                                 on (
+                                     child.group_id = skillGroup.skill_id
+                                     and skillGroup.project_id = child.project_id
+                                 )
+                            where subj.project_id = ?1
+                              and subj.skill_id = ?2
+                              and child.type = 'Skill\'
+                              and child.enabled = 'true\'
+                              and subj.id = rel.parent_ref_id
+                              and child.id = rel.child_ref_id
+                        )
+                    ) where skillId = ?3''', nativeQuery=true)
+    DisplayOrderRes findDisplayOrderByProjectIdAndSubjectIdAndSkillId(String projectId, String subjectId, String skillId)
 
     int countByProjectIdAndType(@Nullable String projectId, SkillDef.ContainerType type)
 
@@ -244,6 +267,15 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
             where (:projectId is null or s.projectId=:projectId) and s.type=:type and s.enabled = 'true'  
         ''')
     int countByProjectIdAndTypeWhereEnabled(@Nullable @Param('projectId') String projectId, @Param('type') SkillDef.ContainerType type)
+
+    @Query(value='''
+        select count(s) from skill_definition s
+        where s.type = 'Badge' and s.enabled = 'true' and s.project_id = :projectId and
+         (s.end_date is null or s.end_date >= :endDate or 
+          (exists ( select 1 from user_achievement ua where ua.project_id = s.project_id and s.skill_id = ua.skill_id and ua.level is null and ua.user_id = :userId))
+         )
+    ''', nativeQuery = true)
+    int countBadgesByProjectIdAndEnabledAndActive(@Nullable @Param('projectId') String projectId, @Param('userId') String userId, @Param('endDate') Date endDate)
 
     @Query('''select count(c) 
             from SkillRelDef r, SkillDef c 
@@ -265,6 +297,18 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
     SkillCounts getSkillsCountsForParentId(Integer parentSkillRefId)
 
     long countByProjectIdAndEnabledAndCopiedFromIsNotNull(String projectId, String enabled)
+
+    @Query(value='''select count(DISTINCT child) 
+        from SkillRelDef srd, SkillDef child, SkillDef parent
+        where parent.enabled != 'true'
+          and child.copiedFrom is not null
+          and parent.copiedFrom is null
+          and child.enabled != 'true'
+          and srd.parent = parent
+          and srd.child = child
+          and parent.projectId = ?1
+      ''')
+    long countNumSkillsToFinalizeThatBelongToADisabledSubjectOrGroup(String projectId)
 
     @Query(value='''select count(sd) 
         from SkillRelDef srd, SkillDef sd
@@ -392,47 +436,14 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
     @Query(value='''SELECT count(sd)
         from SkillDef sd 
         where 
-            sd.type='Skill' and 
-            sd.projectId IN 
-            (
-                select s.projectId
-                from Setting s
-                where s.projectId = sd.projectId
-                  and s.setting = 'production.mode.enabled'
-                  and s.value = 'true'
-            ) and 
+            sd.type='Skill' and
             sd.projectId IN (
                 select s.projectId
                 from Setting s, User uu
-                where (s.setting = 'my_project' and uu.userId=?1 and uu.id = s.userRefId and s.projectId = sd.projectId)
-            )  
+                where (s.setting = 'my_project' and uu.userId=?1 and uu.id = s.userRefId and s.projectId = sd.projectId)            
+            )
     ''')
     Integer countTotalProductionSkills(String userId)
-
-    @Query(value='''SELECT count(sd)
-        from SkillDef sd 
-        where (
-        (
-            sd.type = 'Badge' and 
-            sd.projectId IN 
-            (
-                select s.projectId
-                from Setting s
-                where s.projectId = sd.projectId
-                  and s.setting = 'production.mode.enabled'
-                  and s.value = 'true'
-            ) and
-            sd.projectId IN (
-                select s.projectId
-                from Setting s, User uu
-                where (s.setting = 'my_project' and uu.userId=?1 and uu.id = s.userRefId and s.projectId = sd.projectId)
-            )
-        ) OR 
-        sd.type='GlobalBadge') and
-      sd.enabled = 'true'
-      ''')
-    Integer countTotalProductionBadges(String userId)
-
 
     @Query(value='''SELECT count(sd) as totalCount,
             sum(case when sd.startDate is not null and sd.endDate is not null then 1 end) as gemCount,
@@ -469,8 +480,6 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
                 and uu.user_id=?1 
                 and uu.id = s.user_ref_id 
                 and s.project_id = s1.project_id 
-                and s1.setting = 'production.mode.enabled' 
-                and s1.value = 'true'
         )
         
         SELECT count(sd.id) as totalCount,
@@ -640,7 +649,9 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
     Integer getProjectsTotalPoints(@Param('projectId') String projectId, @Param('enabledSkillsOnly') Boolean enabledSkillsOnly)
 
     static interface MinMaxPoints {
+        @Nullable
         Integer getMinPoints()
+        @Nullable
         Integer getMaxPoints()
     }
 
@@ -850,6 +861,91 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
                                                       @Param('userId') String userId,
                                                       @Param('query') String query,
                                                       PageRequest pageRequest)
+
+    static interface SkillWithAchievementDetails {
+        String getSkillId()
+        String getSkillName()
+        String getSkillType()
+        Integer getPointIncrement()
+        Integer getTotalPoints()
+        @Nullable
+        String getSubjectName()
+        @Nullable
+        String getSubjectId()
+        Boolean getUserAchieved()
+        Integer getUserCurrentPoints()
+        Integer getChildAchievementCount()
+        Integer getTotalChildCount()
+    }
+
+    @Query(value = '''
+WITH
+skill_subjects AS (
+    SELECT
+        srd.child_ref_id,
+        sd.name,
+        sd.skill_id
+    FROM
+        skill_relationship_definition srd
+            JOIN
+        skill_definition sd ON srd.parent_ref_id = sd.id
+    WHERE sd.project_id = :projectId 
+      AND sd.type = 'Subject'
+),
+child_achievement_counts AS (
+         SELECT
+             srd.parent_ref_id,
+             COUNT(DISTINCT ua.id) AS ua_count,
+             COUNT(DISTINCT srd.child_ref_id) AS child_skill_count
+         FROM
+             skill_relationship_definition srd
+                 JOIN
+             skill_definition parent_skill ON srd.parent_ref_id = parent_skill.id
+                 JOIN
+             skill_definition child_skill ON srd.child_ref_id = child_skill.id
+                 LEFT JOIN
+             user_achievement ua ON srd.child_ref_id = ua.skill_ref_id
+                 AND ua.user_id = :userId
+         WHERE parent_skill.project_id = :projectId
+             AND child_skill.project_id = :projectId
+             AND child_skill.type = 'Skill'
+             AND srd.type IN ('RuleSetDefinition', 'BadgeRequirement', 'GroupSkillToSubject')
+         GROUP BY
+             srd.parent_ref_id
+     )
+
+SELECT DISTINCT
+    s.skill_id AS skillId,
+    s.name AS skillName,
+    s.type as skillType,
+    s.point_increment AS pointIncrement,
+    s.total_points AS totalPoints,
+    ss.name AS subjectName,
+    ss.skill_id AS subjectId,
+    CASE WHEN ua.id IS NOT NULL OR COALESCE(cac.ua_count, 0) >= COALESCE(cac.child_skill_count, 1) THEN true ELSE false END AS userAchieved,
+    COALESCE(up.points, 0) AS userCurrentPoints,
+    COALESCE(cac.ua_count, 0) AS childAchievementCount,
+    COALESCE(cac.child_skill_count, 0) AS totalChildCount
+FROM
+    skill_definition s
+        LEFT JOIN skill_subjects ss ON s.id = ss.child_ref_id
+        LEFT JOIN user_achievement ua ON s.id = ua.skill_ref_id
+        AND s.type = 'Skill'
+        AND ua.user_id = :userId
+        LEFT JOIN user_points up ON s.id = up.skill_ref_id
+        AND up.user_id = :userId
+        LEFT JOIN child_achievement_counts cac ON s.id = cac.parent_ref_id
+WHERE
+    s.enabled = 'true'
+  AND s.type in ('Skill', 'Subject', 'Badge')
+  AND s.project_id = :projectId
+ORDER BY s.name ASC
+    ''', nativeQuery = true)
+    List<SkillWithAchievementDetails> findAllSkillsSubjectsAndBadgesWithAchievementDetails(
+            @Param('projectId') String projectId,
+            @Param('userId') String userId
+    )
+
     static interface SkillNameAndSubjectId {
         String getSkillName()
         String getSubjectId()
@@ -872,19 +968,32 @@ interface SkillDefRepo extends CrudRepository<SkillDef, Integer>, PagingAndSorti
     int unsetSelfReportTypeByProjectIdSkillIdAndSelfReportType(String projectId, String skillId, SelfReportingType selfReportingType)
 
 
-    static interface SkillIdAndName {
+    static interface SkillIdAndNameAndDesc {
         String getSkillId()
         String getSkillName()
         ContainerType getType()
+        @Nullable
+        String getDescription()
     }
 
     @Nullable
-    @Query('''select sd.skillId as skillId, sd.name as skillName, sd.type as type
-            from SkillDef sd, SkillRelDef rel
+    @Query('''select sd.skillId as skillId, sd.name as skillName, sd.type as type, sd.description as description
+            from SkillDefWithExtra sd, SkillRelDef rel
             where
                 sd.id = rel.child.id
                 and rel.parent.id = ?1
                 and rel.type in ('RuleSetDefinition', 'GroupSkillToSubject')''')
-    List<SkillIdAndName> findSkillsIdAndNameUnderASubject(Integer subjectRefId)
+    List<SkillIdAndNameAndDesc> findSkillsIdAndNameUnderASubject(Integer subjectRefId)
 
+    @Nullable
+    @Query(value='''select skill.skill_id as skillId, badge.skill_id as badgeId, badge.name as name, badge.type as skillType
+                    from skill_definition subj
+                    join skill_relationship_definition subj_rel on (subj.id = subj_rel.parent_ref_id and subj_rel.type in ('RuleSetDefinition', 'GroupSkillToSubject'))
+                    join skill_definition skill on (skill.id = subj_rel.child_ref_id and skill.type = 'Skill')
+                    join skill_relationship_definition badge_rel on (skill.id = badge_rel.child_ref_id and badge_rel.type = 'BadgeRequirement')
+                    join skill_definition badge on (badge.id = badge_rel.parent_ref_id and badge.type = 'Badge')
+                    where subj.project_id = ?1
+                      and subj.type = 'Subject'
+                      and subj.skill_id = ?2''', nativeQuery = true)
+    List<SimpleBadgeRes> findAllSkillsWithBadgesForSubject(String projectId, String subjectId)
 }

@@ -44,6 +44,7 @@ import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionInfo
 import skills.services.userActions.UserActionsHistoryService
+import skills.skillLoading.SkillsLoader
 import skills.storage.accessors.SkillDefAccessor
 import skills.storage.model.*
 import skills.storage.model.SkillDef.SelfReportingType
@@ -134,6 +135,9 @@ class SkillsAdminService {
     @Autowired
     SkillAttributeService skillAttributeService
 
+    @Autowired
+    private SkillsLoader skillsLoader;
+
     protected static class SaveSkillTmpRes {
         // because of the skill re-use it could be imported but NOT available in the catalog
         boolean isImportedByOtherProjects = false
@@ -153,7 +157,7 @@ class SkillsAdminService {
             final CustomValidationResult customValidationResult = customValidator.validate(skillRequest)
             if (!customValidationResult.valid) {
                 String msg = "Custom validation failed: msg=[${customValidationResult.msg}], type=[skill], skillId=[${skillRequest.skillId}], name=[${skillRequest.name}], description=[${skillRequest.description}]"
-                throw new SkillException(msg)
+                throw new SkillException(msg, skillRequest.projectId, skillRequest.skillId, ErrorCode.ParagraphValidationFailed)
             }
         }
 
@@ -175,10 +179,6 @@ class SkillsAdminService {
                 throw new SkillException("Skill with name [${skillRequest.name}] already exists! Sorry!", skillRequest.projectId, null, ErrorCode.ConstraintViolation)
             }
         }
-
-        final isCurrentlyEnabled = Boolean.valueOf(skillDefinition?.enabled)
-
-
         if (skillDefinition && !groupId) {
             groupId = skillDefinition.groupId
         }
@@ -197,15 +197,33 @@ class SkillsAdminService {
         final int incrementRequested = isSkillsGroup ? 0 : skillRequest.pointIncrement
         final int currentOccurrences = isEdit && !isSkillsGroup ? (skillDefinition.totalPoints / skillDefinition.pointIncrement) : -1
         final SelfReportingType selfReportingType = skillRequest.selfReportingType && !isSkillsGroup ? SkillDef.SelfReportingType.valueOf(skillRequest.selfReportingType) : null;
+        final isCurrentlyEnabled = Boolean.valueOf(skillDefinition?.enabled)
         final boolean isEnabledSkillInRequest = Boolean.valueOf(skillRequest.enabled)
         final boolean isJustificationRequiredInRequest = Boolean.valueOf(skillRequest.justificationRequired)
         final boolean isSkillCatalogImport = skillRequest instanceof SkillImportRequest;
         final boolean isReplicationRequest = skillRequest instanceof ReplicatedSkillUpdateRequest
         String description = skillRequest.description
 
-        SkillDef subject = null
         SkillDef skillsGroupSkillDef = null
         List<SkillDef> groupChildSkills = null
+        String parentSkillId = skillRequest.subjectId
+        SkillDef subject = skillDefRepo.findByProjectIdAndSkillIdAndType(skillRequest.projectId, parentSkillId, SkillDef.ContainerType.Subject)
+        if (!subject) {
+            throw new SkillException("Subject [${parentSkillId}] does not exist", skillRequest.projectId, skillRequest.skillId, ErrorCode.BadParam)
+        }
+        final isSubjectEnabled = Boolean.valueOf(subject?.enabled)
+        if (!isSubjectEnabled && isEnabledSkillInRequest) {
+            throw new SkillException("Cannot enable Skill [${originalSkillId}] because it's Subject [${parentSkillId}] is disabled", skillRequest.projectId, skillRequest.skillId, ErrorCode.BadParam)
+        }
+        if (isSkillsGroupChild) {
+            // need to validate skills group
+            if (!skillsGroupSkillDef) {
+                skillsGroupSkillDef = skillDefRepo.findByProjectIdAndSkillIdIgnoreCaseAndType(skillRequest.projectId, groupId, SkillDef.ContainerType.SkillsGroup)
+            }
+            if (!Boolean.valueOf(skillsGroupSkillDef?.enabled) && isEnabledSkillInRequest) {
+                throw new SkillException("Cannot enable Skill [${originalSkillId}] because it's SkillsGroup [${groupId}] is disabled", skillRequest.projectId, skillRequest.skillId, ErrorCode.BadParam)
+            }
+        }
         if (isEdit) {
             validateImportedSkillUpdate(skillRequest, skillDefinition)
             // for updates, use the existing value if it is not set on the skillRequest (null or empty String)
@@ -215,9 +233,19 @@ class SkillsAdminService {
             if (StringUtils.isBlank(skillRequest.justificationRequired)) {
                 skillRequest.justificationRequired = skillDefinition.justificationRequired
             }
+            if (isEdit && isCurrentlyEnabled && !isEnabledSkillInRequest) {
+                throw new SkillException("Skill [${originalSkillId}] has already been enabled and cannot be disabled.", skillRequest.projectId, null, ErrorCode.BadParam)
+            }
+
             if (isSkillsGroup) {
                 // need to update total points for the group
                 groupChildSkills = skillsGroupAdminService.validateSkillsGroupAndReturnChildren(skillRequest, skillDefinition)
+                boolean enabledGroup = !isCurrentlyEnabled && isEnabledSkillInRequest
+                if (enabledGroup) {
+                    groupChildSkills.findAll {it.copiedFrom == null }.each {
+                        it.enabled = true
+                    }
+                }
                 totalPointsRequested = skillsGroupAdminService.getGroupTotalPoints(groupChildSkills)
 
                 if (isEnabledSkillInRequest && skillDefinition.numSkillsRequired != skillRequest.numSkillsRequired) {
@@ -232,9 +260,10 @@ class SkillsAdminService {
                     groupChildSkills.each {
                         it.groupId = skillRequest.skillId
                     }
+                }
+                if (skillIdChanged || enabledGroup) {
                     skillDefRepo.saveAll(groupChildSkills)
                 }
-
             }
             shouldRebuildScores = skillDefinition.totalPoints != totalPointsRequested || (!Boolean.valueOf(skillDefinition.enabled) && isEnabledSkillInRequest)
             occurrencesDelta = isSkillsGroup ? 0 : skillRequest.numPerformToCompletion - currentOccurrences
@@ -260,7 +289,7 @@ class SkillsAdminService {
                 }
             }
 
-            if (skillDefinition.selfReportingType == SelfReportingType.Quiz && skillRequest.selfReportingType != SelfReportingType.Quiz) {
+            if (skillDefinition.selfReportingType == SelfReportingType.Quiz && skillRequest.selfReportingType?.toLowerCase() != SelfReportingType.Quiz.toString().toLowerCase()) {
                 quizToSkillService.removeQuizToSkillAssignment(skillDefinition)
             }
 
@@ -271,12 +300,6 @@ class SkillsAdminService {
 
             skillDefinition.totalPoints = totalPointsRequested
         } else {
-            String parentSkillId = skillRequest.subjectId
-            subject = skillDefRepo.findByProjectIdAndSkillIdAndType(skillRequest.projectId, parentSkillId, SkillDef.ContainerType.Subject)
-            if (!subject) {
-                throw new SkillException("Subject [${parentSkillId}] does not exist", skillRequest.projectId, skillRequest.skillId, ErrorCode.BadParam)
-            }
-
             createdResourceLimitsValidator.validateNumSkillsCreated(subject)
 
             Integer highestDisplayOrder = skillDefRepo.calculateChildSkillsHighestDisplayOrder(skillRequest.projectId, groupId ?: parentSkillId)
@@ -315,6 +338,7 @@ class SkillsAdminService {
                     enabled: enabled,
                     groupId: groupId,
                     justificationRequired: justificationRequired,
+                    iconClass: skillRequest.iconClass
             )
 
             if (isSkillCatalogImport) {
@@ -634,7 +658,11 @@ class SkillsAdminService {
         List<SkillDefPartial> res = skillRelDefRepo.getSkillsWithCatalogStatus(projectId, subject.skillId, relationshipTypes)
 
         Boolean projectHasSkillTags = skillDefRepo.doesProjectHaveSkillTags(projectId) as boolean
-        return res.collect { convertToSkillDefPartialRes(it, projectHasSkillTags) }.sort({ it.displayOrder })
+
+        List<SimpleBadgeRes> badges = skillDefRepo.findAllSkillsWithBadgesForSubject(projectId, subjectId)
+        Map<String, List<SimpleBadgeRes>> badgeCollection = badges.groupBy{ it.skillId }
+
+        return res.collect { convertToSkillDefPartialRes(it, projectHasSkillTags, false, badgeCollection[it.skillId]) }.sort({ it.displayOrder })
     }
 
     @Transactional(readOnly = true)
@@ -685,12 +713,21 @@ class SkillsAdminService {
         }
 
         SkillDefRes finalRes = convertToSkillDefRes(res)
+        finalRes.subjectId = subjectId
         finalRes.sharedToCatalog = skillCatalogService.isAvailableInCatalog(res.projectId, res.skillId)
         if (finalRes.copiedFromProjectId) {
             finalRes.copiedFromProjectName = projDefRepo.getProjectName(finalRes.copiedFromProjectId)?.projectName
         }
 
         finalRes.thisSkillWasReusedElsewhere = skillDefRepo.wasThisSkillReusedElsewhere(res.id)
+
+        DisplayOrderRes orderInfo = skillsLoader.getSkillOrderStats(projectId, subjectId, skillId)
+        if(orderInfo) {
+            finalRes.prevSkillId = orderInfo.previousSkillId
+            finalRes.nextSkillId = orderInfo.nextSkillId
+            finalRes.totalSkills = orderInfo.totalCount
+            finalRes.orderInGroup = orderInfo.overallOrder
+        }
 
         String videoUrl = skillAttributesDefRepo.getVideoUrlBySkillRefId(res.id)
         finalRes.hasVideoConfigured = StringUtils.isNotBlank(videoUrl)
@@ -762,6 +799,7 @@ class SkillsAdminService {
         SkillDefRes res = new SkillDefRes()
         Props.copy(skillDef, res)
         res.enabled = skillDef.enabled == "true" ? true : false
+        res.iconClass = skillDef.iconClass
         res.justificationRequired = Boolean.valueOf(skillDef.justificationRequired)
         res.description = InputSanitizer.unsanitizeForMarkdown(res.description)
         res.helpUrl = InputSanitizer.unsanitizeUrl(res.helpUrl)
@@ -780,8 +818,9 @@ class SkillsAdminService {
                 throw new SkillException("Failed to find skill's group with groupId=[${skillDef.groupId}]", skillDef.projectId, skillDef.skillId)
             }
             res.enabled = Boolean.valueOf(skillDef.enabled)
-            res.groupName = skillsGroup.name
+            res.groupName = InputSanitizer.unsanitizeName(skillsGroup.name)
             res.groupId = skillsGroup.skillId
+            res.groupEnabled = Boolean.valueOf(skillsGroup.enabled)
         }
         if (skillDef.selfReportingType == SelfReportingType.Quiz) {
             QuizToSkillDefRepo.QuizNameAndId quizIdAndName = quizToSkillService.getQuizIdForSkillRefId(skillDef.copiedFrom ?: skillDef.id)
@@ -815,7 +854,7 @@ class SkillsAdminService {
                 created: skinny.created,
                 totalPoints: skinny.totalPoints,
                 isReused: SkillReuseIdUtil.isTagged(skinny.skillId),
-                groupName: groupName,
+                groupName: InputSanitizer.unsanitizeName(groupName),
                 groupId: skinny.groupId,
                 type: skinny.type
         )
@@ -824,15 +863,18 @@ class SkillsAdminService {
 
     @CompileStatic
     @Profile
-    SkillDefPartialRes convertToSkillDefPartialRes(SkillDefPartial partial, boolean loadTags = false, boolean loadNumUsers = false) {
+    SkillDefPartialRes convertToSkillDefPartialRes(SkillDefPartial partial, boolean loadTags = false, boolean loadNumUsers = false, List<SimpleBadgeRes> badges = null) {
         boolean reusedSkill = SkillReuseIdUtil.isTagged(partial.skillId)
         String unsanitizeName = InputSanitizer.unsanitizeName(partial.name)
+
         SkillDefPartialRes res = new SkillDefPartialRes(
                 skillId: partial.skillId,
                 projectId: partial.projectId,
                 name: reusedSkill ? SkillReuseIdUtil.removeTag(unsanitizeName) : unsanitizeName,
                 subjectId: partial.subjectSkillId,
                 subjectName: InputSanitizer.unsanitizeName(partial.subjectName),
+                groupId: partial.groupId,
+                groupName: InputSanitizer.unsanitizeName(partial.groupName),
                 pointIncrement: partial.pointIncrement,
                 pointIncrementInterval: partial.pointIncrementInterval,
                 numMaxOccurrencesIncrementInterval: partial.numMaxOccurrencesIncrementInterval,
@@ -854,6 +896,8 @@ class SkillsAdminService {
                 quizId: partial.getQuizId(),
                 quizName: partial.getQuizName(),
                 quizType: partial.getQuizType(),
+                iconClass: partial.iconClass,
+                badges: badges ?: [],
         )
 
         if (partial.skillType == SkillDef.ContainerType.Skill) {
@@ -871,6 +915,8 @@ class SkillsAdminService {
                 res.tags.push(new SkillTagRes(tagId: tag.tagId, tagValue: tag.tagValue))
             }
         }
+
+
 
         if (partial.skillType == SkillDef.ContainerType.SkillsGroup) {
             List<SkillDef> groupChildSkills = skillsGroupAdminService.getSkillsGroupChildSkills(partial.getId())
@@ -943,9 +989,6 @@ class SkillsAdminService {
                 if (StringUtils.isBlank(videoUrl)) {
                     throw new SkillException("Video URL must be configured prior to attempting to set selfReportingType=Video", existingSkillDefinition.projectId, existingSkillDefinition.skillId)
                 }
-            }
-            if (skillRequest.numPerformToCompletion > 1) {
-                throw new SkillException("When selfReportingType=Video numPerformToCompletion must equal to 1 but [${skillRequest.numPerformToCompletion}] was provided", existingSkillDefinition.projectId, existingSkillDefinition.skillId)
             }
         }
     }

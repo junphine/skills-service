@@ -32,7 +32,7 @@ const smallScreenMode = computed(() => responsive.sm.value)
 const skillsDisplayInfo = useSkillsDisplayInfo()
 
 const idsToExcludeFromPath = ['subjects', 'skills', 'projects', 'crossProject', 'dependency', 'global']
-const keysToExcludeFromPath = []
+const keysToExcludeFromPath = ['questions']
 
 const build = () => {
   handleCustomLabels().then(() => {
@@ -254,7 +254,7 @@ const isQuizzesValueUnderProgressAndRanking = (value, items) => {
 </script>
 
 <template>
-  <Card :pt="{ body: { class: '!p-0' } }" class="mx-3">
+  <Card :pt="{ body: { class: 'p-0!' } }" class="mx-3">
     <template #content>
       <Breadcrumb :model="items"
                 :class="{'dashboard-breadcrumb-vertical-mode': smallScreenMode}"

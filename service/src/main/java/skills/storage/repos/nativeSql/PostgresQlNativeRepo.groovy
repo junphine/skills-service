@@ -492,12 +492,8 @@ class PostgresQlNativeRepo {
         return skillsDBLockRepo.insertLockOrSelectExisting(lockKey)
     }
 
-    Long countDistinctUsersByProjectIdAndSubjectIdAndUserIdLike(String projectId, String subjectId, String userId, int minimumPoints) {
-        userPointsRepo.countDistinctUsersByProjectIdAndSubjectIdAndUserIdLike(projectId, subjectId, userId, minimumPoints)
-    }
-
-    Long countDistinctUsersByProjectIdAndSubjectId(String projectId, String subjectId) {
-        userPointsRepo.countDistinctUsersByProjectIdAndSubjectId(projectId, subjectId)
+    Long countDistinctUsersByProjectIdAndSubjectIdAndUserIdLike(String projectId, String subjectId, String userId, int minimumPoints, int maximumPoints, String usersTableAdditionalUserTagKey, String userTagFilter) {
+        userPointsRepo.countDistinctUsersByProjectIdAndSubjectIdAndUserIdLike(projectId, subjectId, userId, minimumPoints, maximumPoints, usersTableAdditionalUserTagKey, userTagFilter)
     }
 
     List<SkillDefPartial> getSkillsWithCatalogStatusExplodeSkillGroups(String projectId, String subjectId) {

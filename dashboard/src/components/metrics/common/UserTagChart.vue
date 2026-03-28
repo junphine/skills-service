@@ -14,16 +14,23 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { ref, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import {computed, onMounted, ref} from 'vue';
+import {useRoute} from 'vue-router';
 import MetricsService from "@/components/metrics/MetricsService.js";
-import { useUserTagChartConfig } from '@/components/metrics/common/UserTagChartConfig.js';
 import MetricsOverlay from "@/components/metrics/utils/MetricsOverlay.vue";
 import {useLayoutSizesState} from "@/stores/UseLayoutSizesState.js";
+import SkillsCalendarInput from "@/components/utils/inputForm/SkillsCalendarInput.vue";
+import {useSkillsAnnouncer} from "@/common-components/utilities/UseSkillsAnnouncer.js";
+import {useTimeUtils} from "@/common-components/utilities/UseTimeUtils.js";
+import Chart from "primevue/chart";
+import {useChartSupportColors} from "@/components/metrics/common/UseChartSupportColors.js";
+import ChartDownloadControls from "@/components/metrics/common/ChartDownloadControls.vue";
 
 const route = useRoute();
-const userTagChartConfig = useUserTagChartConfig();
 const layoutSizes = useLayoutSizesState()
+const announcer = useSkillsAnnouncer()
+const timeUtils = useTimeUtils();
+const chartSupportColors = useChartSupportColors()
 
 const props = defineProps({
   tagKey: {
@@ -40,27 +47,27 @@ const props = defineProps({
     required: false,
     default: 'Users',
   },
+  isOverall: {
+    type: Boolean,
+    required: false,
+    default: false
+  }
 })
 
 onMounted(() => {
-  if (props.chartType === 'pie') {
-    chartOptions.value = userTagChartConfig.pieChartOptions;
-  }
-  if (props.chartType === 'bar') {
-    chartOptions.value = userTagChartConfig.barChartOptions;
-  }
+  chartJsOptions.value = setChartOptions()
   loadData();
 });
 
 const isLoading = ref(true);
 const isEmpty = ref(false);
-const series = ref([]);
-const chartOptions = ref({});
-const heightInPx = ref(350);
+const chartData = ref({})
 const titleInternal = ref(props.title);
+const filterRange = ref([]);
 
 const loadData = () => {
   isLoading.value = true;
+  const dateRange = timeUtils.prepareDateRange(filterRange.value)
 
   const params = {
     tagKey: props.tagKey,
@@ -68,54 +75,137 @@ const loadData = () => {
     pageSize: 20,
     sortDesc: true,
     tagFilter: '',
+    fromDayFilter: dateRange.startDate,
+    toDayFilter: dateRange.endDate,
   };
+  const metricsLoader = props.isOverall ?
+      MetricsService.getOverallMetricsChart('overallNumUsersPerTagBuilder', params) :
+      MetricsService.loadChart(route.params.projectId, 'numUsersPerTagBuilder', params);
 
-  MetricsService.loadChart(route.params.projectId, 'numUsersPerTagBuilder', params)
-      .then((dataFromServer) => {
-        if (dataFromServer) {
-          const localSeries = [];
-          const labels = [];
-          const { items } = dataFromServer;
-          items.forEach((data) => {
-            localSeries.push(data.count);
-            labels.push(data.value);
-          });
-          if (props.chartType === 'pie') {
-            series.value = localSeries;
-          }
-          if (props.chartType === 'bar') {
-            series.value = [{
-              name: 'Number of Users',
-              data: localSeries,
-            }];
-          }
-          chartOptions.value = Object.assign(chartOptions.value, { labels });
-          isEmpty.value = items.find((item) => item.count > 0) === undefined;
+  metricsLoader.then((dataFromServer) => {
+    if (dataFromServer) {
+      const { items } = dataFromServer;
+      isEmpty.value = items.find((item) => item.count > 0) === undefined;
 
-          if (items.length > 10) {
-            heightInPx.value = 600;
-          }
-          if (dataFromServer.totalNumItems > params.pageSize) {
-            titleInternal.value = `${titleInternal.value} (Top ${params.pageSize})`;
-          }
-        }
-        isLoading.value = false;
-      });
+      chartData.value = {
+        labels: items.map((item) => item.value),
+        datasets: [{
+          label: 'Number of Users',
+          data: items.map((item) => item.count),
+          backgroundColor: chartSupportColors.getBackgroundColorArray(items.length),
+          borderColor: chartSupportColors.getBorderColorArray(items.length),
+          borderWidth: 1,
+          borderRadius: 6,
+          maxBarThickness: 15,
+          minBarLength: 4,
+        }]
+      }
+
+      if (dataFromServer.totalNumItems > params.pageSize) {
+        titleInternal.value = `${titleInternal.value} (Top ${params.pageSize})`;
+      }
+    }
+    isLoading.value = false;
+  });
 };
+
+const applyDateFilter = () => {
+  announcer.polite(`Results have been filtered by date, from ${filterRange.value[0]}` + filterRange.value.length > 1 ? ` to ${filterRange.value[1]}` : '')
+  loadData()
+};
+
+const clearDateFilter = () => {
+  announcer.polite("Clearing the date range filter")
+  filterRange.value = [];
+  loadData()
+};
+
+const isPieChart = computed(() => props.chartType === 'pie')
+const chartJsOptions = ref();
+const userTagChart = ref(null)
+const setChartOptions = () => {
+  const colors = chartSupportColors.getColors()
+  if (isPieChart.value) {
+    return {
+      responsive: true,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: {
+            color: colors.textColor,
+            padding: 20,
+            boxWidth: 12,
+            usePointStyle: true,
+            pointStyle: 'circle'
+          },
+        },
+      }
+    }
+  }
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    indexAxis: 'y',
+    scales: {
+      x: {
+        ticks: {
+          color: colors.textMutedColor
+        },
+        grid: {
+          color: colors.contentBorderColor,
+        }
+      },
+      y: {
+        beginAtZero: true,
+        ticks: {
+          color: colors.textMutedColor
+        },
+        grid: {
+          color: colors.contentBorderColor
+        }
+      }
+    },
+    plugins: {
+      legend: {
+        display: false
+      },
+    }
+  };
+}
 </script>
 
 <template>
-  <Card data-cy="userTagChart" :style="`width: ${layoutSizes.tableMaxWidth}px;`">
+  <Card data-cy="userTagChart">
     <template #header>
       <SkillsCardHeader :title="titleInternal"></SkillsCardHeader>
     </template>
     <template #content>
-      <skills-spinner :is-loading="isLoading" v-if="isLoading" />
-      <div v-if="!isLoading">
-        <metrics-overlay :loading="isLoading" :has-data="!isEmpty" no-data-msg="No data yet...">
-          <apexchart :type="chartType" width="100%" :height="`${heightInPx}px`"  :options="chartOptions" :series="series"></apexchart>
-        </metrics-overlay>
+      <div class="flex flex-wrap gap-2 items-center mb-2">
+          <SkillsCalendarInput selectionMode="range"
+                               :name="`filterRange${tagKey}`"
+                               label="Filter by Date(s):"
+                               label-icon="fas fa-calendar-alt"
+                               :label-on-same-line="true"
+                               v-model="filterRange"
+                               :maxDate="new Date()"
+                               :disabled="isLoading"
+                               placeholder="Select a date range"
+                               data-cy="metricsDateFilter" />
+          <SkillsButton label="Filter" icon="fa-solid fa-search"  @click="applyDateFilter" :disabled="isLoading" data-cy="applyDateFilterButton" />
+          <SkillsButton label="Clear" severity="danger" icon="fa-solid fa-eraser" @click="clearDateFilter" :disabled="isLoading" data-cy="clearDateFilterButton" />
       </div>
+        <metrics-overlay :loading="isLoading" :has-data="!isEmpty" no-data-msg="No data yet...">
+          <chart-download-controls :vue-chart-ref="userTagChart" />
+          <Chart ref="userTagChart"
+                 id="userTagChart"
+                 :type="props.chartType"
+                 :data="chartData"
+                 :options="chartJsOptions"
+                 :class="{
+                   'min-h-[16em] w-full': !isPieChart,
+                   'h-[16rem]': isEmpty,
+                 }" />
+        </metrics-overlay>
     </template>
   </Card>
 </template>

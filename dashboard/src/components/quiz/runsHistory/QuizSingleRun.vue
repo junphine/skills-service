@@ -23,6 +23,7 @@ import {useTimeUtils} from "@/common-components/utilities/UseTimeUtils.js";
 import QuizStatus from "@/components/quiz/runsHistory/QuizStatus.js";
 import QuizType from "@/skills-display/components/quiz/QuizType.js";
 import QuizSingleRunCard from "@/components/quiz/runsHistory/QuizSingleRunCard.vue";
+import QuizCompletedMessage from "@/skills-display/components/quiz/QuizCompletedMessage.vue";
 
 const props = defineProps({
   runInfo: Object,
@@ -37,8 +38,17 @@ const props = defineProps({
   showQuestionCard: {
     type: Boolean,
     default: true,
+  },
+  showQuizUnderReview: {
+    type: Boolean,
+    default: true,
+  },
+  showAiGradingMeta: {
+    type: Boolean,
+    default: false,
   }
 })
+const emit = defineEmits(['need-to-reload'])
 const userTagsUtils = useUserTagsUtils();
 const timeUtils = useTimeUtils();
 
@@ -53,6 +63,10 @@ const numQuestionsAnswered = computed(() => {
   return nums.reduce((partialSum, a) => partialSum + a, 0);
 });
 const numQuestionsRight = computed(() => props.runInfo.numQuestionsPassed);
+
+const reloadRunInfo = () => {
+  emit('need-to-reload')
+}
 </script>
 
 <template>
@@ -108,19 +122,19 @@ const numQuestionsRight = computed(() => props.runInfo.numQuestionsPassed);
       </div>
     </div>
 
-    <div v-if="runInfo.questions" v-for="q in runInfo.questions" :key="q.id">
+    <div v-if="runInfo.questions" v-for="(q, index) in runInfo.questions" :key="q.id">
       <div :class="{ 'mt-4' : showCards }">
-        <QuizRunQuestionCard :question="q" :question-num="q.questionNum" :quiz-type="runInfo.quizType"/>
+        <QuizRunQuestionCard :question="q" :question-num="q.questionNum" :quiz-type="runInfo.quizType" :show-ai-grading-meta="showAiGradingMeta" @need-to-reload="reloadRunInfo"/>
+        <div v-if="index < runInfo.questions.length - 1" class="pb-3">
+          <hr class="border-dashed "/>
+        </div>
       </div>
     </div>
-    <Message v-if="QuizStatus.isNeedsGrading(runInfo.status)" :closable="false" severity="warn" icon="fas fa-user-clock" data-cy="quizRequiresGradingMsg">
-      <div>You completed the quiz but it <b>requires grading</b>.</div>
-      <div class="mt-2">It will be assessed by a quiz administrator, so there is nothing to do but wait for the grades to roll in!</div>
-    </Message>
-    <Message v-if="!runInfo.questions && QuizStatus.isFailed(runInfo.status)" severity="warn" :closable="false" data-cy="allQuestionsNotDisplayedMsg">
+    <quiz-completed-message v-if="showQuizUnderReview && QuizStatus.isNeedsGrading(runInfo.status)" />
+    <Message v-if="(!runInfo.questions && QuizStatus.isFailed(runInfo.status)) || (runInfo.questions?.length === 0 && runInfo.questionsHidden)" severity="warn" :closable="false" data-cy="allQuestionsNotDisplayedMsg">
       Questions and answers are not displayed so not to give away the correct answers.
     </Message>
-    <Message v-if="runInfo.questions && !runInfo.allQuestionsReturned" severity="warn" :closable="false" class="mt-8" data-cy="someQuestionsNotDisplayedMsg">
+    <Message v-if="!runInfo.questionsHidden && runInfo.questions && !runInfo.allQuestionsReturned" severity="warn" :closable="false" class="mt-8" data-cy="someQuestionsNotDisplayedMsg">
       The rest of the questions and answers are not displayed so not to give away the correct answers.
     </Message>
   </div>

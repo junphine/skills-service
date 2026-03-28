@@ -31,6 +31,8 @@ import InputGroup from 'primevue/inputgroup'
 import InputGroupAddon from 'primevue/inputgroupaddon'
 import Avatar from 'primevue/avatar';
 import { useQuizSummaryState } from '@/stores/UseQuizSummaryState.js';
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useStorage} from "@vueuse/core";
 
 const announcer = useSkillsAnnouncer()
 const responsive = useResponsiveBreakpoints()
@@ -70,10 +72,11 @@ const options = ref({
     server: false,
     currentPage: 1,
     totalRows: 0,
-    pageSize: 5,
     possiblePageSizes: [5, 10, 15, 20],
   },
 });
+const pageSize = useStorage('quizDefinitions-tablePageSize', 5)
+
 const deleteQuizInfo = ref( {
   showDialog: false,
       quizDef: {},
@@ -150,6 +153,8 @@ function deleteQuiz() {
   QuizService.deleteQuizId(quizDef.quizId)
       .then(() => {
         quizzes.value = quizzes.value.filter((q) => q.quizId !== quizDef.quizId);
+        const newQuizState = useStorage(`questionStates-${quizDef.quizId}`, {})
+        newQuizState.value = null;
       })
       .finally(() => {
         options.value.busy = false;
@@ -168,6 +173,10 @@ const showCopyModal = (quizDef, isCopy = true) => {
   editQuizInfo.value.isEdit = false;
   editQuizInfo.value.showDialog = true;
 };
+
+const pageChanged = (pagingInfo) => {
+  pageSize.value = pagingInfo.rows
+}
 
 defineExpose({
   showUpdateModal,
@@ -191,9 +200,10 @@ defineExpose({
         v-model:filters="filters"
         :globalFilterFields="['name']"
         @filter="onFilter"
+        @page="pageChanged"
         v-model:sort-field="sortInfo.sortBy"
         v-model:sort-order="sortInfo.sortOrder"
-        paginator :rows="5" :rowsPerPageOptions="[5, 10, 15, 20]"
+        paginator :rows="pageSize" :rowsPerPageOptions="[5, 10, 15, 20]"
         show-gridlines
         striped-rows>
         <template #header>
@@ -225,18 +235,7 @@ defineExpose({
         </template>
 
         <template #empty>
-          <div class="flex justify-center flex-wrap">
-            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle" aria-hidden="true"></i>
-            <span class="flex items-center justify-center">No Quiz or Survey Definitions.  Click
-            <SkillsButton class="flex flex items-center justify-center px-1"
-                          label="Reset"
-                          link
-                          size="small"
-                          @click="clearFilter"
-                          aria-label="Reset surveys and quizzes filter"
-                          data-cy="quizResetBtn"/> to clear the existing filter.
-              </span>
-          </div>
+          <table-no-res noResMsg="No Quiz or Survey Definitions." :showResetFilter="true" @resetFilter="clearFilter"/>
         </template>
         <Column v-for="col of options.fields" :key="col.key" :field="col.key" :sortable="col.sortable"
                 :class="{'flex': responsive.md.value }">

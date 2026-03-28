@@ -140,7 +140,8 @@ interface SkillRelDefRepo extends CrudRepository<SkillRelDef, Integer> {
         sd2.id as id,
         sd2.name as name, 
         sd2.skillId as skillId, 
-        sd2.projectId as projectId, 
+        sd2.projectId as projectId,
+        sd2.groupId as groupId, 
         sd2.version as version,
         sd2.pointIncrement as pointIncrement,
         sd2.pointIncrementInterval as pointIncrementInterval,
@@ -156,17 +157,21 @@ interface SkillRelDefRepo extends CrudRepository<SkillRelDef, Integer> {
         sd2.copiedFrom as copiedFrom,
         sd2.readOnly as readOnly,
         sd2.copiedFromProjectId as copiedFromProjectId,
+        sd2.iconClass as iconClass,
         subj1.skillId as subjectSkillId,
+        subj1.name as subjectName,
         pd.name as copiedFromProjectName,
         qDef.quizId as quizId,
         qDef.type as quizType,
         qDef.name as quizName,
+        group.name as groupName,
         case when es is not null then true else false end as sharedToCatalog
     from SkillRelDef srd
         join SkillDef sd1 on sd1.id = srd.parent.id
         join SkillDef sd2 on sd2.id = srd.child.id
         join SkillDef subj1 on subj1.projectId = sd2.projectId
-        join SkillRelDef srd2 on subj1.id = srd2.parent.id and sd2.id = srd2.child.id 
+        join SkillRelDef srd2 on subj1.id = srd2.parent.id and sd2.id = srd2.child.id
+        left join SkillDef group on group.skillId = sd2.groupId and group.projectId = sd2.projectId and group.type = 'SkillsGroup' 
         left join ProjDef pd on sd2.copiedFromProjectId = pd.projectId
         left join ExportedSkill es on es.skill.id = sd2.id
         left join QuizToSkillDef qToSkill on qToSkill.skillRefId = (case when sd2.copiedFrom is not null then sd2.copiedFrom else sd2.id end)
@@ -194,6 +199,7 @@ interface SkillRelDefRepo extends CrudRepository<SkillRelDef, Integer> {
         sd2.copiedFrom as copiedFrom,
         sd2.readOnly as readOnly,
         sd2.copiedFromProjectId as copiedFromProjectId,
+        sd2.iconClass as iconClass,
         pd.name as copiedFromProjectName,
         qDef.quizId as quizId,
         qDef.type as quizType,
@@ -303,6 +309,7 @@ interface SkillRelDefRepo extends CrudRepository<SkillRelDef, Integer> {
         sd2.displayOrder as displayOrder,
         sd2.created as created,
         sd2.updated as updated,
+        sd2.iconClass as iconClass,
         sd2.selfReportingType as selfReportingType
         from SkillDef sd1, SkillDef sd2, SkillRelDef srd 
         where sd1 = srd.parent and sd2 = srd.child and srd.type=?2 
@@ -331,6 +338,48 @@ interface SkillRelDefRepo extends CrudRepository<SkillRelDef, Integer> {
 
         Long getCount()
     }
+
+    @Query('''select count(sd2.id) > 0
+        from SkillDef sd1, SkillDef sd2, SkillRelDef srd 
+        where sd1 = srd.parent 
+              and sd2 = srd.child 
+              and srd.type = 'Dependence' 
+              and sd1.projectId=?1 
+              and sd2.projectId=?2
+              and sd2.skillId=?3
+              ''')
+    Boolean checkIfSkillInAnotherProjectPartOfLearningPath(String projectId, String otherProjectId, String otherProjectSkillId )
+
+    @Query(value = '''
+                SELECT EXISTS (
+                    SELECT 1
+                    FROM skill_definition parent
+                    JOIN skill_relationship_definition srd ON parent.id = srd.parent_ref_id
+                    JOIN skill_definition child ON srd.child_ref_id = child.id
+                    WHERE srd.type = 'BadgeRequirement'
+                      AND parent.project_id IS NULL 
+                      AND child.project_id = :otherProj
+                      AND child.skill_id = :otherProjSkillId
+                      AND parent.skill_id IN (
+                          SELECT parent_badge.skill_id
+                          FROM skill_definition parent_badge
+                          JOIN skill_relationship_definition srd_other ON parent_badge.id = srd_other.parent_ref_id
+                          JOIN skill_definition other_child ON srd_other.child_ref_id = other_child.id
+                          WHERE srd_other.type = 'BadgeRequirement'
+                            AND other_child.project_id = :projId
+                          
+                          UNION
+                          
+                          SELECT gbld.skill_id
+                          FROM global_badge_level_definition gbld
+                          WHERE gbld.project_id = :projId
+                      )
+                )
+    ''', nativeQuery = true)
+    Boolean checkIfProjectBelongsToGlobalBadgeViaSkillRequirement(
+            @Param("projId") projId,
+            @Param("otherProj") otherProj,
+            @Param("otherProjSkillId") otherProjSkillId)
 
     @Query('''select sd1.skillId as skillId, count(sd2) as count from SkillDef sd1, SkillDef sd2, SkillRelDef srd 
         where sd1 = srd.parent and sd2 = srd.child and srd.type in ?3 
@@ -453,4 +502,61 @@ interface SkillRelDefRepo extends CrudRepository<SkillRelDef, Integer> {
                       skill.skillId = :skillId AND 
                       relatedSkill.projectId != :projectId''')
     List<SkillRelDef> findAllDependenciesForSkillIdAndProjectId(@Param("projectId") String projectId, @Param("skillId") String skillId)
+
+    @Query(value = '''
+        WITH community_projects AS (
+            SELECT project_id 
+            FROM settings 
+            WHERE setting = 'user_community' 
+            AND value = 'true'
+        )
+        
+        SELECT DISTINCT gbld.project_id 
+        FROM global_badge_level_definition gbld
+        LEFT JOIN community_projects cp ON gbld.project_id = cp.project_id
+        WHERE gbld.skill_ref_id = :skillRefId
+          AND cp.project_id IS NULL
+        
+        UNION
+        
+        SELECT DISTINCT skill.project_id 
+        FROM skill_relationship_definition rel
+        JOIN skill_definition badge ON rel.parent_ref_id = badge.id
+        JOIN skill_definition skill ON rel.child_ref_id = skill.id
+        LEFT JOIN community_projects cp ON skill.project_id = cp.project_id
+        WHERE rel.type = 'BadgeRequirement'
+          AND badge.type = 'GlobalBadge'
+          AND badge.id = :skillRefId
+          AND cp.project_id IS NULL
+''', nativeQuery = true)
+    List<String> getNonCommunityProjectsThatThisGlobalBadgeIsLinkedTo(Integer skillRefId)
+
+    @Query(value = '''
+        WITH community_badges AS (
+            SELECT skill_ref_id 
+            FROM settings 
+            WHERE setting = 'user_community' 
+            AND value = 'true'
+        )
+        
+        SELECT DISTINCT gbld.skill_ref_id 
+        FROM global_badge_level_definition gbld
+        LEFT JOIN community_badges cb ON gbld.skill_ref_id = cb.skill_ref_id
+        WHERE gbld.project_id = :projectId
+          AND cb.skill_ref_id IS NULL
+        
+        UNION
+        
+        SELECT DISTINCT badge.id 
+        FROM skill_relationship_definition rel
+        JOIN skill_definition badge ON rel.parent_ref_id = badge.id
+        JOIN skill_definition skill ON rel.child_ref_id = skill.id
+        LEFT JOIN community_badges cb ON badge.id = cb.skill_ref_id
+        WHERE rel.type = 'BadgeRequirement'
+          AND badge.type = 'GlobalBadge'
+          AND skill.project_id = :projectId
+          AND cb.skill_ref_id IS NULL
+''', nativeQuery = true)
+    List<Integer> getNonCommunityGlobalBadgesThatThisProjectIsLinkedTo(String projectId)
+
 }

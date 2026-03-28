@@ -33,6 +33,9 @@ import {useUserInfo} from "@/components/utils/UseUserInfo.js";
 import SkillsSpinner from '@/components/utils/SkillsSpinner.vue';
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
 import { useProjConfig } from '@/stores/UseProjConfig.js';
+import {useProjDetailsState} from "@/stores/UseProjDetailsState.js";
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useStorage} from "@vueuse/core";
 
 const route = useRoute()
 const announcer = useSkillsAnnouncer()
@@ -46,20 +49,25 @@ const projConfig = useProjConfig()
 
 let filters = ref({
   user: '',
-  progress: 0,
-  minimumPoints: 0
+  userTagFilter: '',
+  progress: [0, 100],
 })
 
 const data = ref([])
 const isLoading = ref(true)
 const isExporting = ref(false)
 const totalPoints = ref(0)
+const totalLevels = ref(0)
 const currentPage = ref(1)
 const totalRows = ref(1)
-const pageSize = ref(5)
-const possiblePageSizes = [5, 10, 15, 20]
+const pageSize = useStorage('usersTable-pageSize', 10)
+const possiblePageSizes = [5, 10, 15, 20, 50]
 const sortInfo = ref({ sortOrder: -1, sortBy: 'lastUpdated' })
 const selectedRows = ref([])
+
+const maximumProgress = computed(() => {
+  return totalPoints.value + totalLevels.value;
+})
 
 const showUserTagColumn = computed(() => {
  return !!(appConfig.usersTableAdditionalUserTagKey && appConfig.usersTableAdditionalUserTagLabel);
@@ -75,20 +83,26 @@ onMounted(() => {
 
 const applyFilters = () => {
   currentPage.value = 1
-  if (filters.value.progress > 100) {
-    filters.value.progress = 100
+  if (filters.value.progress[1] > 100) {
+    filters.value.progress[1] = 100
   }
-  if (filters.value.progress < 0) {
-    filters.value.progress = 0
+  if (filters.value.progress[0] < 0) {
+    filters.value.progress[0] = 0
   }
-  filters.value.minimumPoints = Math.floor(totalPoints.value * (filters.value.progress / 100))
+
   loadData().then(() => {
     let filterMessage = 'Users table has been filtered by'
     if (filters.value.user) {
       filterMessage += ` ${filters.value.user}`
     }
-    if (filters.value.minimumPoints > 0) {
-      filterMessage += `${filters.value.user ? ' and' : ''} users with at least ${filters.value.minimumPoints} points`
+    if (filters.value.progress[0] > 0) {
+      filterMessage += `${filters.value.user ? ' and' : ''} users with at least ${filters.value.progress[0]} percent complete`
+    }
+    if (filters.value.progress < 100) {
+      filterMessage += `${filters.value.user ? ' and' : ''} users with at most ${filters.value.progress[1]} percent complete`
+    }
+    if (filters.value.userTagFilter) {
+      filterMessage += `${filters.value.user ? ' and' : ''} ${appConfig.usersTableAdditionalUserTagLabel} with value ${filters.value.userTagFilter}`
     }
     nextTick(() => announcer.polite(filterMessage))
   })
@@ -96,15 +110,23 @@ const applyFilters = () => {
 
 const reset = () => {
   filters.value.user = ''
-  filters.value.minimumPoints = 0
-  filters.value.progress = 0
+  filters.value.progress = [0, 100]
+  filters.value.userTagFilter = ''
   currentPage.value = 1
   loadData().then(() => {
     nextTick(() => announcer.polite('Users table filters have been removed'))
   })
 }
 
+const isGlobalBadgePage = computed(() => {
+  return route.path?.toLowerCase().startsWith('/administrator/globalbadges');
+})
+
 const getUrl = () => {
+  if(isGlobalBadgePage.value === true) {
+    return `/admin/badges/${encodeURIComponent(route.params.badgeId)}/users`;
+  }
+
   let url = `/admin/projects/${encodeURIComponent(route.params.projectId)}`
   if (route.params.skillId) {
     url += `/skills/${encodeURIComponent(route.params.skillId)}`
@@ -121,6 +143,10 @@ const getUrl = () => {
 
 const isProjectLevel = computed(() => {
   return !(route.params.skillId || route.params.badgeId || route.params.subjectId || (route.params.tagKey && route.params.tagFilter))
+})
+
+const isUserTagsMetricsPage = computed(() => {
+  return route.params.tagKey && route.params.tagFilter
 })
 
 const calculateClientDisplayRoute = (props) => {
@@ -144,11 +170,16 @@ const loadData = () => {
     page: currentPage.value,
     byColumn: 0,
     orderBy: sortInfo.value.sortBy,
-    minimumPoints: filters.value.minimumPoints
+    minimumPoints: filters.value.progress[0],
+    maximumPoints: filters.value.progress[1],
+    userTagFilter: filters.value.userTagFilter,
   }).then((res) => {
     data.value = res.data
     totalRows.value = res.count
     totalPoints.value = res.totalPoints
+    if(isGlobalBadgePage.value) {
+      totalLevels.value = res.totalLevels;
+    }
     selectedRows.value = []
     isLoading.value = false
   })
@@ -159,6 +190,10 @@ const calcPercent = (userPoints) => {
     return 'N/A'
   }
   return Math.trunc((userPoints / totalPoints.value) * 100)
+}
+
+const calcTotalPercent = (totalProgress) => {
+  return Math.trunc(totalProgress / maximumProgress.value * 100)
 }
 
 const pageChanged = (pagingInfo) => {
@@ -182,7 +217,9 @@ const exportUsers = () => {
     ascending: sortInfo.value.sortOrder !== -1,
     page: currentPage.value,
     orderBy: sortInfo.value.sortBy,
-    minimumPoints: filters.value.minimumPoints
+    minimumPoints: filters.value.progress[0],
+    maximumPoints: filters.value.progress[1],
+    userTagFilter: filters.value.userTagFilter,
   }).then((res) => {
     isLoading.value = false
     isExporting.value = false
@@ -201,31 +238,52 @@ const archiveUsers = () => {
   <div class="w-full">
     <div class="px-6 py-4">
       <div class="flex flex-col lg:flex-row gap-6 my-2">
-        <div class="flex-1">
-          <div>
-            <label for="userFilter">User Filter</label>
+        <div class="flex flex-col sm:flex-row gap-3" :class="isGlobalBadgePage ? 'w-full' : ''">
+          <div :class="isGlobalBadgePage ? 'w-full' : 'xl:flex-none w-56'">
+            <div>
+              <label for="userFilter">User Filter</label>
+            </div>
+            <InputText id="userFilter" v-model="filters.user" v-on:keydown.enter="applyFilters"
+                       class="w-full"
+                       data-cy="users-skillIdFilter" aria-label="user filter" />
           </div>
-          <InputText id="userFilter" v-model="filters.user" v-on:keydown.enter="applyFilters"
-                     class="w-full mt--3"
-                     data-cy="users-skillIdFilter" aria-label="user filter" />
+          <div v-if="showUserTagColumn && !isUserTagsMetricsPage" :class="isGlobalBadgePage ? 'w-full' : 'xl:flex-none w-56'">
+            <div>
+              <label for="userTagFilter">{{ appConfig.usersTableAdditionalUserTagLabel }} Filter</label>
+            </div>
+            <InputText id="userTagFilter" v-model="filters.userTagFilter" v-on:keydown.enter="applyFilters"
+                       class="w-full"
+                       data-cy="users-userTagFilter" aria-label="user tag filter" />
+          </div>
         </div>
-        <div class="flex-1">
+        <div class="flex-1" v-if="!isGlobalBadgePage">
+          <div>
+            <label for="minimumProgress">User Progress Filter</label>
+          </div>
           <div class="flex gap-2">
             <div class="flex-1">
-              <label for="minimumProgress">Minimum User Progress</label>
               <div class="flex mt-4 items-center">
                 <span class="mr-4">0%</span>
                 <div class="flex flex-1 flex-col">
-                  <Slider v-model="filters.progress" v-on:keydown.enter="applyFilters" :min="0" :max="100"
+                  <Slider v-model="filters.progress" v-on:keydown.enter="applyFilters" :min="0" :max="100" range
                           data-cy="users-progress-range" aria-label="user progress range filter" />
                 </div>
                 <span class="ml-4">100%</span>
               </div>
             </div>
-            <div class="flex">
-              <InputText v-model.number="filters.progress" v-on:keydown.enter="applyFilters" :min="0" :max="100" id="minimumProgress"
-                         data-cy="users-progress-input" aria-label="user progress input filter" inputId="minimumProgress"
-                         class="w-16" />
+            <div class="flex gap-2 w-[14rem]">
+              <InputGroup class="p-0 m-0">
+                <InputGroupAddon> &gt;= </InputGroupAddon>
+                <InputText v-model.number="filters.progress[0]" v-on:keydown.enter="applyFilters" :min="0" :max="100" id="minimumProgress"
+                           data-cy="users-progress-input" aria-label="minimum user progress input filter" inputId="minimumProgress"
+                           class="p-0 m-0" />
+              </InputGroup>
+              <InputGroup class="p-0 m-0">
+                <InputGroupAddon> &lt;{{ filters.progress[1] === 100 ? '=' : ''}} </InputGroupAddon>
+                <InputText v-model.number="filters.progress[1]" v-on:keydown.enter="applyFilters" :min="0" :max="100" id="maximumProgress"
+                           data-cy="users-max-progress-input" aria-label="maximum user progress input filter" inputId="maximumProgress"
+                           class="p-0 m-0" />
+              </InputGroup>
             </div>
           </div>
         </div>
@@ -240,7 +298,7 @@ const archiveUsers = () => {
       <SkillsDataTable
         :value="data" :loading="isLoading" size="small" stripedRows showGridlines paginator lazy
         :totalRecords="totalRows" :rows="pageSize" @page="pageChanged"
-        tableStoredStateId="usersTable" data-cy="usersTable"
+        :tableStoredStateId="`usersTable${isGlobalBadgePage ? 'Global' : ''}`" data-cy="usersTable"
         aria-label="Users"
         :rowsPerPageOptions="possiblePageSizes"
         v-model:sort-field="sortInfo.sortBy"
@@ -286,12 +344,13 @@ const archiveUsers = () => {
           </template>
           <template #body="slotProps">
             <router-link
+              v-if="route.params.projectId"
               :to="calculateClientDisplayRoute(slotProps.data)"
               aria-label="View user details"
-              data-cy="usersTable_viewDetailsLink"
-            >
+              data-cy="usersTable_viewDetailsLink">
               {{ userInfo.getUserDisplay(slotProps.data, true) }}
             </router-link>
+            <span v-else>{{ userInfo.getUserDisplay(slotProps.data, true) }}</span>
           </template>
         </Column>
         <Column v-if="showUserTagColumn"
@@ -303,7 +362,7 @@ const archiveUsers = () => {
           </template>
           <template #body="slotProps">
             <router-link
-                v-if="showUserTagColumn && slotProps.data.userTag"
+                v-if="showUserTagColumn && slotProps.data.userTag && !isGlobalBadgePage"
                 :to="{ name: 'UserTagMetrics', params: { projectId: route.params.projectId, tagKey: tagKey, tagFilter: slotProps.data.userTag } }"
                 class="text-info mb-0 pb-0 preview-card-title"
                 :aria-label="`View metrics for ${slotProps.data.userTag}`"
@@ -311,9 +370,10 @@ const archiveUsers = () => {
                 data-cy="usersTable_viewUserTagMetricLink">
               {{ slotProps.data.userTag }}
             </router-link>
+            <span v-if="isGlobalBadgePage">{{ slotProps.data.userTag }}</span>
           </template>
         </Column>
-        <Column field="totalPoints" header="Progress" :sortable="true" :class="{'flex': responsive.md.value }">
+        <Column field="totalPoints" header="Progress" :sortable="true" :class="{'flex': responsive.md.value }" v-if="!isGlobalBadgePage">
           <template #header>
             <i class="far fa-arrow-alt-circle-up mr-1" :class="colors.getTextClass(2)" aria-hidden="true"></i>
           </template>
@@ -347,7 +407,36 @@ const archiveUsers = () => {
             </div>
           </template>
         </Column>
-        <Column field="firstUpdated" header="Points First Earned" :sortable="true" :class="{'flex': responsive.md.value }">
+        <Column v-if="isGlobalBadgePage" field="totalProgress" header="Badge Progress" :sortable="true" :class="{'flex': responsive.md.value }">
+          <template #header>
+            <i class="far fa-arrow-alt-circle-up mr-1" :class="colors.getTextClass(2)" aria-hidden="true"></i>
+          </template>
+          <template #body="slotProps">
+            <div :data-cy="`usr_progress-${slotProps.data.userId}`" class="w-full">
+              <div class="flex">
+                <div class="flex flex-auto">
+                  <span class="font-weight-bold text-primary"
+                        :aria-label="`${calcTotalPercent(slotProps.data.totalProgress)} percent completed`"
+                        data-cy="progressPercent">{{ calcTotalPercent(slotProps.data.totalProgress) }}%</span>
+                </div>
+                <div class="flex flex-auto justify-end">
+                  <span class="text-primary font-weight-bold"
+                        :aria-label="`${slotProps.data.numLevelsAchieved} out of ${totalLevels} total points`"
+                        data-cy="progressCurrentPoints">{{ slotProps.data.numLevelsAchieved?.toLocaleString() }}</span> /
+                  <span data-cy="progressTotalPoints">{{ totalLevels?.toLocaleString() }} Levels</span>
+                  <span class="text-primary font-weight-bold ml-3"
+                        :aria-label="`${slotProps.data.skillsAchieved} out of ${totalPoints} total points`"
+                        data-cy="progressCurrentPoints">{{ slotProps.data.skillsAchieved?.toLocaleString() }}</span> /
+                  <span data-cy="progressTotalPoints">{{ totalPoints?.toLocaleString() }} Skills</span>
+                </div>
+              </div>
+              <ProgressBar style="height: 5px;" :value="calcTotalPercent(slotProps.data.totalProgress)" :showValue="false"
+                           class="lg:min-w-[12rem] xl:min-w-[20rem]"
+                           :aria-label="`Progress for ${slotProps.data.userId} user`" />
+            </div>
+          </template>
+        </Column>
+        <Column v-if="!isGlobalBadgePage" field="firstUpdated" header="Points First Earned" :sortable="true" :class="{'flex': responsive.md.value }">
           <template #header>
             <i class="far fa-clock mr-1" :class="colors.getTextClass(3)" aria-hidden="true"></i>
           </template>
@@ -355,7 +444,7 @@ const archiveUsers = () => {
             <date-cell :value="slotProps.data.firstUpdated" />
           </template>
         </Column>
-        <Column field="lastUpdated" header="Points Last Earned" :sortable="true" :class="{'flex': responsive.md.value }">
+        <Column field="lastUpdated" :header="isGlobalBadgePage ? 'Skill Last Earned' : 'Points Last Earned'" :sortable="true" :class="{'flex': responsive.md.value }">
           <template #header>
             <i class="far fa-clock mr-1" :class="colors.getTextClass(3)" aria-hidden="true"></i>
           </template>
@@ -369,16 +458,12 @@ const archiveUsers = () => {
         </template>
 
         <template #empty>
-          <div class="flex justify-center flex-wrap">
-            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle"
-               aria-hidden="true"></i>
-            <span class="flex items-center justify-center">There are no records to show
-              </span>
-          </div>
+          <table-no-res />
         </template>
       </SkillsDataTable>
     </div>
   </div>
 </template>
 
-<style scoped></style>
+<style scoped>
+</style>

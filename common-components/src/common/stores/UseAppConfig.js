@@ -16,6 +16,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import SettingsService from '@/components/settings/SettingsService.js'
+import log from 'loglevel';
 
 export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const loadingConfig = ref(true)
@@ -26,6 +27,9 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     return SettingsService.getConfig()
       .then((response) => {
         config.value = response
+        if (config.value.logLevel) {
+            log.setLevel(config.value.logLevel)
+        }
       })
       .finally(() => {
         loadingConfig.value = false
@@ -62,7 +66,11 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     return res
   }
 
-  const isTrue = (val) => val && (val === true || val?.toLowerCase() === 'true')
+  const listFromCommaSeparatedString = (strProp) => {
+    return strProp ? strProp.split(',').map(s => s.trim()) : []
+  }
+
+  const isTrue = (val) => !!val && (val === true || val?.toLowerCase() === 'true')
 
   const maxBadgeBonusInMinutes = computed(() => config.value.maxBadgeBonusInMinutes)
   const minNameLength = computed(() => config.value.minNameLength)
@@ -75,6 +83,11 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const maxIdLength = computed(() => config.value.maxIdLength)
   const descriptionMaxLength = computed(() => config.value.descriptionMaxLength)
   const paragraphValidationRegex = computed(() => config.value.paragraphValidationRegex)
+  const addPrefixToInvalidParagraphsOptions = computed(() => config.value.addPrefixToInvalidParagraphsOptions)
+  const addPrefixToInvalidParagraphsBtnLabel  = computed(() => config.value.addPrefixToInvalidParagraphsBtnLabel || 'Add Prefix')
+  const addPrefixToGeneratedValueBtnLabel =  computed(() => config.value.addPrefixToGeneratedValueBtnLabel || 'Add Prefix Then Use')
+  const showMissingPrefixBtnLabel  = computed(() => config.value.showMissingPrefixBtnLabel || 'View Missing Preview')
+  const closeMissingPrefixPreview  = computed(() => config.value.closeMissingPrefixPreview || 'Close Preview')
   const formFieldDebounceInMs = computed(() => config.value.formFieldDebounceInMs || 400)
   const maxSubjectNameLength = computed(() => config.value.maxSubjectNameLength)
   const maxBadgeNameLength = computed(() => config.value.maxBadgeNameLength)
@@ -96,6 +109,7 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const enablePageVisitReporting = computed(() => config.value.enablePageVisitReporting === true || config.value.enablePageVisitReporting === 'true')
   const allowedAttachmentFileTypes = computed(() => config.value.allowedAttachmentFileTypes)
   const maxAttachmentSize = computed(() => config.value.maxAttachmentSize ? Number(config.value.maxAttachmentSize) : 0)
+  const descriptionWarningMessage = computed(() => config.value.descriptionWarningMessage)
   const attachmentWarningMessage = computed(() => config.value.attachmentWarningMessage)
   const allowedAttachmentMimeTypes = computed(() => config.value.allowedAttachmentMimeTypes)
   const docsHost = computed(() => config.value.docsHost)
@@ -109,6 +123,7 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const maxProjectsPerAdmin = computed(() => config.value.maxProjectsPerAdmin)
   const minimumSubjectPoints = computed(() => config.value.minimumSubjectPoints)
   const maxSubjectsPerProject = computed(() => config.value.maxSubjectsPerProject)
+  const defaultCommunityDescriptor = computed(() => config.value.defaultCommunityDescriptor || '')
   const userCommunityBeforeLabel = computed(() => config.value.userCommunityBeforeLabel || '')
   const userCommunityAfterLabel = computed(() => config.value.userCommunityAfterLabel || '')
   const userCommunityRestrictedDescriptor = computed(() => config.value.userCommunityRestrictedDescriptor || '')
@@ -133,9 +148,12 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const approvalConfUserTagKey = computed(() => config.value.approvalConfUserTagKey)
   const approvalConfUserTagLabel = computed(() => config.value.approvalConfUserTagLabel)
   const projectMetricsTagCharts = computed(() => config.value.projectMetricsTagCharts)
+  const overallMetricsTagCharts = computed(() => config.value.overallMetricsTagCharts)
   const maxDailyUserEvents = computed(() => config.value.maxDailyUserEvents)
   const allowedVideoUploadMimeTypes = computed(() => config.value.allowedVideoUploadMimeTypes)
+  const allowedSlidesUploadMimeTypes = computed(() => config.value.allowedSlidesUploadMimeTypes)
   const videoUploadWarningMessage = computed(() => config.value.videoUploadWarningMessage)
+  const slidesUploadWarningMessage = computed(() => config.value.slidesUploadWarningMessage)
   const maxVideoCaptionsLength = computed(() => config.value.maxVideoCaptionsLength)
   const maxVideoTranscriptLength = computed(() => config.value.maxVideoTranscriptLength)
   const userPageTagsToDisplay = computed(() => config.value.userPageTagsToDisplay)
@@ -153,7 +171,35 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
   const limitAdminAccess = computed(() => config.value.limitAdminAccess)
   const maxGraderFeedbackMessageLength = computed(() => config.value.maxGraderFeedbackMessageLength)
   const maxTakeQuizInputTextAnswerLength = computed(() => config.value.maxTakeQuizInputTextAnswerLength)
+  const maxTextInputAiGradingCorrectAnswerLength = computed(() => config.value.maxTextInputAiGradingCorrectAnswerLength)
   const disableEncouragementsConfetti = computed(() => isTrue(config.value.disableEncouragementsConfetti))
+  const contactSupportEnabled = computed(() => isTrue(config.value.contactSupportEnabled))
+  const contactSupportExternalUrl = computed(() => config.value.contactSupportExternalUrl)
+  const contactSupportExternalTitle = computed(() => config.value.contactSupportExternalTitle)
+  const contactSupportExternalDescription = computed(() => config.value.contactSupportExternalDescription)
+  const contactSupportExternalEmail = computed(() => config.value.contactSupportExternalEmail)
+  const contactSupportExternalEmailDescription = computed(() => config.value.contactSupportExternalEmailDescription)
+  const maxRolePageSize = computed(() => config.value.maxRolePageSize)
+  const matomoUrl = computed(() => config.value.matomoUrl)
+  const matomoSiteId = computed(() => config.value.matomoSiteId)
+  const matomoProcessUserIdRegex = computed(() => config.value.matomoProcessUserIdRegex)
+  const enableOpenAIIntegration = computed(() => config.value.enableOpenAIIntegration)
+  const openaiTakingLongerThanExpectedMessages = computed(() => config.value.openaiTakingLongerThanExpectedMessages)
+  const openaiTakingLongerThanExpectedTimeoutPerMsg = computed(() => config.value.openaiTakingLongerThanExpectedTimeoutPerMsg)
+  const openaiModelDefaultTemperature = computed(() => Number(config.value.openaiModelDefaultTemperature))
+  const openaiDefaultModel = computed(() => config.value.openaiDefaultModel)
+  const openaiFooterMsg = computed(() => config.value.openaiFooterMsg)
+  const openaiFooterPoweredByLink = computed(() => config.value.openaiFooterPoweredByLink)
+  const openaiFooterPoweredByLinkText = computed(() => config.value.openaiFooterPoweredByLinkText)
+  const openaiNotSupportedChatModels = computed(() => listFromCommaSeparatedString(config.value.openaiNotSupportedChatModels))
+  const openAiDisableSingleQuestionTypeChange = computed(() => isTrue(config.value.openAiDisableSingleQuestionTypeChange))
+  const maxAiPromptLength = computed(() => config.value.maxAiPromptLength)
+  const delayBetweenScreenReaderAnnouncements = computed(() => config.value.delayBetweenScreenReaderAnnouncements || 2500)
+  const openAiAnnounceGenStatusInterval = computed(() => config.value.openAiAnnounceGenStatusInterval || 6000)
+
+  const sdPointHistoryChartAchievementsCombinePct = computed(() => config.value.sdPointHistoryChartAchievementsCombinePct || 0.05)
+
+
   return {
     loadConfigState,
     refreshConfig,
@@ -173,6 +219,11 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     descriptionMaxLength,
     formFieldDebounceInMs,
     paragraphValidationRegex,
+    addPrefixToInvalidParagraphsOptions,
+    addPrefixToInvalidParagraphsBtnLabel,
+    addPrefixToGeneratedValueBtnLabel,
+    showMissingPrefixBtnLabel,
+    closeMissingPrefixPreview,
     maxSubjectNameLength,
     maxBadgeNameLength,
     maxCustomLabelLength,
@@ -191,6 +242,7 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     enablePageVisitReporting,
     allowedAttachmentFileTypes,
     maxAttachmentSize,
+    descriptionWarningMessage,
     attachmentWarningMessage,
     allowedAttachmentMimeTypes,
     maxBadgesPerProject,
@@ -205,6 +257,7 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     maxSubjectsPerProject,
     userCommunityBeforeLabel,
     userCommunityAfterLabel,
+    defaultCommunityDescriptor,
     userCommunityRestrictedDescriptor,
     userCommunityDocsLabel,
     userCommunityDocsLink,
@@ -227,9 +280,12 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     approvalConfUserTagKey,
     approvalConfUserTagLabel,
     projectMetricsTagCharts,
+    overallMetricsTagCharts,
     maxDailyUserEvents,
+    allowedSlidesUploadMimeTypes,
     allowedVideoUploadMimeTypes,
     videoUploadWarningMessage,
+    slidesUploadWarningMessage,
     maxVideoCaptionsLength,
     maxVideoTranscriptLength,
     userPageTagsToDisplay,
@@ -248,6 +304,31 @@ export const useAppConfig = defineStore('dashboardAppConfig', () => {
     maxHostLength,
     maxGraderFeedbackMessageLength,
     maxTakeQuizInputTextAnswerLength,
-    disableEncouragementsConfetti
+    maxTextInputAiGradingCorrectAnswerLength,
+    disableEncouragementsConfetti,
+    contactSupportEnabled,
+    contactSupportExternalUrl,
+    contactSupportExternalTitle,
+    contactSupportExternalDescription,
+    contactSupportExternalEmail,
+    contactSupportExternalEmailDescription,
+    maxRolePageSize,
+    matomoUrl,
+    matomoSiteId,
+    matomoProcessUserIdRegex,
+    enableOpenAIIntegration,
+    openaiTakingLongerThanExpectedMessages,
+    openaiTakingLongerThanExpectedTimeoutPerMsg,
+    openaiModelDefaultTemperature,
+    openaiDefaultModel,
+    openaiFooterMsg,
+    openaiFooterPoweredByLink,
+    openaiFooterPoweredByLinkText,
+    openaiNotSupportedChatModels,
+    openAiDisableSingleQuestionTypeChange,
+    maxAiPromptLength,
+    delayBetweenScreenReaderAnnouncements,
+    openAiAnnounceGenStatusInterval,
+    sdPointHistoryChartAchievementsCombinePct
   }
 })

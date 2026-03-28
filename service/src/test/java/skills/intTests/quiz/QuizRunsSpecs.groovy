@@ -15,7 +15,7 @@
  */
 package skills.intTests.quiz
 
-import groovy.json.JsonOutput
+import groovy.time.TimeCategory
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import skills.intTests.utils.DefaultIntSpec
@@ -27,6 +27,8 @@ import skills.storage.repos.UserQuizAnswerAttemptRepo
 import skills.storage.repos.UserQuizAttemptRepo
 import skills.storage.repos.UserQuizQuestionAttemptRepo
 import spock.lang.IgnoreIf
+
+import java.text.SimpleDateFormat
 
 class QuizRunsSpecs extends DefaultIntSpec {
 
@@ -76,6 +78,8 @@ class QuizRunsSpecs extends DefaultIntSpec {
                                  UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
                                  UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
         ]
+        quizRuns.data.numberCorrect == [2, 1, 2, 1, 2, 1, 2, 1, 2, 1]
+        quizRuns.data.totalAnswers == [2, 2, 2, 2, 2, 2, 2, 2, 2, 2]
 
         quizRuns_pg1.totalCount == users.size()
         quizRuns_pg1.count == users.size()
@@ -84,6 +88,8 @@ class QuizRunsSpecs extends DefaultIntSpec {
                                      UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
                                      UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
         ]
+        quizRuns_pg1.data.numberCorrect == [2, 1, 2]
+        quizRuns_pg1.data.totalAnswers == [2, 2, 2]
 
         quizRuns_pg2.totalCount == users.size()
         quizRuns_pg2.count == users.size()
@@ -92,6 +98,8 @@ class QuizRunsSpecs extends DefaultIntSpec {
                                      UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
                                      UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
         ]
+        quizRuns_pg2.data.numberCorrect == [1, 2, 1]
+        quizRuns_pg2.data.totalAnswers == [2, 2, 2]
 
         quizRuns_pg3.totalCount == users.size()
         quizRuns_pg3.count == users.size()
@@ -100,13 +108,16 @@ class QuizRunsSpecs extends DefaultIntSpec {
                                      UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
                                      UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
         ]
+        quizRuns_pg3.data.numberCorrect == [2, 1, 2]
+        quizRuns_pg3.data.totalAnswers == [2, 2, 2]
 
         quizRuns_pg4.totalCount == users.size()
         quizRuns_pg4.count == users.size()
         quizRuns_pg4.data.userId == users[9..9]
         quizRuns_pg4.data.status == [UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
         ]
-
+        quizRuns_pg4.data.numberCorrect == [1]
+        quizRuns_pg4.data.totalAnswers == [2]
     }
 
     def "get quiz runs empty page"() {
@@ -142,14 +153,14 @@ class QuizRunsSpecs extends DefaultIntSpec {
         def quizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, 'uSeR1')
         def quizRuns_pg1 = skillsService.getQuizRuns(quiz.quizId, 3, 1, 'started', true, 'R1')
         then:
-        quizRuns.totalCount == users.size()
+        quizRuns.totalCount == 2
         quizRuns.count == 2
         quizRuns.data.userId == ["user1", "user10"]
         quizRuns.data.status == [UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
                                  UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
         ]
 
-        quizRuns_pg1.totalCount == users.size()
+        quizRuns_pg1.totalCount == 2
         quizRuns_pg1.count == 2
         quizRuns_pg1.data.userId == ["user1", "user10"]
         quizRuns_pg1.data.status == [UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
@@ -275,11 +286,113 @@ class QuizRunsSpecs extends DefaultIntSpec {
         ]
     }
 
-    void runQuiz(String userId, def quiz, def quizInfo, boolean pass) {
+    def "get quiz runs page with date filtering"() {
+        def quiz = QuizDefFactory.createQuiz(1, "Fancy Description")
+        skillsService.createQuizDef(quiz)
+        def questions = QuizDefFactory.createChoiceQuestions(1, 2, 2)
+        skillsService.createQuizQuestionDefs(questions)
+
+        def quizInfo = skillsService.getQuizInfo(quiz.quizId)
+
+        List<Date> dates = (0..3).collect {
+            def date = new Date() - it
+            date.set(hours: 14, minutes: 0, seconds: 0)
+            return date
+        }.reverse()
+
+        List<String> users = getRandomUsers(10, true)
+
+        use (TimeCategory) {
+            runQuiz(users[0], quiz, quizInfo, true, dates[0])
+            runQuiz(users[1], quiz, quizInfo, true, dates[0] + 30.minutes)
+            runQuiz(users[2], quiz, quizInfo, false, dates[0] + 45.minutes)
+            runQuiz(users[3], quiz, quizInfo, true, dates[0] + 60.minutes)
+            runQuiz(users[4], quiz, quizInfo, true, dates[1])
+            runQuiz(users[5], quiz, quizInfo, false, dates[1] + 30.minutes)
+            runQuiz(users[6], quiz, quizInfo, true, dates[1] + 60.minutes)
+            runQuiz(users[7], quiz, quizInfo, true, dates[2])
+            runQuiz(users[8], quiz, quizInfo, false, dates[2] + 30.minutes)
+            runQuiz(users[9], quiz, quizInfo, true, dates[2] + 60.minutes)
+        }
+
+        def format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+
+        when:
+        def quizRuns = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '', format.format(dates[0]), format.format(dates[3]))
+        def quizRuns_filter1 = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '', format.format(dates[0]), format.format(dates[1]))
+        def quizRuns_filter2 = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '', format.format(dates[1]), format.format(dates[2]))
+        def quizRuns_filter3 = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '', format.format(dates[2]), format.format(dates[3]))
+        def quizRuns_filter4 = skillsService.getQuizRuns(quiz.quizId, 10, 1, 'started', true, '', format.format(dates[1]), format.format(dates[3]))
+        then:
+        quizRuns.totalCount == users.size()
+        quizRuns.count == users.size()
+        quizRuns.data.userId == users
+        quizRuns.data.status == [UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                 UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+        ]
+
+        quizRuns_filter1.count == 7
+        quizRuns_filter1.data.userId == users[0..6]
+        quizRuns_filter1.data.status == [UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+        ]
+
+        quizRuns_filter2.totalCount == 6
+        quizRuns_filter2.count == 6
+        quizRuns_filter2.data.userId == users[4..9]
+        quizRuns_filter2.data.status == [UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+        ]
+
+        quizRuns_filter3.totalCount == 3
+        quizRuns_filter3.count == 3
+        quizRuns_filter3.data.userId == users[7..9]
+        quizRuns_filter3.data.status == [UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+        ]
+
+        quizRuns_filter4.totalCount == 6
+        quizRuns_filter4.count == 6
+        quizRuns_filter4.data.userId == users[4..9]
+        quizRuns_filter4.data.status == [UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.FAILED.toString(),
+                                     UserQuizAttempt.QuizAttemptStatus.PASSED.toString(),
+        ]
+
+    }
+
+    void runQuiz(String userId, def quiz, def quizInfo, boolean pass, Date startDate = null) {
         def quizAttempt =  skillsService.startQuizAttemptForUserId(quiz.quizId, userId).body
         skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[0].answerOptions[0].id, userId)
         skillsService.reportQuizAnswerForUserId(quiz.quizId, quizAttempt.id, quizAttempt.questions[1].answerOptions[pass ? 0 : 1].id, userId)
         skillsService.completeQuizAttemptForUserId(quiz.quizId, quizAttempt.id, userId).body
+
+        if(startDate) {
+            UserQuizAttempt userQuizAttempt = userQuizAttemptRepo.findById(quizAttempt.id).get()
+            userQuizAttempt.started = startDate
+            userQuizAttemptRepo.save(userQuizAttempt)
+        }
     }
 
 }

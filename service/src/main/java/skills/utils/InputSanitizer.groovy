@@ -34,15 +34,20 @@ class InputSanitizer {
     public static final Document.OutputSettings print = new Document.OutputSettings().prettyPrint(false)
 
     private static final Pattern GT = ~/&gt;/
+    private static final Pattern LT = ~/&lt;/
     private static final Pattern AMP = ~/&amp;/
     private static final Pattern PURE_AMP = ~/\s&amp;\s/
     private static final Pattern SPACE = ~/\s/
     private static final Pattern CAPTION_ARROW = ~/--&gt;/
 
-    private static final SAFE_LIST = Safelist.relaxed()
+    private static final SAFE_LIST_FOR_DESC = Safelist.relaxed()
             .addTags('del', 'skills-display')
             .addAttributes('skills-display', 'version')
             .addAttributes('span', 'style')
+
+    private static final SAFE_LIST = Safelist.none()
+            .addTags('del', 'skills-display')
+            .addAttributes('skills-display', 'version')
 
     static String sanitize(String input) {
         if (!input) {
@@ -51,6 +56,15 @@ class InputSanitizer {
 
         return Jsoup.clean(input, "", SAFE_LIST, print)
     }
+
+    static String sanitizeDescription(String input) {
+        if (!input) {
+            return input;
+        }
+
+        return Jsoup.clean(input, "", SAFE_LIST_FOR_DESC, print)
+    }
+
     static String unSanitizeCaption(String input) {
         if (!input) {
             return input;
@@ -178,5 +192,17 @@ class InputSanitizer {
         }
 
         return AMP.matcher(input).replaceAll("&")
+    }
+
+    static String unsanitizeEscapedHtml(String input) {
+        if (!input) {
+            return input;
+        }
+
+        String sanitized = GT.matcher(input).replaceAll(">");
+        sanitized = AMP.matcher(sanitized).replaceAll("&");
+        sanitized = LT.matcher(sanitized).replaceAll("<");
+
+        return sanitized;
     }
 }

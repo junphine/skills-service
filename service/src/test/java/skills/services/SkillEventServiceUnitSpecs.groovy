@@ -15,7 +15,6 @@
  */
 package skills.services
 
-
 import org.springframework.messaging.simp.SimpMessagingTemplate
 import org.springframework.messaging.simp.broker.BrokerAvailabilityEvent
 import skills.quizLoading.QuizRunService
@@ -28,6 +27,7 @@ import skills.storage.model.SkillDefMin
 import skills.storage.model.UserAchievement
 import skills.storage.repos.*
 import skills.utils.LoggerHelper
+import skills.utils.MatomoReporter
 import skills.utils.MetricsLogger
 import spock.lang.Specification
 
@@ -49,6 +49,7 @@ class SkillEventServiceUnitSpecs extends Specification {
         AchievedBadgeHandler mockAchievedBadgeHandler = Mock()
         AchievedGlobalBadgeHandler mockAchievedGlobalBadgeHandler = Mock()
         MetricsLogger mockMetricsLogger = Mock()
+        MatomoReporter mockMatomoReporter = Mock()
         UserEventService mockUserEventService = Mock()
         AchievedSkillsGroupHandler mockAchievedSkillsGroupHandler = Mock()
         SkillCatalogService mockCatalogService = Mock()
@@ -77,6 +78,7 @@ class SkillEventServiceUnitSpecs extends Specification {
         SkillEventsService skillEventsService = new SkillEventsService(
                 skillEventPublisher: mockSkillEventPublisher,
                 metricsLogger: mockMetricsLogger,
+                matomoReporter: mockMatomoReporter,
                 skillEventsTransactionalService: skillEventsTransactionalService,
         )
 
@@ -111,6 +113,7 @@ class SkillEventServiceUnitSpecs extends Specification {
         SkillEventsSupportRepo mockSkillEventsSupportRepo = Mock()
         UserPerformedSkillRepo mockPerformedSkillRepository = Mock()
         MetricsLogger mockMetricsLogger = Mock()
+        MatomoReporter mockMatomoReporter = Mock()
         UserEventService mockUserEventService = Mock()
         SkillCatalogService mockCatalogService = Mock()
         SkillAttributeService mockSkillAttributeService = Mock()
@@ -126,6 +129,7 @@ class SkillEventServiceUnitSpecs extends Specification {
         SkillEventsService skillEventsService = new SkillEventsService(
                 skillEventPublisher: mockSkillEventPublisher,
                 metricsLogger: mockMetricsLogger,
+                matomoReporter: mockMatomoReporter,
                 skillEventsTransactionalService: skillEventsTransactionalService,
         )
 
@@ -156,6 +160,7 @@ class SkillEventServiceUnitSpecs extends Specification {
         SkillEventsSupportRepo mockSkillEventsSupportRepo = Mock()
         UserPerformedSkillRepo mockPerformedSkillRepository = Mock()
         MetricsLogger mockMetricsLogger = Mock()
+        MatomoReporter mockMatomoReporter = Mock()
         UserEventService mockUserEventService = Mock()
         SkillCatalogService mockCatalogService = Mock()
         SkillAttributeService mockSkillAttributeService = Mock()
@@ -171,6 +176,7 @@ class SkillEventServiceUnitSpecs extends Specification {
         SkillEventsService skillEventsService = new SkillEventsService(
                 skillEventPublisher: mockSkillEventPublisher,
                 metricsLogger: mockMetricsLogger,
+                matomoReporter: mockMatomoReporter,
                 skillEventsTransactionalService: skillEventsTransactionalService,
         )
 
@@ -206,11 +212,15 @@ class SkillEventServiceUnitSpecs extends Specification {
         SkillEventResult result = new SkillEventResult(projectId: 'project1')
 
         when:
+        skillEventPublisher.init()
         skillEventPublisher.publishSkillUpdate(result, 'user1')
+        Thread.sleep(500)
         skillEventPublisher.handleBrokerAvailabilityEvent(brokerAvailable)
         skillEventPublisher.publishSkillUpdate(result, 'user2')
+        Thread.sleep(500)
         skillEventPublisher.handleBrokerAvailabilityEvent(brokerUnavailable)
         skillEventPublisher.publishSkillUpdate(result, 'user3')
+        Thread.sleep(500)
 
         then:
         0 * mockMessagingTemplate.convertAndSendToUser('user1', '/queue/project1-skill-updates', result)
@@ -223,11 +233,62 @@ class SkillEventServiceUnitSpecs extends Specification {
         loggerHelper.stop()
     }
 
+    def "test SkillEventPublisher will not publish messages unless enabled == true"() {
+
+        LoggerHelper loggerHelper = new LoggerHelper(SkillEventPublisher.class)
+        SimpMessagingTemplate mockMessagingTemplate = Mock()
+        BrokerAvailabilityEvent brokerAvailable = new BrokerAvailabilityEvent(true, this)
+        SkillEventPublisher skillEventPublisher = new SkillEventPublisher(messagingTemplate: mockMessagingTemplate)
+        SkillEventResult result = new SkillEventResult(projectId: 'project1')
+
+        when:
+        skillEventPublisher.enabled = false
+        skillEventPublisher.init()
+        skillEventPublisher.handleBrokerAvailabilityEvent(brokerAvailable)
+        skillEventPublisher.publishSkillUpdate(result, 'user1')
+        skillEventPublisher.publishSkillUpdate(result, 'user2')
+        skillEventPublisher.publishSkillUpdate(result, 'user3')
+
+        then:
+        0 * mockMessagingTemplate.convertAndSendToUser('user1', '/queue/project1-skill-updates', result)
+        0 * mockMessagingTemplate.convertAndSendToUser('user2', '/queue/project1-skill-updates', result)
+        0 * mockMessagingTemplate.convertAndSendToUser('user3', '/queue/project1-skill-updates', result)
+        loggerHelper.getLogEvents().find() { it.message.contains ("Event messaging is disabled")}
+
+        cleanup:
+        loggerHelper.stop()
+    }
+
+    def "requests are dropped once the queue is full"() {
+        SimpMessagingTemplate mockMessagingTemplate = Mock()
+        BrokerAvailabilityEvent brokerAvailable = new BrokerAvailabilityEvent(true, this)
+        SkillEventPublisher skillEventPublisher = new SkillEventPublisher(messagingTemplate: mockMessagingTemplate, queueCapacity: 2, maxNumOfThreads: 2, minNumOfThreads: 1)
+        SkillEventResult result = new SkillEventResult(projectId: 'project1')
+
+        int invocations = 0
+        mockMessagingTemplate.convertAndSendToUser(*_) >> { args ->
+            invocations++
+            Thread.sleep(500)
+        }
+
+        when:
+        skillEventPublisher.init()
+        skillEventPublisher.handleBrokerAvailabilityEvent(brokerAvailable)
+        (1..10).each {
+            skillEventPublisher.publishSkillUpdate(result, "user${it}")
+        }
+        Thread.sleep(3000)
+
+        then:
+        invocations == 4
+    }
+
     def "notify user of achievements does not fail with project level achievements"() {
         SkillEventPublisher mockSkillEventPublisher = Mock()
         SkillEventsSupportRepo mockSkillEventsSupportRepo = Mock()
         UserPerformedSkillRepo mockPerformedSkillRepository = Mock()
         MetricsLogger mockMetricsLogger = Mock()
+        MatomoReporter mockMatomoReporter = Mock()
         UserEventService mockUserEventService = Mock()
         UserAchievedLevelRepo userAchievedLevelRepo = Mock()
         UserPointsRepo userPointsRepo = Mock()
@@ -242,6 +303,7 @@ class SkillEventServiceUnitSpecs extends Specification {
         )
         SkillEventsService skillEventsService = new SkillEventsService(
                 metricsLogger: mockMetricsLogger,
+                matomoReporter: mockMatomoReporter,
                 skillEventsTransactionalService: skillEventsTransactionalService,
         )
 

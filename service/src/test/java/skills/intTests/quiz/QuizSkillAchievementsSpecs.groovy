@@ -1243,7 +1243,399 @@ class QuizSkillAchievementsSpecs extends QuizSkillAchievementsBaseIntSpec {
         // project
         achievements_proj2.find { !it.skillId }.level == 1
     }
+
+    def "users that achieve quiz/survey DO NOT get credit for assigned skills when skill is disabled - UserAchievement, UserPerformedSkill and UserPoints records are created after skill is enabled"() {
+        def quiz1 = createQuiz(1)
+        def proj = createProject(1)
+        def subj = createSubject(1, 1)
+        def skills = SkillsFactory.createSkills(5, 1, 1, 100)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz1.quizId
+        skills[0].enabled = false
+        skillsService.createProjectAndSubjectAndSkills(proj, subj, skills)
+
+        List<SkillsService> userServices = getRandomUsers(1).collect { createService(it) }
+        Integer skillRefId = skillDefRepo.findByProjectIdAndSkillId(proj.projectId, skills[0].skillId).id
+
+        when:
+        List<UserPerformedSkill> userPerformedSkills_t0 = userPerformedSkillRepo.findAll()
+        List<UserPoints> userPoints_t0 = userPointsRepo.findAll()
+        List<UserAchievement> achievements_t0 = userAchievedRepo.findAll()
+        passQuiz(userServices[0], quiz1)
+        List<UserPerformedSkill> userPerformedSkills_t1 = userPerformedSkillRepo.findAll()
+        List<UserPoints> userPoints_t1 = userPointsRepo.findAll()
+        List<UserAchievement> achievements_t1 = userAchievedRepo.findAll()
+
+        // now enable skill
+        skills[0].enabled = true
+        skillsService.updateSkill(skills[0], skills[0].skillId)
+        List<UserPerformedSkill> userPerformedSkills_t2 = userPerformedSkillRepo.findAll()
+        List<UserPoints> userPoints_t2 = userPointsRepo.findAll()
+        List<UserAchievement> achievements_t2 = userAchievedRepo.findAll()
+
+        then:
+        !userPerformedSkills_t0
+        !userPoints_t0
+        !achievements_t0
+
+        !userPerformedSkills_t1
+        !userPoints_t1
+        !achievements_t1
+
+        userPerformedSkills_t2.size() == 1
+        userPerformedSkills_t2[0].userId == userServices[0].userName
+        userPerformedSkills_t2[0].skillId == skills[0].skillId
+        userPerformedSkills_t2[0].projectId == proj.projectId
+        userPerformedSkills_t2[0].skillRefId == skillRefId
+        userPerformedSkills_t2[0].performedOn
+
+        userPoints_t2.size() == 3 // 1 for project, 1 for subject and 1 for skill
+        UserPoints skillUserPoints = userPoints_t2.find { it.skillId == skills[0].skillId }
+        skillUserPoints.userId == userServices[0].userName
+        skillUserPoints.skillId == skills[0].skillId
+        skillUserPoints.projectId == proj.projectId
+        skillUserPoints.skillRefId == skillRefId
+        skillUserPoints.points == skills[0].pointIncrement
+
+        achievements_t2.size() == 3 // 1 for project, 1 for subject and 1 for skill
+        UserAchievement skillAchievement = achievements_t2.find { it.skillId == skills[0].skillId }
+        skillAchievement.userId == userServices[0].userName
+        skillAchievement.skillId == skills[0].skillId
+        skillAchievement.projectId == proj.projectId
+        skillAchievement.skillRefId == skillRefId
+        skillAchievement.pointsWhenAchieved == skills[0].pointIncrement
+        !skillAchievement.level
+    }
+
+    def "users that achieved quiz/survey should NOT get credit when assigned to a disabled skill - edited existing skill, credit is awarded after skill is enabled"() {
+        def quiz1 = createQuiz(1)
+
+        def proj = createProject(1)
+        def subj = createSubject(1, 1)
+        def skills = SkillsFactory.createSkills(5, 1, 1, 100)
+        skills[0].enabled = false
+        skillsService.createProjectAndSubjectAndSkills(proj, subj, skills)
+
+        List<SkillsService> userServices = getRandomUsers(1).collect { createService(it) }
+        passQuiz(userServices[0], quiz1)
+
+        when:
+        def user1Progress_t0 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId, subj.subjectId)
+        def user1OverallProgress_t0 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId)
+        def skillsUsers_t0 = skillsService.getSkillUsers(proj.projectId, skills[0].skillId)
+        def subjUsers_t0 = skillsService.getSubjectUsers(proj.projectId, subj.subjectId)
+        def projectUsers_t0 = skillsService.getProjectUsers(proj.projectId)
+
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz1.quizId
+        skillsService.createSkill(skills[0])
+
+        def user1Progress_t1 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId, subj.subjectId)
+        def user1OverallProgress_t1 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId)
+        def skillsUsers_t1 = skillsService.getSkillUsers(proj.projectId, skills[0].skillId)
+        def subjUsers_t1 = skillsService.getSubjectUsers(proj.projectId, subj.subjectId)
+        def projectUsers_t1 = skillsService.getProjectUsers(proj.projectId)
+
+        // now enable skill
+        skills[0].enabled = true
+        skillsService.updateSkill(skills[0], skills[0].skillId)
+
+        def user1Progress_t2 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId, subj.subjectId)
+        def user1OverallProgress_t2 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId)
+        def skillsUsers_t2 = skillsService.getSkillUsers(proj.projectId, skills[0].skillId)
+        def subjUsers_t2 = skillsService.getSubjectUsers(proj.projectId, subj.subjectId)
+        def projectUsers_t2 = skillsService.getProjectUsers(proj.projectId)
+
+        then:
+        // TIME 0 -------------
+        user1Progress_t0.points == 0
+        user1Progress_t0.totalPoints == 400
+        user1Progress_t0.skillsLevel == 0
+        user1Progress_t0.skills.skillId == skills.skillId.findAll { it != skills[0].skillId }
+        user1Progress_t0.skills.points == [0, 0, 0, 0]
+
+        user1OverallProgress_t0.points == 0
+        user1OverallProgress_t0.skillsLevel == 0
+
+        !skillsUsers_t0.data
+        !subjUsers_t0.data
+        !projectUsers_t0.data
+
+        // TIME 1 -------------
+        user1Progress_t1.points == 0
+        user1Progress_t1.totalPoints == 400
+        user1Progress_t1.skillsLevel == 0
+        user1Progress_t1.skills.skillId == skills.skillId.findAll { it != skills[0].skillId }
+        user1Progress_t1.skills.points == [0, 0, 0, 0]
+
+        user1OverallProgress_t1.points == 0
+        user1OverallProgress_t1.skillsLevel == 0
+
+        !skillsUsers_t1.data
+        !subjUsers_t1.data
+        !projectUsers_t1.data
+
+        // TIME 2 -------------
+        user1Progress_t2.points == 100
+        user1Progress_t2.totalPoints == 500
+        user1Progress_t2.skillsLevel == 1
+        user1Progress_t2.skills.skillId == skills.skillId
+        user1Progress_t2.skills.points == [100, 0, 0, 0, 0]
+
+        user1OverallProgress_t2.points == 100
+        user1OverallProgress_t2.skillsLevel == 1
+
+        skillsUsers_t2.data.userId == [userServices[0].userName]
+        subjUsers_t2.data.userId == [userServices[0].userName]
+        projectUsers_t2.data.userId == [userServices[0].userName]
+    }
+
+    def "users that achieved quiz/survey should NOT get credit when assigned to a disabled skill - brand new skill, credit is awarded after skill is enabled"() {
+        def quiz1 = createQuiz(1)
+
+        def proj = createProject(1)
+        def subj = createSubject(1, 1)
+        def skills = SkillsFactory.createSkills(5, 1, 1, 100)
+        skills[0].enabled = false
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz1.quizId
+        skillsService.createProjectAndSubjectAndSkills(proj, subj, skills)
+
+        List<SkillsService> userServices = getRandomUsers(1).collect { createService(it) }
+        passQuiz(userServices[0], quiz1)
+
+        when:
+        def user1Progress_t0 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId, subj.subjectId)
+        def user1OverallProgress_t0 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId)
+        def skillsUsers_t0 = skillsService.getSkillUsers(proj.projectId, skills[0].skillId)
+        def subjUsers_t0 = skillsService.getSubjectUsers(proj.projectId, subj.subjectId)
+        def projectUsers_t0 = skillsService.getProjectUsers(proj.projectId)
+
+        // now enable skill
+        skills[0].enabled = true
+        skillsService.updateSkill(skills[0], skills[0].skillId)
+
+        def user1Progress_t1 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId, subj.subjectId)
+        def user1OverallProgress_t1 = skillsService.getSkillSummary(userServices[0].userName, proj.projectId)
+        def skillsUsers_t1 = skillsService.getSkillUsers(proj.projectId, skills[0].skillId)
+        def subjUsers_t1 = skillsService.getSubjectUsers(proj.projectId, subj.subjectId)
+        def projectUsers_t1 = skillsService.getProjectUsers(proj.projectId)
+
+        then:
+        // TIME 0 -------------
+        user1Progress_t0.points == 0
+        user1Progress_t0.totalPoints == 400
+        user1Progress_t0.skillsLevel == 0
+        user1Progress_t0.skills.skillId == skills.skillId.findAll { it != skills[0].skillId }
+        user1Progress_t0.skills.points == [0, 0, 0, 0]
+
+        user1OverallProgress_t0.points == 0
+        user1OverallProgress_t0.skillsLevel == 0
+
+        !skillsUsers_t0.data
+        !subjUsers_t0.data
+        !projectUsers_t0.data
+
+        // TIME 1 -------------
+        user1Progress_t1.points == 100
+        user1Progress_t1.totalPoints == 500
+        user1Progress_t1.skillsLevel == 1
+        user1Progress_t1.skills.skillId == skills.skillId
+        user1Progress_t1.skills.points == [100, 0, 0, 0, 0]
+
+        user1OverallProgress_t1.points == 100
+        user1OverallProgress_t1.skillsLevel == 1
+
+        skillsUsers_t1.data.userId == [userServices[0].userName]
+        subjUsers_t1.data.userId == [userServices[0].userName]
+        projectUsers_t1.data.userId == [userServices[0].userName]
+    }
+
+    def "editing quiz-based skill should not remove achieved badge, skill or subject levels"() {
+        def quiz1 = createQuiz(1)
+        def quiz2 = createQuiz(2)
+        def quiz3 = createQuiz(3)
+
+        def proj = createProject(1)
+        def subj = createSubject(1, 1)
+        def skills = createSkills(5, 1, 1, 100)
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz1.quizId
+        skills[1].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[1].quizId = quiz2.quizId
+        skills[2].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[2].quizId = quiz3.quizId
+        skillsService.createProjectAndSubjectAndSkills(proj, subj, skills)
+
+        def badge = createBadge(1, 1)
+        skillsService.createBadge(badge)
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId])
+        badge.enabled = true
+        skillsService.createBadge(badge)
+
+        List<SkillsService> userServices = getRandomUsers(3).collect { createService(it) }
+        passQuiz(userServices[0], quiz1)
+
+        passQuiz(userServices[1], quiz1)
+        passQuiz(userServices[1], quiz2)
+
+        passQuiz(userServices[2], quiz2)
+        passQuiz(userServices[2], quiz3)
+
+        when:
+        def user1badges_t0 = skillsService.getBadgesSummary(userServices[0].userName, proj.projectId)
+
+        skills[0].pointIncrement = 200
+        skillsService.updateSkill(skills[0])
+
+        def user1badges_t1 = skillsService.getBadgesSummary(userServices[0].userName, proj.projectId)
+        List<UserAchievement> achievements = userAchievedRepo.findAll()
+        then:
+        user1badges_t0.badgeId == [badge.badgeId]
+        user1badges_t0.badgeAchieved == [true]
+
+        user1badges_t1.badgeId == [badge.badgeId]
+        user1badges_t1.badgeAchieved == [true]
+
+        // user 1
+        achievements.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 1
+        achievements.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 1
+        achievements.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 2
+        achievements.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 2
+
+        achievements.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 0
+        achievements.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 0
+
+        // user 2
+        achievements.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 1
+        achievements.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 1
+        achievements.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 1
+        achievements.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 3
+        achievements.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 3
+
+        achievements.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 0
+
+        // user 3
+        achievements.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 0
+        achievements.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 1
+        achievements.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 1
+
+        achievements.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 0
+        achievements.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 2
+        achievements.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 2
+    }
+
+    def "change quiz-based skill to Honor should remove skill's achievements"() {
+        def quiz1 = createQuiz(1)
+        def quiz2 = createQuiz(2)
+        def quiz3 = createQuiz(3)
+
+        def proj = createProject(1)
+        def subj = createSubject(1, 1)
+        def skills = createSkills(5, 1, 1, 100)
+        skills[0].pointIncrement = 200
+        skills[0].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[0].quizId = quiz1.quizId
+        skills[1].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[1].quizId = quiz2.quizId
+        skills[2].selfReportingType = SkillDef.SelfReportingType.Quiz
+        skills[2].quizId = quiz3.quizId
+        skillsService.createProjectAndSubjectAndSkills(proj, subj, skills)
+
+        def badge = createBadge(1, 1)
+        skillsService.createBadge(badge)
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills[0].skillId])
+        badge.enabled = true
+        skillsService.createBadge(badge)
+
+        def badge2 = createBadge(1, 2)
+        skillsService.createBadge(badge2)
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge2.badgeId, skillId: skills[2].skillId])
+        badge2.enabled = true
+        skillsService.createBadge(badge2)
+
+        List<SkillsService> userServices = getRandomUsers(3).collect { createService(it) }
+        passQuiz(userServices[0], quiz1)
+
+        passQuiz(userServices[1], quiz1)
+        passQuiz(userServices[1], quiz2)
+
+        passQuiz(userServices[2], quiz2)
+        passQuiz(userServices[2], quiz3)
+
+        when:
+        List<UserAchievement> achievements_t0 = userAchievedRepo.findAll()
+
+        skills[0].quizId = null
+        skills[0].selfReportingType = SkillDef.SelfReportingType.HonorSystem
+        skillsService.updateSkill(skills[0])
+
+        List<UserAchievement> achievements_t1 = userAchievedRepo.findAll()
+        then:
+
+        // user 1
+        achievements_t0.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 1
+        achievements_t0.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 1
+        achievements_t0.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == badge2.badgeId}).size() == 0
+        achievements_t0.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 2
+        achievements_t0.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 2
+
+        achievements_t0.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 0
+        achievements_t0.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 0
+
+        // user 2
+        achievements_t0.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 1
+        achievements_t0.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 1
+        achievements_t0.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 1
+        achievements_t0.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == badge2.badgeId}).size() == 0
+        achievements_t0.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 3
+        achievements_t0.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 3
+
+        achievements_t0.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 0
+
+        // user 3
+        achievements_t0.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 0
+        achievements_t0.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 1
+        achievements_t0.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 1
+
+        achievements_t0.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 0
+        achievements_t0.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == badge2.badgeId}).size() == 1
+        achievements_t0.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 2
+        achievements_t0.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 2
+
+        // user 1
+        achievements_t1.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == badge2.badgeId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 0
+
+        achievements_t1.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[0].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 0
+
+        // user 2
+        achievements_t1.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 1
+        achievements_t1.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == badge2.badgeId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 1
+        achievements_t1.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 1
+
+        achievements_t1.findAll({ it.userId == userServices[1].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 0
+
+        // user 3
+        achievements_t1.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[0].skillId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[1].skillId}).size() == 1
+        achievements_t1.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == skills[2].skillId}).size() == 1
+
+        achievements_t1.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == badge.badgeId}).size() == 0
+        achievements_t1.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == badge2.badgeId}).size() == 1
+        achievements_t1.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && it.skillId == subj.subjectId && it.level > 0}).size() == 2
+        achievements_t1.findAll({ it.userId == userServices[2].userName && it.projectId == proj.projectId && !it.skillId && it.level > 0}).size() == 2
+    }
+
 }
+
 
 
 

@@ -17,6 +17,7 @@ package skills.services.quiz
 
 import callStack.profiler.Profile
 import groovy.util.logging.Slf4j
+import org.apache.commons.lang3.StringUtils
 import org.apache.commons.lang3.math.NumberUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Service
@@ -26,19 +27,19 @@ import skills.auth.UserInfoService
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.QuizValidator
 import skills.controller.exceptions.SkillQuizException
-import skills.controller.request.model.QuizDefRequest
+import skills.controller.request.model.GlobalMetricsSettingsRequest
 import skills.controller.request.model.QuizPreference
 import skills.controller.request.model.QuizSettingsRequest
 import skills.controller.result.model.QuizPreferenceRes
 import skills.controller.result.model.QuizSettingsRes
-import skills.controller.result.model.SettingsResult
 import skills.quizLoading.QuizSettings
 import skills.quizLoading.QuizUserPreferences
-import skills.services.settings.Settings
+import skills.services.admin.UserCommunityService
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionInfo
 import skills.services.userActions.UserActionsHistoryService
+import skills.storage.model.QuizDef
 import skills.storage.model.QuizSetting
 import skills.storage.model.UserAttrs
 import skills.storage.model.auth.RoleName
@@ -64,6 +65,9 @@ class QuizSettingsService {
     UserInfoService userInfoService
 
     @Autowired
+    UserCommunityService userCommunityService
+
+    @Autowired
     UserActionsHistoryService userActionsHistoryService
 
     @Autowired
@@ -71,7 +75,7 @@ class QuizSettingsService {
 
     @Transactional
     void copySettings(String fromQuizId, String toQuizId, boolean enableProtectedUserCommunity) {
-        List<QuizSettingsRes> fromSettings = getSettings(fromQuizId)
+        List<QuizSettingsRes> fromSettings = getSettings(fromQuizId, false)
         List<QuizSettingsRequest> toSettings = new ArrayList<QuizSettingsRequest>()
 
         if (enableProtectedUserCommunity) {
@@ -177,7 +181,7 @@ class QuizSettingsService {
             Integer minNumQuestionsToPass = Integer.valueOf(quizSettingsRequest.value)
             int numDeclaredQuestions = quizQuestionDefRepo.countByQuizId(quizId)
             if (numDeclaredQuestions == 0) {
-                throw new SkillQuizException("Cannot modify [${quizSettingsRequest.setting}] becuase there is 0 declared questions", quizId, ErrorCode.BadParam)
+                throw new SkillQuizException("Cannot modify [${quizSettingsRequest.setting}] because there is 0 declared questions", quizId, ErrorCode.BadParam)
             }
 
             if (numDeclaredQuestions < minNumQuestionsToPass) {
@@ -188,7 +192,7 @@ class QuizSettingsService {
     }
 
     @Transactional(readOnly = true)
-    List<QuizSettingsRes> getSettings(String quizId) {
+    List<QuizSettingsRes> getSettings(String quizId, boolean addUserCommunityOnlyQuizSetting = true) {
         Integer quizRefId = getQuizDefRefId(quizId)
         List<QuizSetting> quizSettings = quizSettingsRepo.findAllByQuizRefId(quizRefId)
         List<QuizSettingsRes> res = quizSettings.collect {
@@ -203,7 +207,59 @@ class QuizSettingsService {
             res.add(new QuizSettingsRes(setting: QuizSettings.QuizUserRole.setting, value: RoleName.ROLE_QUIZ_READ_ONLY.toString()))
         }
 
+        if (addUserCommunityOnlyQuizSetting && userCommunityService.isUserCommunityConfigured()) {
+            boolean isUserCommunityProtectedQuiz = quizSettings.find { it.setting == QuizSettings.UserCommunityOnlyQuiz.setting}?.isEnabled()
+            res.removeAll { it.setting == QuizSettings.UserCommunityOnlyQuiz.setting }
+            res.add(new QuizSettingsRes(
+                    setting: QuizSettings.UserCommunityOnlyQuiz.setting,
+                    value: userCommunityService.getCommunityNameBasedOnConfAndItemStatus(isUserCommunityProtectedQuiz),
+            ))
+        }
+
         return res.sort({ it.setting })
+    }
+
+    @Transactional()
+    void updateGlobalMetricsUserSettings(List<GlobalMetricsSettingsRequest> quizSettings) {
+        UserAttrs currentUserAttrs = getCurrentUserAttrs()
+        Integer userRefId = currentUserAttrs.id
+
+        QuizValidator.isNotNull(userRefId, "userRefId", null)
+        List<QuizSetting> toRemove = []
+        List<QuizSetting> toSave = []
+        quizSettings.each {
+            QuizValidator.isNotNull(it.quizId, "quizId", null)
+            QuizValidator.isNotNull(it.setting, "setting", null)
+            QuizSetting setting = quizSettingsRepo.findBySettingAndQuizIdAndUserIdRef(it.setting, it.quizId, userRefId)
+            if (StringUtils.isBlank(it.value)) {
+                if (setting) {
+                    toRemove.add(setting)
+                }
+            } else {
+                if (setting) {
+                    setting.value = it.value
+                } else {
+                    QuizDef quizDef = quizDefRepo.findByQuizIdIgnoreCase(it.quizId)
+
+                    setting = new QuizSetting()
+                    setting.setting = it.setting
+                    setting.value = it.value
+                    setting.quizRefId = quizDef.id
+                    setting.userRefId = userRefId
+                }
+                toSave.add(setting)
+            }
+        }
+
+        quizSettingsRepo.deleteAll(toRemove)
+        quizSettingsRepo.saveAll(toSave)
+    }
+
+    @Transactional(readOnly = true)
+    List<QuizSettingsRepo.SimpleQuizRes> getGlobalMetricsUserSettings(String setting) {
+        UserAttrs currentUserAttrs = getCurrentUserAttrs()
+        List<QuizSettingsRepo.SimpleQuizRes> quizSettings = quizSettingsRepo.findAllBySettingAndUserRefId(setting, currentUserAttrs.id)
+        return quizSettings
     }
 
     @Profile

@@ -36,7 +36,6 @@ import skills.services.userActions.UserActionsHistoryService
 import skills.storage.model.*
 import skills.storage.repos.*
 import skills.tasks.TaskSchedulerService
-import skills.utils.MetricsLogger
 
 import static skills.services.events.CompletionItem.CompletionItemType
 import static skills.services.events.SkillEventsService.AppliedCheckRes
@@ -87,9 +86,6 @@ class SkillEventsTransactionalService {
     UserPointsRepo userPointsRepo
 
     @Autowired
-    MetricsLogger metricsLogger;
-
-    @Autowired
     UserEventService userEventService
 
     @Autowired
@@ -132,7 +128,7 @@ class SkillEventsTransactionalService {
                 if(it.projectId && it.skillId) {
                     skill = skillEventsSupportRepo.findByProjectIdAndSkillId(it.projectId, it.skillId)
                 } else if (it.skillId) {
-                    skill = skillEventsSupportRepo.findBySkillIdWhereProjectIdIsNull(it.skillId)
+                    skill = skillEventsSupportRepo.findBySkillRefId(it.skillRefId)
                 }
 
                 if (!ser) {
@@ -149,7 +145,7 @@ class SkillEventsTransactionalService {
                             id: points?.skillId ?: "OVERALL",
                             type: points?.skillId ? CompletionItemType.Subject : CompletionItemType.Overall)
                 } else {
-                    if(SkillDef.ContainerType.Skill == skill.type) {
+                    if(skill && SkillDef.ContainerType.Skill == skill.type) {
                         completionItem = new CompletionItem(type: CompletionItemType.Skill, id: skill.skillId, name: skill.name)
                     } else {
                         //why doesn't CompletionTypeUtil support Skill?
@@ -184,6 +180,9 @@ class SkillEventsTransactionalService {
         SkillDate skillDate = new SkillDate(date: incomingSkillDateParam ?: new Date(), isProvided: incomingSkillDateParam != null)
 
         SkillDefMin skillDefinition = getSkillDef(userId, projectId, skillId)
+        if (skillDefinition.enabled != null && !Boolean.valueOf(skillDefinition.enabled)) {
+            throw new SkillException("Cannot report skill events for a skill that is disabled.", projectId, skillId, ErrorCode.ReadOnlySkill)
+        }
         if (Boolean.valueOf(skillDefinition.readOnly) && !skillDefinition.selfReportingType) {
             throw new SkillException("Skills imported from the catalog can only be reported if the original skill is configured for Self Reporting", projectId, skillId, ErrorCode.ReadOnlySkill)
         }
@@ -193,6 +192,9 @@ class SkillEventsTransactionalService {
             throw e;
         }
         if (skillDefinition.selfReportingType && skillDefinition.copiedFromProjectId) {
+            if (approvalParams?.doNotRequireApproval) {
+                throw new SkillException("doNotRequireApproval property is not allowed for imported skills", projectId, skillId, ErrorCode.AccessDenied);
+            }
             projectId = skillDefinition.copiedFromProjectId
             skillDefinition = getCopiedFromSkillDef(skillDefinition, userId)
             // override it as reused skill's id will not match
@@ -223,7 +225,7 @@ class SkillEventsTransactionalService {
         final boolean isApprovalRequest = approvalParams && !approvalParams.disableChecks &&
                 skillDefinition.getSelfReportingType() == SkillDef.SelfReportingType.Approval
 
-        if (!isApprovalRequest) {
+        if (!isApprovalRequest || approvalParams?.doNotRequireApproval) {
             // record event should happen AFTER the lock OR if it does not need the lock;
             // otherwise there is a chance of a deadlock (although unlikely); this can happen because record event
             // mutates the row - so that row is locked in addition to the explicit lock
@@ -243,10 +245,13 @@ class SkillEventsTransactionalService {
             if (skillDefinition.copiedFrom) {
                 skillDefinition = skillDefRepo.findSkillDefMinById(skillDefinition.copiedFrom)
             }
-            checkRes = selfReportingService.requestApproval(userId, skillDefinition, skillDate.date, approvalParams?.approvalRequestedMsg)
-            res.skillApplied = checkRes.skillApplied
-            res.explanation = checkRes.explanation
-            return res
+
+            if (!approvalParams?.doNotRequireApproval) {
+                checkRes = selfReportingService.requestApproval(userId, skillDefinition, skillDate.date, approvalParams?.approvalRequestedMsg)
+                res.skillApplied = checkRes.skillApplied
+                res.explanation = checkRes.explanation
+                return res
+            }
         }
 
         if (isMotivationalSkill && hasReachedMaxPoints(numExistingSkills, skillDefinition)) {

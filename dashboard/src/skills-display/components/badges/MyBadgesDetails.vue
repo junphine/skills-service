@@ -54,7 +54,10 @@ const badgeAriaLabel = (badge) => {
 const buildBadgeLink = (badge) => {
   let globalBadgeUnderProjectId = null
   if (!route.params.projectId) {
-    globalBadgeUnderProjectId = props.badges.find((b) => b.projectId).projectId
+    const hasData = badge.projectLevelsAndSkillsSummaries && badge.projectLevelsAndSkillsSummaries.length > 0
+    if (hasData) {
+      globalBadgeUnderProjectId = badge.projectLevelsAndSkillsSummaries[0].projectId
+    }
   }
   return skillsDisplayInfo.createToBadgeLink(badge, globalBadgeUnderProjectId)
 }
@@ -64,9 +67,7 @@ const buildBadgeLink = (badge) => {
   <Card class="card" data-cy="myBadges">
     <template #header>
       <div class="flex p-4">
-        <div class="flex-1 text-xl uppercase">
-          My Earned Badges
-        </div>
+        <h2 class="flex-1 text-xl uppercase">My Earned Badges</h2>
         <div v-if="badges && badges.length > 0" class="text-muted float-right">
           <Tag severity="info">{{ badges.length }}</Tag> Badge<span v-if="badges.length !== 1">s</span> Earned
         </div>
@@ -79,7 +80,7 @@ const buildBadgeLink = (badge) => {
       <div v-if="badges && badges.length > 0" class="flex-col md:flex-row flex flex-wrap justify-center gap-4 ">
           <Card class="skills-card-theme-border skills-earned-badge"
                 v-for="(badge, index) in badges" v-bind:key="badge.badgeId"
-                :pt="{ root: { class: '!border' }, content: { class: '!h-full' }, body: { class: '!h-full' } }" :data-cy="`achievedBadge-${badge.badgeId}`">
+                :pt="{ root: { class: 'border!' }, content: { class: 'h-full!' }, body: { class: 'h-full!' } }" :data-cy="`achievedBadge-${badge.badgeId}`">
             <template #header>
               <div class="pt-4 px-4 flex">
                 <div class="flex-1">

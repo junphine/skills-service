@@ -16,6 +16,7 @@
 package skills.storage.repos
 
 import org.springframework.data.domain.PageRequest
+import org.springframework.data.jpa.repository.Modifying
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.CrudRepository
 import org.springframework.data.repository.query.Param
@@ -31,6 +32,7 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
     interface UserRoleWithAttrs {
         UserRole getRole()
         UserAttrs getAttrs()
+        String getUserIdForDisplay()
     }
 
     @Nullable
@@ -38,6 +40,9 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
 
     @Nullable
     UserRole findByUserIdAndRoleNameAndQuizIdAndAdminGroupId(String userId, RoleName roleName, String quizId, @Nullable String adminGroupId)
+
+    @Nullable
+    UserRole findByUserIdAndRoleNameAndGlobalBadgeIdAndAdminGroupId(String userId, RoleName roleName, String globalBadgeId, @Nullable String adminGroupId)
 
     @Nullable
     UserRole findByUserIdAndRoleNameAndAdminGroupId(String userId, RoleName roleName, String adminGroupId)
@@ -51,6 +56,11 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
     Boolean isUserProjectGroupAdmin(String userId, String projectId)
 
     @Nullable
+    @Query('''SELECT DISTINCT 'true' from UserRole ur where ur.userId = ?1 and ur.roleName = 'ROLE_GLOBAL_BADGE_ADMIN' and ur.globalBadgeId = ?2 and ur.adminGroupId is not null''')
+    Boolean isUserGlobalBadgeGroupAdmin(String userId, String globalBadgeId)
+
+
+    @Nullable
     @Query('''SELECT DISTINCT 'true' from UserRole ur where ur.userId = ?1 and ur.roleName = 'ROLE_PROJECT_ADMIN' and ur.projectId = ?2''')
     Boolean isUserProjectAdmin(String userId, String projectId)
 
@@ -58,11 +68,19 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
     @Query(value = '''SELECT DISTINCT 'true' FROM user_roles ur WHERE ur.user_id = ?1 and ur.role_name in ('ROLE_ADMIN_GROUP_MEMBER','ROLE_ADMIN_GROUP_OWNER') and ur.admin_group_id = ?2 ''', nativeQuery = true)
     Boolean isUserGroupAdminMemberOrOwner(String userId, String adminGroupId)
 
+    @Nullable
+    @Query('''SELECT DISTINCT 'true' from UserRole ur where ur.userId = ?1 and ur.roleName = 'ROLE_GLOBAL_BADGE_ADMIN' and ur.globalBadgeId = ?2''')
+    Boolean isUserGlobalBadgeAdmin(String userId, String projectId)
+
     void deleteByQuizIdAndAdminGroupIdAndRoleName(String quizId, String adminGroupId, RoleName roleName)
 
     void deleteByProjectIdAndAdminGroupIdAndRoleName(String quizId, String adminGroupId, RoleName roleName)
 
+    void deleteByGlobalBadgeIdAndAdminGroupIdAndRoleName(String globalBadgeId, String adminGroupId, RoleName roleName)
+
     void deleteByUserIdAndAdminGroupIdAndRoleNameIn(String userId, String adminGroupId, List<RoleName> roleName)
+
+    void deleteByGlobalBadgeIdAndRoleName(String globalBadgeId, RoleName roleName)
 
     @Nullable
     List<UserRole> findAllByUserId(String userId)
@@ -75,6 +93,9 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
 
     @Nullable
     List<UserRole> findAllByQuizIdIgnoreCase(String quizId)
+
+    @Nullable
+    List<UserRole> findAllByGlobalBadgeIdIgnoreCase(String globalBadgeId)
 
     @Query('''SELECT count(ur.id)
         from UserRole ur, UserAttrs ua 
@@ -95,7 +116,23 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
             ur.roleName in ?2 ''')
     Integer countUserRolesByAdminGroupIdAndUserRoles(String projectId, List<RoleName> roles)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT count(ur.id)
+        from UserRole ur, UserAttrs ua 
+        where
+            ur.userId = ua.userId and 
+            ur.globalBadgeId = ?1 and 
+            ur.roleName in ?2 ''')
+    Integer countUserRolesByGlobalBadgeId(String badgeId, List<RoleName> roles)
+
+    @Query('''SELECT count(ur.id)
+        from UserRole ur, UserAttrs ua 
+        where
+            ur.userId = ua.userId and 
+            ur.quizId = ?1 and 
+            ur.roleName in ?2 ''')
+    Integer countUserRolesByQuizIdAndUserRoles(String quizId, List<RoleName> roles)
+
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
@@ -103,7 +140,7 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
             ur.roleName in ?2 ''')
     List<UserRoleWithAttrs> findRoleWithAttrsByProjectIdAndUserRoles(String projectId, List<RoleName> roles, PageRequest pageRequest)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
@@ -111,7 +148,7 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
             ur.roleName in ?2 ''')
     List<UserRoleWithAttrs> findRoleWithAttrsByAdminGroupIdAndUserRoles(String adminGroupId, List<RoleName> roles, PageRequest pageRequest)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
@@ -132,7 +169,7 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
     ''')
     Integer countRoleWithAttrsByProjectIdAndRoleNameAndUserIdLike(String projectId, RoleName roleName, String userIdQuery)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
@@ -160,14 +197,14 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
 
     boolean existsByRoleName(RoleName roleName)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
             ur.roleName = ?1''')
     List<UserRoleWithAttrs> findAllByRoleName(RoleName roleName)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
@@ -181,7 +218,7 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
             ur.roleName = ?1''')
     Integer countAllByRoleName(RoleName roleName)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
@@ -213,14 +250,22 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
 
     int countByRoleName(RoleName roleName)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and 
             ur.quizId = ?1''')
     List<UserRoleWithAttrs> findRoleWithAttrsByQuizId(String quizId)
 
-    @Query('''SELECT ur as role, ua as attrs
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
+        from UserRole ur, UserAttrs ua 
+        where
+            ur.userId = ua.userId and 
+            ur.globalBadgeId = ?1''')
+    List<UserRoleWithAttrs> findRoleWithAttrsByGlobalBadgeId(String badgeId)
+
+
+    @Query('''SELECT ur as role, ua as attrs, ua.userIdForDisplay as userIdForDisplay
         from UserRole ur, UserAttrs ua 
         where
             ur.userId = ua.userId and
@@ -238,4 +283,14 @@ interface UserRoleRepo extends CrudRepository<UserRole, Integer> {
     ''')
     List<String> findProjectIdsByAdminGroupId(String adminGroupId)
 
+    @Query(value='''
+        select distinct(ur.globalBadgeId) from UserRole ur where ur.adminGroupId=?1 and ur.roleName=skills.storage.model.auth.RoleName.ROLE_GLOBAL_BADGE_ADMIN
+    ''')
+    List<String> findGlobalBadgeIdsByAdminGroupId(String adminGroupId)
+
+    @Modifying
+    @Query(value='''
+        update UserRole ur set ur.globalBadgeId = ?2 where ur.globalBadgeId = ?1 and ur.roleName=skills.storage.model.auth.RoleName.ROLE_GLOBAL_BADGE_ADMIN
+    ''')
+    void updateGlobalBadgeIdForBadgeAdmins(String s1, String s2)
 }

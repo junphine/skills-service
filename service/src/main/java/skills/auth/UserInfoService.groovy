@@ -76,8 +76,22 @@ class UserInfoService {
 
     @Profile
     boolean isCurrentUserASuperDuperUser() {
+        return hasRole(RoleName.ROLE_SUPER_DUPER_USER)
+    }
+
+    @Profile
+    boolean isCurrentInviteOnlyPrivateProjUser() {
+        return hasRole(RoleName.ROLE_PRIVATE_PROJECT_USER)
+    }
+
+    @Profile
+    boolean isCurrentUserAProjectAdmin() {
+        return hasRole(RoleName.ROLE_PROJECT_ADMIN)
+    }
+
+    private boolean hasRole(RoleName role) {
         boolean isRootUser = this.currentUser?.authorities?.find() {
-            it instanceof UserSkillsGrantedAuthority && RoleName.ROLE_SUPER_DUPER_USER == it.role?.roleName
+            it instanceof UserSkillsGrantedAuthority && role == it.role?.roleName
         }
         return isRootUser
     }

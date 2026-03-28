@@ -23,6 +23,7 @@ import NoContent2 from "@/components/utils/NoContent2.vue";
 import ExistingUserInput from "@/components/utils/ExistingUserInput.vue";
 import * as yup from "yup";
 import {useForm} from "vee-validate";
+import {useStorage} from "@vueuse/core";
 
 const route = useRoute();
 const announcer = useSkillsAnnouncer();
@@ -54,7 +55,7 @@ const loading = ref(false);
 const data = ref([]);
 const sortBy = ref('updated');
 const sortOrder = ref(-1);
-const pageSize = 4;
+const pageSize = useStorage('selfReportApprovalConfSpecificUsers-pageSize', 4)
 const possiblePageSizes = [4, 10, 15, 20];
 const selectedIds = ref([]);
 
@@ -106,9 +107,9 @@ const updateSelectedList = () => {
 </script>
 
 <template>
-  <Card :pt="{ body: { class: '!p-0' } }">
+  <Card :pt="{ body: { class: 'p-0!' } }">
     <template #header>
-      <SkillsCardHeader title="Split Workload By Specific Users"></SkillsCardHeader>
+      <SkillsCardHeader title="Split Workload By Specific Users" title-tag="h5"></SkillsCardHeader>
     </template>
     <template #content>
       <div class="flex px-4 pt-4 gap-2 flex-col md:flex-row items-center">

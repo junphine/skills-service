@@ -22,7 +22,6 @@ import ToastService from 'primevue/toastservice'
 import App from './App.vue'
 import constructRouter from './router'
 import VueAnnouncer from '@vue-a11y/announcer'
-import VueApexCharts from 'vue3-apexcharts'
 import log from 'loglevel'
 
 import {Select, ToggleSwitch} from "primevue";
@@ -59,6 +58,9 @@ import ProgressBar from 'primevue/progressbar'
 import Chip from 'primevue/chip'
 import FloatLabel from "primevue/floatlabel";
 import Timeline from 'primevue/timeline';
+import { Sortable, Swap } from 'sortablejs';
+
+Sortable.mount(new Swap())
 
 import ConfirmationService from 'primevue/confirmationservice'
 import BadgeDirective from 'primevue/badgedirective'
@@ -125,7 +127,6 @@ app.use(PrimeVue, {
 })
 app.use(ToastService)
 app.use(VueAnnouncer, { router })
-app.use(VueApexCharts)
 app.use(ConfirmationService)
 app.component('Button', Button)
 app.component('ButtonGroup', ButtonGroup)

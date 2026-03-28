@@ -60,8 +60,8 @@ const learningPathViolationErr = ref({
 const nameQuery = ref(null);
 const hideManageButton = ref(false);
 const isReadOnly = ref(false);
-const rows = ref(5);
-const rowsPerPage = [5, 10, 15, 20];
+const rows = ref(10);
+const rowsPerPage = [10, 25, 50, 100];
 
 onMounted(() => {
   projectId.value = route.params.projectId;
@@ -197,14 +197,14 @@ const filterSkills = (searchQuery) => {
   <div>
     <sub-page-header title="Skills"/>
 
-    <Card :pt="{ body: { class: '!p-0' } }">
+    <Card :pt="{ body: { class: 'p-0!' } }">
       <template #content>
         <loading-container v-bind:is-loading="loading.availableSkills || loading.badgeSkills || loading.skillOp || loading.badgeInfo">
           <div class="p-4">
             <skills-selector :options="availableSkills"
                              ref="skillsSelector"
                              v-if="!projConf.isReadOnlyProj"
-                             class="search-and-nav border rounded"
+                             class="search-and-nav border rounded-sm"
                              v-on:added="skillAdded"
                              @search-change="filterSkills"
                              :internal-search="false"
@@ -238,11 +238,23 @@ const filterSkills = (searchQuery) => {
                 </template>
               </Column>
               <Column header="Skill ID" field="skillId" sortable :class="{'flex': responsive.md.value }"></Column>
+              <Column header="Subject" field="subjectName" sortable :class="{'flex': responsive.md.value }">
+                <template #body="slotProps">
+                  <router-link v-if="slotProps.data.subjectId && !hideManageButton" :id="slotProps.data.subjectId" :to="{ name:'SubjectSkills',
+                    params: { projectId: slotProps.data.projectId, subjectId: slotProps.data.subjectId }}"
+                               class="btn btn-sm btn-outline-hc ml-2"
+                               :data-cy="`manage_${slotProps.data.subjectId}`">
+                    {{ slotProps.data.subjectName }}
+                  </router-link>
+                </template>
+              </Column>
+              <Column header="Group" field="groupName" sortable :class="{'flex': responsive.md.value }"></Column>
               <Column header="Total Points" field="totalPoints" sortable :class="{'flex': responsive.md.value }"></Column>
               <Column header="Delete" :class="{'flex': responsive.md.value }">
                 <template #body="slotProps">
                   <SkillsButton v-if="!projConf.isReadOnlyProj" v-on:click="deleteSkill(slotProps.data)" size="small"
                                 :id="`deleteSkill_${slotProps.data.skillId}`"
+                                :disabled="badge && badge.enabled === 'true' && badgeSkills.length === 1"
                           :data-cy="`deleteSkill_${slotProps.data.skillId}`" icon="fas fa-trash" label="Delete"
                           :aria-label="`remove dependency on ${slotProps.data.skillId}`">
                   </SkillsButton>

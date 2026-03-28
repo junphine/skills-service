@@ -62,23 +62,7 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         SkillsClientException skillsClientException = thrown()
         skillsClientException.message.contains("Video URL must be configured prior to attempting to set selfReportingType=Video")
     }
-
-    def "not allowed to save self-report=video if numPerformToCompletion > 1"() {
-        def p1 = createProject(1)
-        def p1subj1 = createSubject(1, 1)
-        def p1Skills = createSkills(1, 1, 1, 100)
-        skillsService.createProjectAndSubjectAndSkills(p1, p1subj1, p1Skills)
-
-        skillsService.saveSkillVideoAttributes(p1.projectId, p1Skills[0].skillId, [videoUrl: "http://some.url"])
-        p1Skills[0].selfReportingType = SkillDef.SelfReportingType.Video
-        p1Skills[0].numPerformToCompletion = 2
-        when:
-        skillsService.createSkill(p1Skills[0])
-        then:
-        SkillsClientException skillsClientException = thrown()
-        skillsClientException.message.contains("When selfReportingType=Video numPerformToCompletion must equal to 1 but [2] was provided")
-    }
-
+    
     def "save and get video settings" () {
         def p1 = createProject(1)
         def p1subj1 = createSubject(1, 1)
@@ -164,22 +148,22 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         attachmentRepo.count() == 2
         skill1.videoSummary.videoType == "video/webm"
         skill1Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-project.webm"'
+        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-project.webm"'
         skill1Download.file.bytes == Files.readAllBytes(video1.getFile().toPath())
 
         skill2.videoSummary.videoType == "video/mp4"
         skill2Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2Download.file.bytes == Files.readAllBytes(video2.getFile().toPath())
 
         skill1After.videoSummary.videoType == "video/webm"
         skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-skill.webm"'
+        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-skill.webm"'
         skill1DownloadAfter.file.bytes == Files.readAllBytes(video3.getFile().toPath())
 
         skill2After.videoSummary.videoType == "video/mp4"
         skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2DownloadAfter.file.bytes == Files.readAllBytes(video2.getFile().toPath())
     }
 
@@ -233,11 +217,11 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         skill2.transcript == "transcript"
 
         skill1Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-project.webm"'
+        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-project.webm"'
         skill1Download.file.bytes == Files.readAllBytes(video1.getFile().toPath())
 
         skill2Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2Download.file.bytes == Files.readAllBytes(video2.getFile().toPath())
 
         skill1After.videoUrl.startsWith('/api/download/')
@@ -251,11 +235,11 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         skill2After.transcript == "transcript"
 
         skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-project.webm"'
+        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-project.webm"'
         skill1DownloadAfter.file.bytes == Files.readAllBytes(video1.getFile().toPath())
 
         skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2DownloadAfter.file.bytes == Files.readAllBytes(video2.getFile().toPath())
     }
 
@@ -298,12 +282,12 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         attachmentRepo.count() == 1
         skill1.videoSummary.videoType == "video/webm"
         skill1Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-project.webm"'
+        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-project.webm"'
         skill1Download.file.bytes == Files.readAllBytes(video1.getFile().toPath())
 
         skill2.videoSummary.videoType == "video/mp4"
         skill2Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2Download.file.bytes == Files.readAllBytes(video2.getFile().toPath())
 
         !skill1After.videoSummary.videoType
@@ -311,7 +295,7 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
 
         skill2After.videoSummary.videoType == "video/mp4"
         skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2DownloadAfter.file.bytes == Files.readAllBytes(video2.getFile().toPath())
     }
 
@@ -360,19 +344,19 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         skill2.videoSummary.videoType == "video/mp4"
         skill2.videoSummary.videoUrl.startsWith('/api/download')
         skill2Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2Download.file.bytes == Files.readAllBytes(video2.getFile().toPath())
 
         skill1After.videoSummary.videoType == "video/webm"
         skill1After.videoSummary.videoUrl.startsWith('/api/download')
         skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-skill.webm"'
+        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-skill.webm"'
         skill1DownloadAfter.file.bytes == Files.readAllBytes(video3.getFile().toPath())
 
         skill2After.videoSummary.videoType == "video/mp4"
         skill2After.videoSummary.videoUrl.startsWith('/api/download')
         skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2DownloadAfter.file.bytes == Files.readAllBytes(video2.getFile().toPath())
     }
 
@@ -496,19 +480,19 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         attachmentRepo.count() == 1
         skill1.videoSummary.videoType == "video/webm"
         skill1Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-project.webm"'
+        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-project.webm"'
         skill1Download.file.bytes == Files.readAllBytes(video1.getFile().toPath())
 
         skill2.videoSummary.videoType == "video/mp4"
         skill2Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2Download.file.bytes == Files.readAllBytes(video2.getFile().toPath())
 
         !skill1After.videoSummary
 
         skill2After.videoSummary.videoType == "video/mp4"
         skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/mp4"
-        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-quiz.mp4"'
+        skill2DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-quiz.mp4"'
         skill2DownloadAfter.file.bytes == Files.readAllBytes(video2.getFile().toPath())
     }
 
@@ -742,7 +726,7 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         skill1.height == 300
 
         skill1Download.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-project.webm"'
+        skill1Download.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-project.webm"'
         skill1Download.file.bytes == Files.readAllBytes(video1.getFile().toPath())
 
         skill1After.videoUrl.startsWith('/api/download/')
@@ -753,7 +737,7 @@ class SkillVideoConfigSpecs extends DefaultIntSpec {
         skill1After.height == 600
 
         skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_TYPE)[0] == "video/webm"
-        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'attachment; filename="create-project.webm"'
+        skill1DownloadAfter.headers.get(HttpHeaders.CONTENT_DISPOSITION)[0] == 'inline; filename="create-project.webm"'
         skill1DownloadAfter.file.bytes == Files.readAllBytes(video1.getFile().toPath())
     }
 }

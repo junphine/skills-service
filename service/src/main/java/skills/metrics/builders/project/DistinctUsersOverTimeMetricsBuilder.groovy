@@ -15,10 +15,11 @@
  */
 package skills.metrics.builders.project
 
-
+import callStack.profiler.Profile
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.stereotype.Component
 import skills.controller.result.model.CountItem
+import skills.controller.result.model.TimestampCountItem
 import skills.metrics.builders.MetricsParams
 import skills.metrics.builders.ProjectMetricsBuilder
 import skills.services.AdminUsersService
@@ -35,12 +36,33 @@ class DistinctUsersOverTimeMetricsBuilder implements ProjectMetricsBuilder {
     }
 
     @Override
+    @Profile
     def build(String projectId, String chartId, Map<String, String> props) {
         Date start = MetricsParams.getStart(projectId, chartId, props)
         String skillId = props.containsKey(MetricsParams.P_SKILL_ID) ? MetricsParams.getSkillId(projectId, chartId, props) : null
-        List<CountItem> dataItems = adminUsersService.getUsage(projectId, skillId, start)
-        dataItems.sort() {it.value }
+        Boolean byMonth = props.containsKey(MetricsParams.P_BY_MONTH) ? MetricsParams.getByMonth(props) : false
 
-        return dataItems;
+        List<CountItem> users
+        List<CountItem> newUsers
+
+        if(byMonth) {
+            users = adminUsersService.getUsagePerMonth(projectId, skillId, start)
+            newUsers = adminUsersService.getUsagePerMonth(projectId, skillId, start, true)
+        }
+        else {
+            users = adminUsersService.getUsage(projectId, skillId, start)
+            newUsers = adminUsersService.getUsage(projectId, skillId, start, true)
+        }
+        if(users.size() > 0 && newUsers.size() == 0) {
+            newUsers
+            users.each{ it ->
+                def count = new TimestampCountItem(value: it.value, count: 0)
+                newUsers.push(count)
+            }
+        }
+        users.sort() {it.value }
+        newUsers.sort() { it.value }
+
+        return [ users: users, newUsers: newUsers ];
     }
 }

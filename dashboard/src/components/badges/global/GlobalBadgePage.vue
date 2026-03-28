@@ -23,15 +23,20 @@ import GlobalBadgeService from "@/components/badges/global/GlobalBadgeService.js
 import {useBadgeState} from "@/stores/UseBadgeState.js";
 import {storeToRefs} from "pinia";
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
+import Avatar from 'primevue/avatar'
+import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
+import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js'
 
 const dialogMessages = useDialogMessages()
 const route = useRoute();
 const router = useRouter();
+const communityLabels = useCommunityLabels()
 
 const isLoading = ref(true);
 const badgeId = ref(route.params.badgeId);
 const showEdit = ref(false);
 const badgeState = useBadgeState();
+const appConfig = useAppConfig()
 const { badge } = storeToRefs(badgeState);
 
 onMounted(() => {
@@ -83,17 +88,20 @@ const loadBadge = () => {
   }
 };
 
-const badgeEdited = (editedBadge) => {
+const goLive = (editedBadge) => {
   GlobalBadgeService.saveBadge(editedBadge).then((resp) => {
-    const origId = badge.badgeId;
-    badgeState.loadGlobalBadgeDetailsState(badgeId.value).finally(() => {
-      badge.value = badgeState.badge;
-    });
-    if (origId !== resp.badgeId) {
-      router.replace({ name: route.name, params: { ...route.params, badgeId: resp.badgeId } });
-      badgeId.value = resp.badgeId;
+    badgeEdited(resp)
+  });
+
+};
+const badgeEdited = (editedBadge) => {
+  const origId = badge.value.badgeId;
+  badgeState.loadGlobalBadgeDetailsState(editedBadge.badgeId).finally(() => {
+    badge.value = badgeState.badge;
+    if (origId !== editedBadge.badgeId) {
+      badgeId.value = editedBadge.badgeId;
+      router.replace({ name: route.name, params: { ...route.params, badgeId: editedBadge.badgeId } });
     }
-  }).finally(() => {
   });
 };
 
@@ -122,7 +130,9 @@ const handlePublish = () => {
         }
         toSave.startDate = toDate(toSave.startDate);
         toSave.endDate = toDate(toSave.endDate);
-        badgeEdited(toSave);
+        toSave.isEdit = true
+        toSave.enableProtectedUserCommunity = communityLabels.isRestrictedUserCommunity(toSave.userCommunity)
+        goLive(toSave);
       }
     });
   } else {
@@ -159,34 +169,56 @@ const toDate = (value) => {
         <i v-if="badge && badge.endDate" class="fas fa-gem ml-2" style="font-size: 1.6rem; color: purple;"></i>
       </template>
       <template #subSubTitle v-if="badge">
-        <ButtonGroup>
-          <SkillsButton @click="displayEditBadge"
-                    ref="editBadgeButton"
-                    class="btn btn-outline-primary"
-                    size="small"
-                    id="editBadgeButton"
-                    data-cy="btn_edit-badge"
-                    :aria-label="'edit Badge '+badge.badgeId"
-                    label="Edit"
-                    :track-for-focus="true"
-                    icon="fas fa-edit">
-          </SkillsButton>
-          <SkillsButton v-if="badge.enabled !== 'true'"
-                    @click.stop="handlePublish"
-                    class="btn btn-outline-primary"
-                    size="small"
-                    aria-label="Go Live"
-                    id="globalBadgeGoLiveButton"
-                    :track-for-focus="true"
-                    data-cy="goLive" label="Go Live">
-          </SkillsButton>
-        </ButtonGroup>
+        <div>
+          <div>
+            <div>UC Below: </div>
+            <div v-if="badgeState.badge.userCommunity" class="my-1" data-cy="userCommunity">
+              <Avatar icon="fas fa-shield-alt" class="text-red-500"></Avatar>
+              <span
+                  class="text-secondary font-italic ml-1">{{ appConfig.userCommunityBeforeLabel }}</span> <span
+                class="text-primary">{{ badgeState.badge.userCommunity }}</span> <span
+                class="text-secondary font-italic">{{ appConfig.userCommunityAfterLabel }}</span>
+            </div>
+          </div>
+          <div>
+            <ButtonGroup>
+              <SkillsButton @click="displayEditBadge"
+                        ref="editBadgeButton"
+                        class="btn btn-outline-primary"
+                        size="small"
+                        id="editBadgeButton"
+                        data-cy="btn_edit-badge"
+                        :aria-label="'edit Badge '+badge.badgeId"
+                        label="Edit"
+                        :track-for-focus="true"
+                        icon="fas fa-edit">
+              </SkillsButton>
+              <SkillsButton v-if="badge.enabled !== 'true'"
+                        @click.stop="handlePublish"
+                        class="btn btn-outline-primary"
+                        size="small"
+                        aria-label="Go Live"
+                        id="globalBadgeGoLiveButton"
+                        :track-for-focus="true"
+                        data-cy="goLive" label="Go Live">
+              </SkillsButton>
+            </ButtonGroup>
+            </div>
+        </div>
       </template>
     </page-header>
+
+    <Message v-if="badge && badge.enabled !== 'true'"
+             :closable="false"
+             severity="warn">
+      This badge cannot be achieved until it is live
+    </Message>
 
     <navigation :nav-items="[
           {name: 'Skills', iconClass: 'fa-graduation-cap skills-color-skills', page: 'GlobalBadgeSkills'},
           {name: 'Levels', iconClass: 'fa-trophy skills-color-levels', page: 'GlobalBadgeLevels'},
+          { name: 'Access', iconClass: 'fas fa-shield-alt', page: 'GlobalBadgeAccessPage' },
+          {name: 'Users', iconClass: 'fa-users skills-color-users', page: 'GlobalBadgeUsers'},
         ]">
     </navigation>
     <edit-badge v-if="showEdit" v-model="showEdit" :id="badge.badgeId" :badge="badge" :is-edit="true"

@@ -28,7 +28,7 @@ export default {
   },
   copyQuiz(quizDef) {
     const quizId = quizDef.originalQuizId;
-    return axios.post(`/admin/quiz-definitions/${quizId}/copy`, quizDef).then((response) => response.data)
+    return axios.post(`/admin/quiz-definitions/${quizId}/copy`, quizDef, {handleError: false}).then((response) => response.data)
   },
   deleteQuizId(quizId) {
     return axios.delete(`/admin/quiz-definitions/${quizId}`).then((response) => response.data)
@@ -79,8 +79,8 @@ export default {
       newDisplayOrderIndex
     })
   },
-  getQuizMetrics(quizId) {
-    return axios.get(`/admin/quiz-definitions/${quizId}/metrics`).then((response) => response.data)
+  getQuizMetrics(quizId, params) {
+    return axios.get(`/admin/quiz-definitions/${quizId}/metrics`, { params }).then((response) => response.data)
   },
   getQuizAnswerSelectionHistory(quizId, answerDefId, params) {
     return axios
@@ -92,6 +92,11 @@ export default {
       .get(`/admin/quiz-definitions/${quizId}/runs`, { params })
       .then((response) => response.data)
   },
+  getGlobalQuizRunsHistory(params) {
+    return axios
+        .get(`/app/quiz-runs`, { params })
+        .then((response) => response.data)
+  },
   getSingleQuizHistoryRun(quizId, attemptId) {
     return axios
       .get(`/admin/quiz-definitions/${quizId}/runs/${attemptId}`)
@@ -99,7 +104,7 @@ export default {
   },
   gradeQuizAnswerAttempt(quizId, userId, quizAttemptId, answerDefId, gradingInfo) {
     return axios
-        .post(`/admin/quiz-definitions/${quizId}/users/${userId}/attempt/${quizAttemptId}/gradeAnswer/${answerDefId}`, gradingInfo)
+        .post(`/admin/quiz-definitions/${quizId}/users/${userId}/attempt/${quizAttemptId}/gradeAnswer/${answerDefId}`, gradingInfo, { handleError: false })
         .then((response) => response.data)
   },
   deleteQuizRunHistoryItem(quizId, attemptId) {
@@ -145,14 +150,14 @@ export default {
       .get(`/admin/quiz-definitions/${quizId}/skills`)
       .then((response) => response.data)
   },
-  getUserTagCounts(quizId, userTagKey) {
+  getUserTagCounts(quizId, userTagKey, startDate, endDate) {
     return axios
-      .get(`/admin/quiz-definitions/${quizId}/userTagCounts?userTagKey=${userTagKey}`)
+      .get(`/admin/quiz-definitions/${quizId}/userTagCounts?userTagKey=${userTagKey}&startDate=${startDate}&endDate=${endDate}`)
       .then((response) => response.data)
   },
-  getUsageOverTime(quizId) {
+  getUsageOverTime(quizId, startDate, endDate) {
     return axios
-      .get(`/admin/quiz-definitions/${quizId}/usageOverTime`)
+      .get(`/admin/quiz-definitions/${quizId}/usageOverTime?startDate=${startDate}&endDate=${endDate}`)
       .then((response) => response.data)
   },
   saveMyPreference(quizId, preferenceKey, value) {
@@ -168,6 +173,26 @@ export default {
   validateQuizForEnablingCommunity(quizId) {
     return axios
         .get(`/admin/quiz-definitions/${encodeURIComponent(quizId)}/validateEnablingCommunity`)
+        .then((response) => response.data)
+  },
+  getTextInputAiGradingAttrs(quizId, questionId) {
+    return axios
+        .get(`/admin/quiz-definitions/${encodeURIComponent(quizId)}/questions/${questionId}/textInputAiGradingConf`)
+        .then((response) => response.data)
+  },
+  saveTextInputAiGradingAttrs(quizId, questionId, attrs) {
+    return axios
+        .post(`/admin/quiz-definitions/${encodeURIComponent(quizId)}/questions/${questionId}/textInputAiGradingConf`, attrs)
+        .then((response) => response.data)
+  },
+  testTextInputAiGrading(quizId, questionId, correctAnswer, minimumConfidenceLevel, studentAnswer) {
+    const attrs = {
+      studentAnswer,
+      correctAnswer,
+      minimumConfidenceLevel,
+    }
+    return axios
+        .post(`/admin/quiz-definitions/${encodeURIComponent(quizId)}/testTextInputAiGrading/${questionId}`, attrs, { handleError: false })
         .then((response) => response.data)
   }
 }

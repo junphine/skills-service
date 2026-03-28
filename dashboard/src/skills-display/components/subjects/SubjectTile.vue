@@ -80,14 +80,14 @@ const activePointsColor = computed(() => {
       <div class="px-4 pt-4">
         <ribbon :color="ribbonColor" class="subject-tile-ribbon">
           <div class="flex justify-center">
-            <div class="overflow-hidden text-ellipsis text-center max-w-[20rem]">{{ subject.subject }}</div>
+            <h3 class="overflow-hidden text-ellipsis text-center max-w-[20rem]">{{ subject.subject }}</h3>
           </div>
         </ribbon>
       </div>
     </template>
     <template #footer>
       <div  class="px-4 pb-4 pt-2">
-        <i :class="subject.iconClass" class="text-7xl text-surface-500 dark:text-surface-300 sd-theme-subject-tile-icon" aria-hidden="true"/>
+        <i class="text-7xl! text-surface-500 dark:text-surface-300 sd-theme-subject-tile-icon" :class="subject.iconClass" aria-hidden="true"/> 
         <div class="text-xl pt-1 font-medium" data-cy="levelTitle">{{ attributes.levelDisplayName }} {{ subject.skillsLevel }}</div>
         <div class="flex justify-center pt-2 pb-2 subject-progress-stars-icons">
           <LevelsProgress :level="subject.skillsLevel" :totalLevels="subject.totalLevels" data-cy="subjectStars"/>
@@ -138,7 +138,7 @@ const activePointsColor = computed(() => {
         <div class="pt-6" >
           <router-link v-if="!attributes.isSummaryOnly"
             :to="{ name: skillsDisplayInfo.getContextSpecificRouteName('SubjectDetailsPage'), params: { subjectId: subject.subjectId } }"
-            :aria-label="`Click to navigate to the ${subject.subject} subject page.`"
+            :aria-label="`Click to navigate to the ${subject.subject} ${attributes.subjectDisplayName} page.`"
             data-cy="subjectTileBtn" tabindex="-1">
             <Button
               label="View"

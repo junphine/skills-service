@@ -24,12 +24,13 @@ import GeneralSettings from '@/components/settings/GeneralSettings.vue'
 import Preferences from '@/components/settings/Preferences.vue'
 import SecuritySettings from '@/components/settings/SecuritySettings.vue'
 import EmailSettings from '@/components/settings/EmailSettings.vue'
+import AiPromptSettings from '@/components/settings/AiPromptSettings.vue'
 import SystemSettings from '@/components/settings/SystemSettings.vue'
 import ProjectPage from '@/components/projects/ProjectPage.vue'
 import Subjects from '@/components/subjects/Subjects.vue'
 import Badges from '@/components/badges/Badges.vue'
 import Levels from '@/components/levels/Levels.vue'
-import FullDependencyGraph from '@/components/skills/dependencies/FullDependencyGraph.vue'
+const FullDependencyGraph = defineAsyncComponent(() => import('@/components/skills/dependencies/FullDependencyGraph.vue'))
 import Users from '@/components/users/Users.vue'
 import SelfReportPageNav from '@/components/skills/selfReport/SelfReportPageNav.vue'
 import SelfReportStatusPage from '@/components/skills/selfReport/SelfReportStatusPage.vue'
@@ -50,6 +51,7 @@ import UserTagMetrics from '@/components/metrics/userTags/UserTagMetrics.vue'
 import SkillsCatalog from '@/components/skills/catalog/SkillsCatalog.vue'
 import AddSkillEvent from '@/components/skills/AddSkillEvent.vue'
 import VideoConfigPage from '@/components/video/VideoConfigPage.vue'
+import SlidesConfigPage from '@/components/slides/SlidesConfigPage.vue'
 import ExpirationConfigPage from '@/components/expiration/ExpirationConfigPage.vue'
 import SkillPage from '@/components/skills/SkillPage.vue'
 import SkillOverview from '@//components/skills/SkillOverview.vue'
@@ -94,6 +96,11 @@ import SkillsClientPath from '@/router/SkillsClientPath.js'
 import log from 'loglevel'
 import UserArchivePage from '@/components/users/UserArchivePage.vue';
 import UsersTablePage from '@/components/users/UsersTablePage.vue';
+import GlobalUsersTablePage from '@/components/users/GlobalUsersTablePage.vue';
+import SupportPage from "@/components/contact/SupportPage.vue";
+import {defineAsyncComponent} from "vue";
+import GlobalBadgeAccessPage from '@/components/badges/global/GlobalBadgeAccessPage.vue'
+import AdminGroupGlobalBadges from '@/components/access/groups/AdminGroupGlobalBadges.vue'
 
 const routes = [
   {
@@ -326,6 +333,17 @@ const routes = [
           nonAdmin: true,
           announcer: {
             message: 'Email Configuration Settings',
+          },
+        },
+      }, {
+        name: 'AiPromptSettings',
+        path: 'aiPromptSettings',
+        component: AiPromptSettings,
+        meta: {
+          requiresAuth: true,
+          nonAdmin: true,
+          announcer: {
+            message: 'AI Prompt Settings',
           },
         },
       }, {
@@ -642,6 +660,17 @@ const routes = [
         },
       }],
     }, {
+      name: 'ConfigureSlides',
+      path: 'config-slides',
+      component: SlidesConfigPage,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Configure Slides',
+        },
+      },
+      props: true,
+    }, {
       name: 'ConfigureVideo',
       path: 'config-video',
       component: VideoConfigPage,
@@ -833,7 +862,34 @@ const routes = [
           message: 'Global Badge Levels',
         },
       },
-    }],
+    }, {
+      name: 'GlobalBadgeAccessPage',
+      path: 'access',
+      component: GlobalBadgeAccessPage,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Global Badge Access',
+        },
+      },
+    },
+      {
+        path: 'users',
+        component: Users,
+        meta: { requiresAuth: true },
+        children: [{
+          component: GlobalUsersTablePage,
+          name: 'GlobalBadgeUsers',
+          path: '',
+          meta: {
+            requiresAuth: true,
+            announcer: {
+              message: 'Global Badge Users',
+            },
+          },
+        }],
+      },
+    ],
   },
   {
     path: '/administrator/adminGroups/:adminGroupId',
@@ -872,6 +928,16 @@ const routes = [
         requiresAuth: true,
         announcer: {
           message: 'Admin Group Quizzes and Surveys',
+        },
+      },
+    }, {
+      name: 'AdminGroupGlobalBadges',
+      path: 'group-global-badges',
+      component: AdminGroupGlobalBadges,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Admin Group Global Badges',
         },
       },
     }],
@@ -920,6 +986,17 @@ const routes = [
       requiresAuth: true,
       announcer: {
         message: 'User Agreement',
+      },
+    },
+  },
+  {
+    path: '/support',
+    component: SupportPage,
+    name: 'SupportPage',
+    meta: {
+      requiresAuth: true,
+      announcer: {
+        message: 'Customer Support',
       },
     },
   }

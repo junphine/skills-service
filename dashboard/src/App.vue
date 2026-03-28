@@ -39,10 +39,12 @@ import { invoke, until } from '@vueuse/core'
 import DashboardFooter from '@/components/header/DashboardFooter.vue'
 import { useUserAgreementInterceptor } from '@/interceptors/UseUserAgreementInterceptor.js'
 import PkiAppBootstrap from '@/components/access/PkiAppBootstrap.vue'
-import { usePrimeVue } from 'primevue/config'
 import ScrollToTop from '@/common-components/utilities/ScrollToTop.vue'
 import IconManagerService from '@/components/utils/iconPicker/IconManagerService.js'
 import log from 'loglevel';
+import {useUserPreferences} from "@/stores/UseUserPreferences.js";
+import {useMatomoSupport} from "@/stores/UseMatomoSupport.js";
+import { useAiPromptState } from '@/common-components/utilities/learning-conent-gen/UseAiPromptState.js'
 
 const authState = useAuthState()
 const appInfoState = useAppInfoState()
@@ -52,6 +54,8 @@ const accessState = useAccessState()
 const errorHandling = useErrorHandling()
 const userAgreementInterceptor = useUserAgreementInterceptor()
 const route = useRoute()
+const matomo = useMatomoSupport()
+const aiPrompts = useAiPromptState()
 
 const customGlobalValidators = useCustomGlobalValidators()
 const globalNavGuards = useGlobalNavGuards()
@@ -67,22 +71,26 @@ const themeHelper = useThemesHelper()
 
 const addCustomIconCSSForClientDisplay = () => {
   if (skillsDisplayInfo.isSkillsClientPath()) {
-    IconManagerService.refreshCustomIconCss(skillsDisplayAttributes.projectId, false)
+    IconManagerService.refreshCustomIconCss(skillsDisplayAttributes.projectId, null)
   }
 }
 const inceptionConfigurer = useInceptionConfigurer()
 const pageVisitService = usePageVisitService()
+const userPreferences = useUserPreferences()
 const loadUserAndDisplayInfo = () => {
   inceptionConfigurer.configure()
   pageVisitService.reportPageVisit(route.path, route.fullPath)
   const loadRoot = accessState.loadIsRoot()
-  const loadSupervisor = accessState.loadIsSupervisor()
   const loadEmailEnabled = appInfoState.loadEmailEnabled()
   const loadCustomIconCSS = addCustomIconCSSForClientDisplay()
-  const promises = [loadRoot, loadSupervisor, loadEmailEnabled, loadCustomIconCSS]
+  const loadAiPromptSettings = aiPrompts.loadAiPromptSettings()
+  const promises = [loadRoot, loadEmailEnabled, loadCustomIconCSS, loadAiPromptSettings]
   if (!skillsDisplayInfo.isSkillsClientPath()) {
-    const loadTheme = themeHelper.loadTheme()
-    promises.push(loadTheme)
+    const loadUserPreferences =
+        userPreferences.loadUserPreferences().then(() => {
+          return themeHelper.loadTheme()
+        })
+    promises.push(loadUserPreferences)
   }
   return Promise.all(promises).then(() => {
     isAppLoaded.value = true
@@ -91,6 +99,7 @@ const loadUserAndDisplayInfo = () => {
 watch(() => authState.userInfo, async (newUserInfo) => {
   if (newUserInfo) {
     await loadUserAndDisplayInfo()
+    initMatomo()
   } else {
     isAppLoaded.value = true
   }
@@ -125,7 +134,7 @@ onMounted(() => {
 const restoreSessionIfAvailable = () => {
   if (skillsDisplayInfo.isSkillsClientPath()) {
     authState.setRestoringSession(false)
-    return Promise.resolve()
+    return authState.fetchUser()
   }
   return authState.restoreSessionIfAvailable()
 }
@@ -148,9 +157,19 @@ const loadConfigs = () => {
           // do not need to set isAppLoaded to true here because it will be handled
           // by the watch of authState.userInfo
         }
+
+        initMatomo()
       })
     })
   })
+}
+
+const initMatomo = () => {
+  if (skillsDisplayInfo.isSkillsClientPath()){
+    matomo.init({ isSkillsClient: true, projectId: skillsDisplayAttributes.projectId })
+  } else if (authState.isAuthenticated) {
+    matomo.init()
+  }
 }
 
 const notSkillsClient = computed(() => !skillsDisplayInfo.isSkillsClientPath())
@@ -163,9 +182,9 @@ const isDashboardFooter = computed(() => notSkillsClient.value && !isLoadingApp.
 </script>
 
 <template>
-<!--  :class="{ 'st-dark-theme': themeHelper.isDarkTheme, 'st-light-theme': !themeHelper.isDarkTheme }"-->
   <div role="presentation"
-       class="m-0 bg-surface-50 dark:bg-surface-950">
+       class="m-0 bg-surface-50 dark:bg-surface-950"
+       :class="{ 'h-screen in-skills-client': skillsDisplayInfo.isSkillsClientPath() }">
     <VueAnnouncer class="sr-only" />
 
     <customizable-header v-if="isCustomizableHeader" role="region" aria-label="dynamic customizable header"></customizable-header>
@@ -189,7 +208,7 @@ const isDashboardFooter = computed(() => notSkillsClient.value && !isLoadingApp.
             <RouterView />
           </div>
         </div>
-        <ConfirmDialog></ConfirmDialog>
+        <ConfirmDialog :pt="{ root: { class: 'w-2/3' } }"></ConfirmDialog>
         <dashboard-footer v-if="isDashboardFooter" role="region" />
         <customizable-footer v-if="isDashboardFooter" role="region" aria-label="dynamic customizable footer"></customizable-footer>
         <scroll-to-top v-if="!isScrollToTopDisabled && !inBootstrapMode" />
@@ -206,26 +225,6 @@ const isDashboardFooter = computed(() => notSkillsClient.value && !isLoadingApp.
 </style>
 
 <style>
-body a, a:link, a:visited {
-  //text-decoration: none !important;
-}
-
-body .st-light-theme a, a:link {
-  //color: #2f64bd !important;
-}
-
-body .st-light-theme a:visited {
-  //color: #784f9f !important;
-}
-
-body .st-dark-theme a, a:link {
-  //color: #99befb !important;
-}
-
-body .st-dark-theme a:visited {
-  //color: #d5aafb !important;
-}
-
 body a:hover, body a:focus {
   text-decoration: underline !important;
 }

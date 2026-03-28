@@ -70,7 +70,7 @@ onMounted(() => {
     <skills-spinner :is-loading="loading" />
 
     <!-- on FF charts end up pushing column to the next row; this is a workaround -->
-    <div v-if="!loading" :style="`width: ${layoutSizes.tableMaxWidth}px;`">
+    <div v-if="!loading">
       <div class="flex flex-col lg:flex-row mb-4 gap-6">
         <stats-card class="flex flex-1" title="Achieved" :statNum="numUsersAchieved" :icon="`fa fa-trophy ${colors.getTextClass(0)}`" data-cy="numUserAchievedStatCard">
           Number of users that achieved this skill
@@ -96,12 +96,12 @@ onMounted(() => {
           <SkillsCardHeader title="Post Achievement Metrics"></SkillsCardHeader>
         </template>
         <template #content>
-          <div class="flex flex-col lg:flex-row gap-6">
-            <div class="mb-4">
-              <post-achievement-users-pie-chart class="h-full" style="min-width: 16rem"/>
+          <div class="flex flex-col xl:flex-row gap-6 w-full overflow-hidden">
+            <div class="lg:min-w-[16rem] xl:max-w-[33.333%] flex-shrink-0 mb-4">
+              <post-achievement-users-pie-chart class="h-full w-full"/>
             </div>
-            <div class="flex-1 mb-4">
-              <binned-post-achievement-usage class="h-full"/>
+            <div class="xl:w-2/3 mb-4">
+              <binned-post-achievement-usage class="h-full w-full overflow-x-auto"/>
             </div>
           </div>
           <div class="flex">

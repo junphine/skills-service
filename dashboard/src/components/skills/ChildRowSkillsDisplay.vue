@@ -14,22 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import {computed, onMounted, ref, watch} from 'vue'
 import Badge from 'primevue/badge'
 import Card from 'primevue/card'
 import InputGroup from 'primevue/inputgroup'
 import InputGroupAddon from 'primevue/inputgroupaddon'
 import LoadingContainer from '@/components/utils/LoadingContainer.vue'
 import SkillsService from '@/components/skills/SkillsService'
-import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import {useNumberFormat} from '@/common-components/filter/UseNumberFormat.js'
 import SkillReuseIdUtil from '@/components/utils/SkillReuseIdUtil'
 import MediaInfoCard from '@/components/utils/cards/MediaInfoCard.vue'
-import { useTimeWindowFormatter } from '@/components/skills/UseTimeWindowFormatter.js'
-import { useProjConfig } from '@/stores/UseProjConfig.js'
+import {useTimeWindowFormatter} from '@/components/skills/UseTimeWindowFormatter.js'
+import {useProjConfig} from '@/stores/UseProjConfig.js'
 import MarkdownText from '@/common-components/utilities/markdown/MarkdownText.vue'
 import LinkToSkillPage from '@/components/utils/LinkToSkillPage.vue'
-import { useRoute } from 'vue-router'
+import {useRoute} from 'vue-router'
+import SelfReportType from "@/components/skills/selfReport/SelfReportType.js";
+import GenerateQuizDialog2 from '@/common-components/utilities/learning-conent-gen/GenerateQuizDialog2.vue'
+import QuizService from '@/components/quiz/QuizService.js'
+import {useAppConfig} from '@/common-components/stores/UseAppConfig.js'
+import { useSubjectSkillsState } from '@/stores/UseSubjectSkillsState.js'
 
+const appConfig = useAppConfig()
 const config = useProjConfig()
 const timeWindowFormatter = useTimeWindowFormatter()
 const numberFormat = useNumberFormat()
@@ -48,6 +54,7 @@ const props = defineProps({
 const loading = ref(true)
 const skillInfo = ref({})
 const projectId = computed(() => route.params.projectId)
+const skillsState = useSubjectSkillsState()
 
 onMounted(() => {
   loadSkill()
@@ -144,13 +151,56 @@ const loadSkill = () => {
 }
 
 const skillIdOfTheOriginalSkill = computed(() => SkillReuseIdUtil.removeTag(skillInfo.value.skillId))
+const showGenerateQuizDialog = ref(false)
+const saveQuizForSkill = async (generatedQuiz) => {
+  const quizDef = await createQuizDef()
+  await QuizService.updateQuizDef(quizDef);
+  const savePromises = generatedQuiz.map(question =>
+      QuizService.saveQuizQuestionDef(quizDef.quizId, question)
+  );
+  await Promise.all(savePromises);
+  skillInfo.value.quizId = quizDef.quizId;
+  skillInfo.value.quizName = quizDef.name;
+  skillInfo.value.quizType = quizDef.type;
+  skillInfo.value.selfReportingType = quizDef.type;
+  skillInfo.value.selfReportEnabled = true
+  SkillsService.saveSkill( {
+    ...skillInfo.value
+  }).then(() => {
+    const subjectSkillState = skillsState.subjectSkills.find((item) => item.skillId === skillInfo.value.skillId)
+    if (subjectSkillState) {
+      subjectSkillState.quizId = quizDef.quizId;
+      subjectSkillState.quizName = quizDef.name;
+      subjectSkillState.quizType = quizDef.type;
+      subjectSkillState.selfReportingType = quizDef.type;
+      subjectSkillState.selfReportEnabled = true
+    }
+  })
+}
+const createQuizDef = async () => {
+  const randomId = Date.now().toString(36) + Math.random().toString(36).substring(2);
+  const quizId = `${skillInfo.value.skillId}Quiz`;
+  const name = `${skillInfo.value.name} Quiz`
+  const type = 'Quiz'
+  const quizIdExists = await QuizService.checkIfQuizIdExist(quizId)
+  const quizNameExists = await QuizService.checkIfQuizNameExist(name)
+  return {
+    quizId: quizIdExists ? `${quizId}${randomId}` : quizId,
+    name: quizNameExists ? `${name}${randomId}` : name,
+    type
+  }
+}
+const generateQuizDialogRef = ref(null)
+const onDialogShow = () => {
+  generateQuizDialogRef.value.generateQuizFromDescription(description.value)
+}
 </script>
 
 <template>
   <loading-container class="child-row" v-bind:is-loading="loading" :data-cy="`childRowDisplay_${skillInfo.skillId}`">
     <div v-if="isImported" class="mt-4 alert alert-info" header="Skill Catalog">
       This skill was <b>imported</b> from the
-      <Badge class=""><i class="fas fa-book"></i> CATALOG</Badge>
+      <Badge class=""><i class="fas fa-book pr-1"></i> CATALOG</Badge>
       and was initially
       defined in the <b class="text-primary">{{ skillInfo.copiedFromProjectName }}</b> project.
       This skill is
@@ -159,7 +209,7 @@ const skillIdOfTheOriginalSkill = computed(() => SkillReuseIdUtil.removeTag(skil
     </div>
     <div v-if="isReused" class="mt-4 alert alert-info" header="Skill Catalog" data-cy="reusedAlert">
       This skill is a
-      <Badge class="text-uppercase"><i class="fas fa-recycle"></i> reused</Badge>
+      <Badge class="text-uppercase"><i class="fas fa-recycle" aria-hidden="true"></i> reused</Badge>
       copy
       of another skill in this project and can only be edited from the
       <link-to-skill-page
@@ -170,15 +220,18 @@ const skillIdOfTheOriginalSkill = computed(() => SkillReuseIdUtil.removeTag(skil
       <!--                          link-label="Original Skill" data-cy="linkToTheOriginalSkill"/>-->
       .
     </div>
-    <div v-if="isImported && isDisabled" class="mt-4 alert alert-warning" header="Skill Catalog">
-      <i class="fas fa-exclamation-circle"></i> This skill is <b>disabled</b> because import was not
-      finalized yet.
-    </div>
-    <div class="md:flex">
-      <div class="flex-1 md:mr-2 mb-2">
+    <Message v-if="isImported && isDisabled" severity="warn" icon="fa fa-exclamation-triangle" data-cy="skillDisabledWarning" :closable="false">
+      <i class="fas fa-exclamation-circle"></i> This skill is <b>disabled</b> because import was not finalized yet.
+    </Message>
+    <Message v-if="!isImported && isDisabled" severity="warn" icon="fa fa-exclamation-triangle" data-cy="skillDisabledWarning" :closable="false">
+      This skill is <b>disabled</b> because it's visibility is set to hidden.
+    </Message>
+    <div class="flex flex-col gap-3">
+    <div class="flex flex-col lg:flex-row gap-3 h-full">
+      <div class="flex-1">
         <media-info-card
-          :title="`${numberFormat.pretty(totalPoints)} Points`"
           class="h-full"
+          :title="`${numberFormat.pretty(totalPoints)} Points`"
           icon-class="fas fa-calculator text-success"
           data-cy="skillOverviewTotalpoints">
           <strong>{{ numberFormat.pretty(skillInfo.pointIncrement) }}</strong> points <i
@@ -187,38 +240,50 @@ const skillIdOfTheOriginalSkill = computed(() => SkillReuseIdUtil.removeTag(skil
           v-if="skillInfo.numPerformToCompletion>1">s</span> to Completion
         </media-info-card>
       </div>
-      <div class="flex-1 mb-2">
+      <div class="flex-1">
         <media-info-card
+            class="h-full"
           :title="timeWindowFormatter.timeWindowTitle(skillInfo)"
-          class="h-full"
           icon-class="fas fa-hourglass-half text-info"
           data-cy="skillOverviewTimewindow">
           {{ timeWindowFormatter.timeWindowDescription(skillInfo) }}
         </media-info-card>
       </div>
     </div>
-    <div class="md:flex">
-      <div class="flex-1 md:mr-2 mb-2">
+    <div class="flex flex-col xl:flex-row gap-3 h-full">
+      <div class="flex-1">
         <media-info-card
+            class="h-full"
           :title="`Version # ${skillInfo.version}`"
-          class="h-full"
           icon-class="fas fa-code-branch text-warning"
           data-cy="skillOverviewVersion">
-          Mechanism of adding new skills without affecting existing software running.
+          Versioning allows adding new skills without affecting existing software.
+          It is relevant when using the skills-client library to visualize skills display and user rankings.
         </media-info-card>
       </div>
-      <div class="flex-1 mb-2">
+      <div class="flex-1">
         <media-info-card
+            class="h-full"
           :title="`Self Report: ${selfReportingTitle}`"
-          class="h-full"
           icon-class="fas fa-laptop skills-color-selfreport"
           data-cy="selfReportMediaCard">
-          <div v-if="skillInfo.selfReportingType && skillInfo.selfReportingType !== 'Disabled'">Users can <i>self report</i> this skill
+          <template #right-of-title  v-if="skillInfo.selfReportingType && skillInfo.selfReportingType !== 'Disabled' && SelfReportType.isQuizOrSurvey(skillInfo.selfReportingType)">
+            <router-link :to="{ name:'Questions', params: { quizId: skillInfo.quizId } }" data-cy="buttonToQuiz">
+              <SkillsButton
+                  :label="`View ${skillInfo.quizType}`"
+                  icon="fa-solid fa-spell-check"
+                  size="small"/>
+            </router-link>
+          </template>
+          <div v-if="skillInfo.selfReportingType && skillInfo.selfReportingType !== 'Disabled'">
+            Users can <b>self report</b> this skill
             <span v-if="skillInfo.selfReportingType === 'Approval'">and will go into an <b
               class="text-primary">approval</b> queue.</span>
             <span v-if="skillInfo.selfReportingType === 'HonorSystem'">and will apply <b class="text-primary">immediately</b>.</span>
             <span v-if="skillInfo.selfReportingType === 'Quiz'">and points will be awarded after the
               <router-link
+                  class="underline"
+                  data-cy="linkToQuiz"
                 :to="{ name:'Questions', params: { quizId: skillInfo.quizId } }"
               >{{ skillInfo.quizName }}</router-link> {{ skillInfo.quizType
               }} is {{ skillInfo.quizType === 'Survey' ? 'completed' : 'passed' }}!
@@ -226,9 +291,24 @@ const skillIdOfTheOriginalSkill = computed(() => SkillReuseIdUtil.removeTag(skil
           </div>
           <div v-else>
             Self reporting is <b class="text-primary">disabled</b> for this skill.
+            <div v-if="description && appConfig.enableOpenAIIntegration" class="mt-2">
+              <span class="mr-2">Generate a Quiz for this skill using AI </span>
+              <SkillsButton icon="fa-solid fa-wand-magic-sparkles"
+                            label="AI"
+                            size="small"
+                            data-cy="generateQuizBtn"
+                            @click="showGenerateQuizDialog = true"/>
+            </div>
           </div>
+          <generate-quiz-dialog2
+              v-if="showGenerateQuizDialog"
+              ref="generateQuizDialogRef"
+              v-model="showGenerateQuizDialog"
+              @generated-quiz="saveQuizForSkill"
+              @show="onDialogShow" />
         </media-info-card>
       </div>
+    </div>
     </div>
 
     <Card class="mt-2">

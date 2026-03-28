@@ -17,6 +17,7 @@ limitations under the License.
 import { useTimeUtils } from '@/common-components/utilities/UseTimeUtils.js'
 import ApprovalEventMessage from '@/skills-display/components/skill/ApprovalEventMessage.vue';
 import { useSelfReportHelper } from '@/skills-display/UseSelfReportHelper.js';
+import SkillsClientPath from "@/router/SkillsClientPath.js";
 
 const props = defineProps({
   events: {
@@ -55,11 +56,12 @@ const getApprover = (item) => {
   return item.approverUserIdForDisplay ? item.approverUserIdForDisplay : item.approverUserId
 }
 
+const isSkillsClient = SkillsClientPath.isSkillsClientIframePath()
 </script>
 
 <template>
   <div class="pt-2">
-    <Timeline :pt="{ eventOpposite: { class: '!p-0 !flex-none' } }" :value="props.events" align="left" data-cy="approvalHistoryTimeline">
+    <Timeline :pt="{ eventOpposite: { class: 'p-0! flex-none!' } }" :value="props.events" align="left" data-cy="approvalHistoryTimeline">
       <template #marker="slotProps">
         <div class="w-[2rem] h-[2rem] p-0 rounded-full text-white flex items-center justify-center" :class="getIconBackground(slotProps.item)">
             <i :class="getIconClass(slotProps.item)"></i>
@@ -72,7 +74,7 @@ const getApprover = (item) => {
           <i class="fas fa-circle px-1 text-surface-400" style="font-size: .5rem;"></i>
           <small class="text-muted py-2" :title="`${timeUtils.formatDate(slotProps.item.eventTime)}`">{{timeUtils.relativeTime(slotProps.item.eventTime)}}</small>
         </div>
-        <div v-if="selfReportHelper.isFailed(slotProps.item.eventStatus)" class="pb-2">
+        <div v-if="!isSkillsClient && selfReportHelper.isFailed(slotProps.item.eventStatus)" class="pb-2">
           <span class="text-muted text-sm">
             View <router-link data-cy="myQuizAttemptsLink" :to="{ name:'MyQuizAttemptsPage' }">My Quiz Attempts</router-link> History
           </span>

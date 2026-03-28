@@ -19,6 +19,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.CrudRepository
 import org.springframework.data.repository.PagingAndSortingRepository
+import org.springframework.data.repository.query.Param
 import org.springframework.lang.Nullable
 import skills.skillLoading.model.SkillBadgeSummary
 import skills.storage.model.SimpleBadgeRes
@@ -48,22 +49,37 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
     SkillDefWithExtra findByProjectIdAndSkillId(String id, String skillId)
 
     @Nullable
+    SkillDefWithExtra findBySkillId(String skillId)
+
+    @Nullable
     List<SkillDefWithExtra> findAllByProjectIdAndSkillIdIn(String projectId, List<String> skillId)
 
     static interface SkillDescDBRes {
         String getSkillId()
+        @Nullable
         String getDescription()
+        @Nullable
         String getHelpUrl()
+        @Nullable
         Date getAchievedOn()
         SelfReportingType getSelfReportingType()
         Integer getCopiedFrom()
+        @Nullable
         ContainerType getType()
         String getEnabled()
         String getJustificationRequired()
+        @Nullable
         String getVideoUrl()
+        @Nullable
         String getVideoType()
         Boolean getVideoHasCaptions()
         Boolean getVideoHasTranscript()
+        @Nullable
+        String getSlidesUrl()
+        @Nullable
+        String getSlidesType()
+        @Nullable
+        Double getSlidesWidth()
     }
 
     @Query(value='''SELECT c.skill_id               as skillId,
@@ -77,6 +93,9 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
                            c.copied_from_skill_ref            as copiedFrom,
                            sad.attributes ->> 'videoUrl' as videoUrl,
                            sad.attributes ->> 'videoType'                                                 as videoType,
+                           sad.attributes ->> 'url' as slidesUrl,
+                           sad.attributes ->> 'type' as slidesType,
+                           sad.attributes ->> 'width' as slidesWidth,
                            case when sad.attributes ->> 'captions' is not null then true else false end   as videoHasCaptions,
                            case when sad.attributes ->> 'transcript' is not null then true else false end as videoHasTranscript
                     from skill_definition s,
@@ -85,7 +104,7 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
                              left join user_achievement ua on c.skill_id = ua.skill_id and c.project_id = ua.project_id and ua.user_id = ?5
                              left join skill_attributes_definition sad on
                                (case when c.copied_from_skill_ref is not null then c.copied_from_skill_ref else c.id end) = sad.skill_ref_id 
-                               and sad.type = 'Video'
+                               and sad.type in ('Video', 'Slides')
                     where s.id = r.parent_ref_id
                       and c.id = r.child_ref_id
                       and s.project_id = ?1
@@ -108,7 +127,10 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
                            sad.attributes ->> 'videoUrl'                                                  as videoUrl,
                            sad.attributes ->> 'videoType'                                                 as videoType,
                            case when sad.attributes ->> 'captions' is not null then true else false end   as videoHasCaptions,
-                           case when sad.attributes ->> 'transcript' is not null then true else false end as videoHasTranscript
+                           case when sad.attributes ->> 'transcript' is not null then true else false end as videoHasTranscript,
+                           sad.attributes ->> 'url' as slidesUrl,
+                           sad.attributes ->> 'type' as slidesType,
+                           sad.attributes ->> 'width' as slidesWidth
                     from skill_definition s,
                          skill_relationship_definition r,
                          skill_definition c
@@ -116,7 +138,7 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
                              left join skill_attributes_definition sad on
                                      (case when c.copied_from_skill_ref is not null then c.copied_from_skill_ref else c.id end) =
                                      sad.skill_ref_id
-                                 and sad.type = 'Video'
+                                 and sad.type in ('Video', 'Slides')
                     where s.id = r.parent_ref_id
                       and c.id = r.child_ref_id
                       and s.project_id = ?1
@@ -140,6 +162,7 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
 
     static interface SkillIdAndDesc {
         String getSkillId()
+        @Nullable
         String getDescription()
     }
     @Query(value='''SELECT sdf.skillId as skillId, sdf.description as description 
@@ -150,13 +173,10 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
     @Query(value='''
         WITH mp AS (
             SELECT s.project_id AS project_id 
-            FROM settings s, users uu, settings s1
+            FROM settings s, users uu
             WHERE s.setting = 'my_project' 
                 AND uu.user_id=?1 
                 AND uu.id = s.user_ref_id 
-                AND s.project_id = s1.project_id 
-                AND s1.setting = 'production.mode.enabled' 
-                AND s1.value = 'true'
         )
         SELECT * FROM skill_definition sd 
                 WHERE (
@@ -194,4 +214,27 @@ interface SkillDefWithExtraRepo extends JpaRepository<SkillDefWithExtra, Integer
               and LOWER(skill_id) <> LOWER(?2)
               and LOWER(project_id) = LOWER(?1) ''', nativeQuery = true)
     Boolean otherSkillsExistInProjectWithAttachmentUUID(String projectId, String notThisSkill, String attachmentUUID)
+
+
+    @Nullable
+    @Query('''SELECT sd 
+          FROM SkillDefWithExtra sd
+          JOIN UserRole ur ON ur.globalBadgeId = sd.skillId
+          WHERE ur.userId = :userId 
+          AND ur.roleName = :#{T(skills.storage.model.auth.RoleName).ROLE_GLOBAL_BADGE_ADMIN} 
+          AND sd.type = :#{T(skills.storage.model.SkillDef.ContainerType).GlobalBadge}''')
+    List<SkillDefWithExtra> findGlobalBadgesForAdmin(@Param("userId") String userId)
+
+    @Nullable
+    @Query('''SELECT subjectDef
+          FROM SkillRelDef srd
+          JOIN SkillDefWithExtra subjectDef ON subjectDef.id = srd.parent.id AND srd.type = 'RuleSetDefinition'
+          JOIN SkillDefWithExtra groupDef ON groupDef.id = srd.child.id AND groupDef.type = 'SkillsGroup'
+          WHERE subjectDef.projectId = :projectId AND subjectDef.type = 'Subject'
+          AND groupDef.skillId = :groupId AND groupDef.type = 'SkillsGroup' AND groupDef.projectId = :projectId''')
+    SkillDefWithExtra findSubjectForGroup(@Param("projectId") String projectId, @Param("groupId") String groupId)
+
+
+    @Query('''SELECT s FROM SkillDefWithExtra s WHERE s.type not in (?1)''')
+    Stream<SkillDefWithExtra> findAllExcludingTypes(List<ContainerType> types)
 }

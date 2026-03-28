@@ -72,13 +72,19 @@ interface SkillApprovalConfRepo extends CrudRepository<SkillApprovalConf, Intege
 
         String getApproverUserId()
 
+        @Nullable
         String getUserIdForDisplay()
+        @Nullable
         String getUserId()
 
+        @Nullable
         String getUserTagKey()
+        @Nullable
         String getUserTagValue()
 
+        @Nullable
         String getSkillName()
+        @Nullable
         String getSkillId()
 
         Date getUpdated()
@@ -115,5 +121,5 @@ interface SkillApprovalConfRepo extends CrudRepository<SkillApprovalConf, Intege
         where s.id = ?1''')
     ApproverConfResult findConfResultById(Integer id)
 
-    long deleteByProjectIdAndApproverUserId(String projectId, String approverUserId)
+    Long deleteByProjectIdAndApproverUserId(String projectId, String approverUserId)
 }

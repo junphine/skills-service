@@ -16,7 +16,17 @@ limitations under the License.
 <script setup>
 import CardWithVericalSections from '@/components/utils/cards/CardWithVericalSections.vue'
 
-defineProps(['title', 'subtitle', 'description', 'icon', 'pathName']);
+defineProps({
+  title: String,
+  titleTag: {
+    type: String,
+    default: 'h3'
+  },
+  subtitle: String,
+  description: String,
+  icon: String,
+  pathName: String,
+});
 </script>
 
 <template>
@@ -24,11 +34,11 @@ defineProps(['title', 'subtitle', 'description', 'icon', 'pathName']);
     <template #content>
       <div class="p-8">
         <div class="flex">
-          <div class="flex d-inline-block mt-1 mr-4 border rounded p-2">
+          <div class="flex d-inline-block mt-1 mr-4 border rounded-sm p-2">
             <i class="fa-3x" :class="icon"/>
           </div>
           <div class="flex flex-1 flex-col">
-            <div class="h4 mb-2 font-semibold">{{ title }}</div>
+            <component :is="titleTag" class="h4 mb-2 font-semibold">{{ title }}</component>
             <div class="font-light text-sm">
               <slot name="subtitle">
                 {{ subtitle }}

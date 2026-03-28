@@ -22,16 +22,20 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import skills.auth.UserInfoService
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
 import skills.controller.request.model.ActionPatchRequest
 import skills.controller.request.model.BadgeRequest
+import skills.controller.request.model.SkillSettingsRequest
 import skills.controller.result.model.BadgeResult
 import skills.controller.result.model.DependencyCheckResult
 import skills.controller.result.model.SkillDefGraphRes
 import skills.controller.result.model.SkillsGraphRes
 import skills.services.*
 import skills.services.attributes.SkillAttributeService
+import skills.services.settings.Settings
+import skills.services.settings.SettingsService
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionInfo
@@ -39,6 +43,7 @@ import skills.services.userActions.UserActionsHistoryService
 import skills.storage.accessors.ProjDefAccessor
 import skills.storage.accessors.SkillDefAccessor
 import skills.storage.model.*
+import skills.storage.model.auth.RoleName
 import skills.storage.repos.*
 import skills.storage.repos.nativeSql.PostgresQlNativeRepo
 import skills.utils.InputSanitizer
@@ -105,12 +110,26 @@ class BadgeAdminService {
     @Autowired
     UserActionsHistoryService userActionsHistoryService
 
+    @Autowired
+    AccessSettingsStorageService accessSettingsStorageService
+
+    @Autowired
+    UserAchievedLevelRepo userAchievedRepo
+
+    @Autowired
+    UserInfoService userInfoService
+
+    @Autowired
+    SettingsService settingsService
+
     @Transactional()
     void saveBadge(String projectId, String originalBadgeId, BadgeRequest badgeRequest, SkillDef.ContainerType type = SkillDef.ContainerType.Badge, boolean performCustomValidation=true) {
-        CustomValidationResult customValidationResult = customValidator.validate(badgeRequest, projectId)
-        if(performCustomValidation && !customValidationResult.valid){
-            String msg = "Custom validation failed: msg=[${customValidationResult.msg}], type=[badge], badgeId=[${badgeRequest.badgeId}], badgeName=[${badgeRequest.name}], description=[${badgeRequest.description}]"
-            throw new SkillException(msg)
+        if (performCustomValidation && projectId) {
+            CustomValidationResult customValidationResult = customValidator.validate(badgeRequest, projectId)
+            if (!customValidationResult.valid) {
+                String msg = "Custom validation failed: msg=[${customValidationResult.msg}], type=[badge], badgeId=[${badgeRequest.badgeId}], badgeName=[${badgeRequest.name}], description=[${badgeRequest.description}]"
+                throw new SkillException(msg, projectId, originalBadgeId, ErrorCode.ParagraphValidationFailed)
+            }
         }
 
         // project id will be null for global badges
@@ -136,9 +155,10 @@ class BadgeAdminService {
         }
 
         boolean identifyEligibleUsers = false
-        boolean isEdit = true
+        final boolean isEdit = skillDefinition
+        final boolean isIdUpdate = skillDefinition && !skillDefinition.skillId.equalsIgnoreCase(badgeRequest.badgeId)
 
-        if (skillDefinition) {
+        if (isEdit) {
             String existingEnabled = skillDefinition.enabled;
             // for updates, use the existing value if it is not set on the badgeRequest (null or empty String)
             if (StringUtils.isBlank(badgeRequest.enabled)) {
@@ -153,7 +173,6 @@ class BadgeAdminService {
             Props.copy(badgeRequest, skillDefinition)
             skillDefinition.skillId = badgeRequest.badgeId
         } else {
-            isEdit = false
             ProjDef projDef
             if (type == SkillDef.ContainerType.Badge) {
                 projDef = projDefAccessor.getProjDef(projectId)
@@ -183,6 +202,18 @@ class BadgeAdminService {
 
         DataIntegrityExceptionHandlers.badgeDataIntegrityViolationExceptionHandler.handle(projectId) {
             savedSkill = skillDefWithExtraRepo.saveAndFlush(skillDefinition)
+        }
+        if (savedSkill && type == SkillDef.ContainerType.GlobalBadge && !isEdit) {
+            String userId = userInfoService.getCurrentUserId()
+            accessSettingsStorageService.addGlobalBadgeAdminUserRoleForUser(userId, savedSkill.skillId, RoleName.ROLE_GLOBAL_BADGE_ADMIN)
+        }
+        if (savedSkill && type == SkillDef.ContainerType.GlobalBadge && isEdit && isIdUpdate) {
+            accessSettingsStorageService.updateGlobalBadgeIdForBadgeAdmins(originalBadgeId, savedSkill.skillId)
+            userAchievedRepo.updateSkillIdForSkillRefId(savedSkill.skillId, savedSkill.id)
+        }
+
+        if (savedSkill && type == SkillDef.ContainerType.GlobalBadge && badgeRequest.enableProtectedUserCommunity) {
+            settingsService.saveSetting(new SkillSettingsRequest(skillRefId: savedSkill.id, setting: Settings.USER_COMMUNITY_ONLY_PROJECT.settingName, value: Boolean.TRUE.toString()))
         }
 
         attachmentService.updateAttachmentsAttrsBasedOnUuidsInMarkdown(savedSkill?.description, savedSkill.projectId, null, savedSkill.skillId)
@@ -265,6 +296,8 @@ class BadgeAdminService {
 
         if (projectId == null) {
             attachmentService.deleteGlobalBadgeAttachments(badgeId)
+
+            accessSettingsStorageService.deleteGlobalBadgeUserRoles(badgeId)
         }
 
         // reset display order attribute - make sure the order is continuous - 0...N
@@ -386,6 +419,12 @@ class BadgeAdminService {
 
         if (!badge) {
             throw new SkillException("Badge [${badgeId}] does not exist", projectId, badgeId, ErrorCode.BadgeNotFound)
+        }
+
+        long numSkills = skillDefRepo.countChildSkillsByIdAndRelationshipTypeAndEnabled(badge.id, SkillRelDef.RelationshipType.BadgeRequirement, "true")
+
+        if(badge.enabled == 'true' && numSkills == 1) {
+            throw new SkillException("Can not remove skill from badge [${badgeId}] as it is live with only a single skill")
         }
 
         ruleSetDefGraphService.removeGraphRelationship(projectId, badgeId, SkillDef.ContainerType.Badge,

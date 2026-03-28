@@ -28,6 +28,8 @@ import { useResponsiveBreakpoints } from '@/components/utils/misc/UseResponsiveB
 import Column from 'primevue/column'
 import SkillsSpinner from '@/components/utils/SkillsSpinner.vue';
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useStorage} from "@vueuse/core";
 
 const route = useRoute();
 const numberFormat = useNumberFormat()
@@ -58,7 +60,7 @@ const sortBy = ref('achievedOn');
 const sortOrder = ref(-1);
 const currentPage = ref(1);
 const totalRows = ref(0);
-const pageSize = ref(5);
+const pageSize = useStorage('achievementsNavigator-pageSize', 5)
 const possiblePageSizes = [5, 10, 15, 20, 50];
 const loadingTable = ref(false);
 const isExporting = ref(false)
@@ -134,7 +136,7 @@ const getQueryParams = () => {
 </script>
 
 <template>
-  <Card data-cy="achievementsNavigator" :pt="{ body: { class: '!p-0' } }">
+  <Card data-cy="achievementsNavigator" :pt="{ body: { class: 'p-0!' } }">
     <template #header>
       <SkillsCardHeader title="Achievements"></SkillsCardHeader>
     </template>
@@ -295,10 +297,7 @@ const getQueryParams = () => {
         </template>
 
         <template #empty>
-          <div class="flex justify-center flex-wrap" data-cy="emptyTable">
-            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle" aria-hidden="true"></i>
-            <span class="flex items-center justify-center">There are no records to show</span>
-          </div>
+          <table-no-res data-cy="emptyTable" />
         </template>
       </SkillsDataTable>
     </template>

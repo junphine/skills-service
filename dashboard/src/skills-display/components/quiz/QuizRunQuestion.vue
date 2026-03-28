@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, defineAsyncComponent, ref } from 'vue'
 import MarkdownText from '@/common-components/utilities/markdown/MarkdownText.vue';
 import SkillsRating from "@/components/utils/inputForm/SkillsRating.vue";
 import QuizRunAnswers from '@/skills-display/components/quiz/QuizRunAnswers.vue';
@@ -24,6 +24,12 @@ import MarkdownEditor from "@/common-components/utilities/markdown/MarkdownEdito
 import QuizStatus from "@/components/quiz/runsHistory/QuizStatus.js";
 import {useDebounceFn} from "@vueuse/core";
 import {useAppConfig} from "@/common-components/stores/UseAppConfig.js";
+import SkillsButton from "@/components/utils/inputForm/SkillsButton.vue";
+import QuizRunMatchingComponent from "@/skills-display/components/quiz/QuizRunMatchingComponent.vue";
+
+const VideoPlayer = defineAsyncComponent(() =>
+    import('@/common-components/video/VideoPlayer.vue')
+)
 
 const props = defineProps({
   q: Object,
@@ -31,10 +37,12 @@ const props = defineProps({
   quizAttemptId: Number,
   num: Number,
   validate: Function,
+  userCommunity: String,
+  quizComplete: Boolean,
 })
 
 const isLoading = ref(true);
-const emit = defineEmits(['answer-text-changed', 'selected-answer'])
+const emit = defineEmits(['answer-text-changed', 'selected-answer', 'answer-matched'])
 
 const appConfig = useAppConfig()
 
@@ -42,6 +50,25 @@ const answerOptions = ref([])
 const answerRating = ref(0)
 const answerText = ref(props.q.questionType === QuestionType.TextInput ? (props.q.answerOptions[0]?.answerText || '') : '')
 
+const mediaAttributes = computed(() => {
+  const attr = props.q.mediaAttributes?.videoConf;
+  const captionsUrl = attr?.captions
+      ? `/api/quiz-definitions/${props.quizId}/questions/${props.q.id}/videoCaptions`
+      : null;
+  if(attr) {
+    return {
+      videoId: props.q.id,
+      url: attr.videoUrl,
+      videoType: attr.videoType ? attr.videoType : null,
+      isAudio: attr.videoType ? attr.videoType.includes('audio/') : null,
+      captionsUrl,
+      width: attr.width,
+      height: attr.height,
+      transcript: attr.transcript,
+    };
+  }
+  return null;
+})
 const isMultipleChoice = computed(() => {
   return props.q.questionType === QuestionType.MultipleChoice;
 })
@@ -53,6 +80,9 @@ const isTextInput = computed(() => {
 })
 const isRating = computed(() => {
   return props.q.questionType === QuestionType.Rating;
+})
+const isMatchingType = computed(() => {
+  return props.q.questionType === QuestionType.Matching;
 })
 const isMissingAnswer = computed(() => {
   if (isTextInput.value) {
@@ -117,7 +147,7 @@ const textAnswerChanged = (providedAnswerText) => {
     });
   });
 }
-const textAnswerChangedDebounced = useDebounceFn((providedAnswerTextOuter) => textAnswerChanged(providedAnswerTextOuter), appConfig.formFieldDebounceInMs, appConfig.formFieldDebounceInMs)
+const textAnswerChangedDebounced = useDebounceFn((providedAnswerTextOuter) => textAnswerChanged(providedAnswerTextOuter), appConfig.formFieldDebounceInMs)
 
 const selectionChanged = (currentAnswer) => { 
   reportAnswer(currentAnswer).then((reportAnswerPromise) => {
@@ -149,9 +179,10 @@ const ratingChanged = (value) => {
 const reportAnswer = (answer) => {
   if (!isLoading.value) {
     const reportAnswer = () => QuizRunService.reportAnswer(props.quizId, props.quizAttemptId, answer.changedAnswerId, answer.changedAnswerIdSelected, answer.answerText)
-    if (props.validate && QuestionType.isTextInput(props.q.questionType)) {
-      return props.validate(fieldName.value).then((validationResults) => {
-        if (validationResults.valid) {
+    if (QuestionType.isTextInput(props.q.questionType) ) {
+      const answerInfo = { answerText: answer.answerText, fieldName: fieldName.value, quizId: props.quizId, quizAttemptId: props.quizAttemptId, answerId: answer.changedAnswerId };
+      return props.validate(answerInfo).then((isValid) => {
+        if (isValid) {
           return reportAnswer()
         }
         return null;
@@ -165,6 +196,29 @@ const reportAnswer = (answer) => {
   });
 }
 const needsGrading = computed(() => QuizStatus.isNeedsGrading(props.q.gradedInfo?.status))
+
+const showTranscript = ref(false);
+const toggleTranscript = () => {
+  showTranscript.value = !showTranscript.value;
+}
+
+const updateAnswerOrder = (newOrder) => {
+  newOrder.forEach((pair) => {
+    const answerItem = answerOptions.value.find((a) => a.answerOption === pair.term)
+    const currentAnswer = {
+      questionId: props.q.id,
+      questionType: props.q.questionType,
+      answerText: pair.value,
+      changedAnswerId: answerItem.id
+    };
+    reportAnswer(currentAnswer).then((reportAnswerPromise) => {
+      emit('answer-matched', {
+        ...currentAnswer,
+        reportAnswerPromise,
+      });
+    })
+  })
+}
 </script>
 
 <template>
@@ -187,6 +241,32 @@ const needsGrading = computed(() => QuizStatus.isNeedsGrading(props.q.gradedInfo
       <div class="flex flex-1">
         <div class="flex flex-col w-full">
           <markdown-text :text="q.question" data-cy="questionsText" :instance-id="`${q.id}`" />
+          <div v-if="mediaAttributes">
+            <video-player :video-player-id="`quizVideoFor-${q.id}`"
+                          :options="mediaAttributes"
+                          :storeAndRecoverSizeFromStorage="true"
+                          :align-center="false" />
+            <div v-if="mediaAttributes.transcript">
+              <SkillsButton style="text-decoration: underline; padding-right: 0.25rem; padding-left: 0.5rem;"
+                            class="skills-theme-primary-color"
+                            :label="!showTranscript ? 'View Transcript' : 'Hide Transcript'"
+                            variant="link"
+                            size="small"
+                            text
+                            data-cy="viewTranscriptBtn"
+                            @click="toggleTranscript">
+
+              </SkillsButton>
+            </div>
+            <Card v-if="mediaAttributes.transcript && showTranscript">
+              <template #content>
+                <label for="transcriptDisplay" class="h4">{{ mediaAttributes.isAudio ? 'Audio' : 'Video'}} Transcript:</label>
+                <Panel id="transcriptDisplay" data-cy="videoTranscript">
+                  <p class="m-0">{{ mediaAttributes.transcript }}</p>
+                </Panel>
+              </template>
+            </Card>
+          </div>
           <div v-if="isTextInput">
             <div v-if="needsGrading" class="border rounded-border border-surface px-4">
               <markdown-text
@@ -203,14 +283,20 @@ const needsGrading = computed(() => QuizStatus.isNeedsGrading(props.q.gradedInfo
                              @value-changed="textAnswerChangedDebounced"
                              :show-label="false"
                              :name="fieldName"
+                             :user-community="userCommunity"
+                             :allow-community-elevation="true"
                              :allow-attachments="false"
                              :allow-insert-images="false"
                              :aria-label="`Please enter text to answer question number ${num}`"
                              placeholder="Please enter your response here..."
+                             :disable-ai-prompt="true"
                              :resizable="true" />
           </div>
           <div v-else-if="isRating">
             <SkillsRating @update:modelValue="ratingChanged" class="flex-initial rounded-border py-4 px-6" v-model="answerRating" :stars="numberOfStars" :cancel="false" :name="fieldName"/>
+          </div>
+          <div v-else-if="isMatchingType">
+            <QuizRunMatchingComponent :q="q" :name="fieldName" :value="answerOptions" @updateAnswerOrder="updateAnswerOrder" :questionNumber="num" :quizComplete="quizComplete" />
           </div>
           <div v-else>
             <div v-if="isMultipleChoice" class="text-secondary italic small" data-cy="multipleChoiceMsg">(Select <b>all</b> that apply)</div>

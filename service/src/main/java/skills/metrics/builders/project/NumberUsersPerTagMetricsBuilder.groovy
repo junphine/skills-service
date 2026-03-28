@@ -16,6 +16,7 @@
 package skills.metrics.builders.project
 
 import callStack.profiler.Profile
+import jakarta.annotation.PostConstruct
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
@@ -25,6 +26,7 @@ import skills.metrics.builders.MetricsPagingParamsHelper
 import skills.metrics.builders.MetricsParams
 import skills.metrics.builders.ProjectMetricsBuilder
 import skills.storage.repos.UserTagRepo
+import skills.utils.TimeRangeFormatterUtil
 
 import static org.springframework.data.domain.Sort.Direction.ASC
 import static org.springframework.data.domain.Sort.Direction.DESC
@@ -38,6 +40,11 @@ class NumberUsersPerTagMetricsBuilder implements ProjectMetricsBuilder {
     @Override
     String getId() {
         return "numUsersPerTagBuilder"
+    }
+
+    @PostConstruct
+    void init() {
+        assertSqlStringsMatch()
     }
 
     static class UsersPerTagRes {
@@ -55,16 +62,18 @@ class NumberUsersPerTagMetricsBuilder implements ProjectMetricsBuilder {
 
         String tagKey = MetricsParams.getTagKey(projectId, chartId, props)
         String tagFilter = MetricsParams.getTagFilter(projectId, chartId, props)
+        String startDate = MetricsParams.getFromDayFilterAsString(projectId, chartId, props)
+        String endDate = MetricsParams.getToDayFilterAsString(projectId, chartId, props)
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate)
 
-        return getUserCountsForTag(projectId, tagKey, currentPage, pageSize, sortDesc, sortBy, tagFilter)
+        return getUserCountsForTag(projectId, tagKey, dates[0], dates[1], currentPage, pageSize, sortDesc, sortBy, tagFilter)
     }
 
     @Profile
-    private UsersPerTagRes getUserCountsForTag(String projectId, String tagKey, int currentPage, int pageSize, Boolean sortDesc,  String sortBy, String tagFilter) {
+    private UsersPerTagRes getUserCountsForTag(String projectId, String tagKey, Date startDate, Date endDate, int currentPage, int pageSize, Boolean sortDesc,  String sortBy, String tagFilter) {
         PageRequest pageRequest = PageRequest.of(currentPage, pageSize, sortDesc ? DESC : ASC, sortBy)
-        List<UserTagRepo.UserTagCount> userTagCounts = findDistinctUserIdByProjectIdAndUserTag(projectId, tagKey, tagFilter, pageRequest)
-
-        Integer numDistinctTags = (pageSize > userTagCounts.size() && currentPage == 1) ? userTagCounts.size() : countDistinctUserTag(projectId, tagKey, tagFilter)
+        List<UserTagRepo.UserTagCount> userTagCounts = findDistinctUserIdByProjectIdAndUserTag(projectId, tagKey, tagFilter, startDate, endDate, pageRequest)
+        Integer numDistinctTags = (pageSize > userTagCounts.size() && currentPage == 0) ? userTagCounts.size() : countDistinctUserTag(projectId, tagKey, tagFilter, startDate, endDate)
 
         List<LabelCountItem> items = userTagCounts.collect {
             new LabelCountItem(value: it.tag, count: it.numUsers)
@@ -74,14 +83,23 @@ class NumberUsersPerTagMetricsBuilder implements ProjectMetricsBuilder {
     }
 
     @Profile
-    private List<UserTagRepo.UserTagCount> findDistinctUserIdByProjectIdAndUserTag(String projectId, String tagKey, String tagFilter, Pageable pageable) {
-        List<UserTagRepo.UserTagCount> userTagCounts = userTagRepo.findDistinctUserIdByProjectIdAndUserTag(projectId, tagKey, tagFilter, pageable)
+    private List<UserTagRepo.UserTagCount> findDistinctUserIdByProjectIdAndUserTag(String projectId, String tagKey, String tagFilter, Date startDate, Date endDate, Pageable pageable) {
+        List<UserTagRepo.UserTagCount> userTagCounts = userTagRepo.findDistinctUserIdByProjectIdAndUserTag(projectId, tagKey, tagFilter ?: null, startDate, endDate, pageable)
         return userTagCounts
     }
 
     @Profile
-    private Integer countDistinctUserTag(String projectId, String tagKey, String tagFilter) {
-        return userTagRepo.countDistinctUserTag(projectId, tagKey, tagFilter)
+    private Integer countDistinctUserTag(String projectId, String tagKey, String tagFilter, Date startDate, Date endDate) {
+        return userTagRepo.countDistinctUserTag(projectId, tagKey, tagFilter ?: null, startDate, endDate)
     }
 
+
+    private static void assertSqlStringsMatch() {
+        String selectCte = UserTagRepo.SELECT_DISTINCT_USER_BY_TAG_SQL.substring(0, UserTagRepo.SELECT_DISTINCT_USER_BY_TAG_SQL.toLowerCase().lastIndexOf('select')).trim()
+        String countCte = UserTagRepo.COUNT_DISTINCT_USER_BY_TAG_SQL.substring(0, UserTagRepo.COUNT_DISTINCT_USER_BY_TAG_SQL.toLowerCase().lastIndexOf('select')).trim()
+
+        if (selectCte != countCte) {
+            throw new IllegalStateException("Select and count SQL strings must match except for last select!")
+        }
+    }
 }

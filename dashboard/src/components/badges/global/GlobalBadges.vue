@@ -24,9 +24,13 @@ import NoContent2 from '@/components/utils/NoContent2.vue'
 import Badge from '@/components/badges/Badge.vue'
 import SkillsSpinner from '@/components/utils/SkillsSpinner.vue'
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
+import IconManagerService from '@/components/utils/iconPicker/IconManagerService.js'
+import { SkillsReporter } from '@skilltree/skills-client-js'
+import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js'
 
 const dialogMessages = useDialogMessages()
 const announcer = useSkillsAnnouncer();
+const communityLabels = useCommunityLabels()
 const emit = defineEmits(['badge-deleted', 'badge-changed', 'global-badges-changed']);
 
 const isLoading = ref(true);
@@ -61,6 +65,13 @@ const loadBadges = (afterLoad) => {
           localBadges[0].isFirst = true;
           localBadges[localBadges.length - 1].isLast = true;
           badges.value = localBadges;
+          const filterWithCustomIcons = (badge) => badge.iconClass
+          const globalBadgeIds = badgesResponse.filter(filterWithCustomIcons).map((badge) => badge.badgeId)
+          const refreshGlobalBadgeIcons = [...new Set(globalBadgeIds)].map((badgeId) => {
+            return IconManagerService.refreshCustomIconCss(null, badgeId)
+          })
+
+          return Promise.all([...refreshGlobalBadgeIcons])
         } else {
           badges.value = [];
         }
@@ -93,6 +104,9 @@ const saveBadge = (updatedBadge) => {
   isLoading.value = true;
 
   const { isEdit } = updatedBadge;
+  if (!isEdit) {
+    SkillsReporter.reportSkill('CreateGlobalBadge');
+  }
 
   loadBadges().then(() => {
     nextTick(() => announcer.polite(`a global badge has been ${isEdit ? 'saved' : 'created'}`));
@@ -156,7 +170,9 @@ const publishBadge = (badge) => {
         toSave.endDate = toDate(toSave.endDate);
 
         const requiredIds = badge.requiredSkills.map((item) => item.skillId);
-        const badgeReq = { requiredSkillsIds: requiredIds, ...badge };
+        const badgeReq = { requiredSkillsIds: requiredIds, ...toSave };
+        badgeReq.isEdit = true
+        badgeReq.enableProtectedUserCommunity = communityLabels.isRestrictedUserCommunity(badgeReq.userCommunity)
         GlobalBadgeService.saveBadge(badgeReq).then(() => {
           saveBadge(toSave);
         });
@@ -198,7 +214,7 @@ const handleFocus = () => {
     <sub-page-header ref="subPageHeader" title="Global Badges" action="Badge" @add-action="newBadge" aria-label="new global badge" :title-level="1"/>
 <!--      <transition name="projectContainer" enter-active-class="animated fadeIn">-->
       <div>
-        <div v-if="(!badges || badges.length === 0) && isLoading">
+        <div v-if="(!badges || badges.length === 0) && isLoading" class="flex justify-center items-center h-full">
           <skills-spinner :is-loading="isLoading" label="Loading..." style="width: 3rem; height: 3rem;" variant="info"/>
         </div>
         <div v-if="badges && badges.length" id="badgeCards" class="flex flex-wrap gap-4 items-stretch justify-center">
@@ -212,6 +228,7 @@ const handleFocus = () => {
               </div>
 
               <badge :badge="badge" :global="true"
+                     title-tag="h2"
                            @badge-updated="saveBadge"
                            @badge-deleted="deleteBadge"
                            @publish-badge="publishBadge"

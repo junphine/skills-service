@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { reactive, computed, ref, provide, toRaw, watch, nextTick, onUnmounted } from 'vue'
+import {reactive, computed, ref, provide, toRaw, watch, nextTick, onUnmounted, onMounted} from 'vue'
 import { useForm } from 'vee-validate'
 import { useInputFormResiliency } from '@/components/utils/inputForm/UseInputFormResiliency.js'
 import deepEqual from 'deep-equal';
@@ -23,11 +23,14 @@ import SkillsDialog from '@/components/utils/inputForm/SkillsDialog.vue'
 import SkillsSpinner from '@/components/utils/SkillsSpinner.vue'
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
 import {useDialogUtils} from "@/components/utils/inputForm/UseDialogUtils.js";
+import MatomoEvents from "@/utils/MatomoEvents.js";
+import {useMatomoSupport} from "@/stores/UseMatomoSupport.js";
 
 onUnmounted(() => {
   inputFormResiliency.stop(false);
 })
 
+const matomo = useMatomoSupport()
 const dialogMessages = useDialogMessages()
 const isLoadingAsyncData = ref(true)
 const model = defineModel()
@@ -107,9 +110,13 @@ const { values, meta, handleSubmit, isSubmitting, setFieldValue, validate, error
 
 const inputFormResiliency = reactive(useInputFormResiliency())
 
+onMounted(() => {
+  matomo.trackEvent(MatomoEvents.category.Modal, MatomoEvents.action.Open, props.header)
+})
 const skillsDialog = ref(null)
 const cancel = () => {
   emit('cancelled');
+  matomo.trackEvent(MatomoEvents.category.Modal, MatomoEvents.action.Cancel, props.header)
   close()
 }
 const confirmCancel = () => {
@@ -122,6 +129,7 @@ const confirmCancel = () => {
       rejectLabel: 'Cancel',
       accept: () => {
         emit('cancelled');
+        matomo.trackEvent(MatomoEvents.category.Modal, MatomoEvents.action.Cancel, props.header)
         close()
       },
       onShowHandler: () => {
@@ -139,6 +147,7 @@ const confirmCancel = () => {
     });
   } else {
     emit('cancelled');
+    matomo.trackEvent(MatomoEvents.category.Modal, MatomoEvents.action.Cancel, props.header)
     close()
   }
 }
@@ -150,15 +159,23 @@ const close = () => {
   }
 }
 const isSaving = ref(false)
+const failed = ref(false)
+const failedInfo = ref({})
 const onSubmit = handleSubmit(formValue => {
   isSaving.value = true
   props.saveDataFunction(formValue).then((res) => {
-    if (props.enableInputFormResiliency) {
-      inputFormResiliency.stop()
-    }
-    emit('saved', res)
-    if (props.closeOnSuccess) {
-      close()
+    if (res?.failed) {
+      failed.value = true
+      failedInfo.value = res
+    } else {
+      if (props.enableInputFormResiliency) {
+        inputFormResiliency.stop()
+      }
+      emit('saved', res)
+      matomo.trackEvent(MatomoEvents.category.Modal, MatomoEvents.action.Save, props.header)
+      if (props.closeOnSuccess) {
+        close()
+      }
     }
     isSaving.value = false
   })
@@ -228,6 +245,15 @@ watch(() => props.initialValues, (newValues) => {
 })
 
 const dialogUtils = useDialogUtils()
+
+const getFieldValues = () => {
+  return values
+}
+defineExpose({
+  setFieldValue,
+  validate,
+  getFieldValues
+})
 </script>
 
 <template>
@@ -253,7 +279,7 @@ const dialogUtils = useDialogUtils()
     :pt="{ content: { class: 'p-0' }, pcMaximizeButton: dialogUtils.getMaximizeButtonPassThrough() }"
     footer-class="px-4 pb-4"
   >
-    <div class="p-4">
+    <div v-if="!failed" class="p-4">
       <form-reload-warning
         v-if="inputFormResiliency.isRestoredFromStore && enableInputFormResiliency"
         @discard-changes="inputFormResiliency.discard" />
@@ -264,6 +290,9 @@ const dialogUtils = useDialogUtils()
           <slot></slot>
         </div>
       </BlockUI>
+    </div>
+    <div v-if="failed">
+      <slot name="failed" :failedInfo="failedInfo"></slot>
     </div>
   </SkillsDialog>
 </template>

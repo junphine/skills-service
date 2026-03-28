@@ -72,8 +72,8 @@ const submit = handleSubmit(formValues => {
       <markdown-editor class="form-text"
                        :id="`approvalRequiredMsg-${skill.skillId}`"
                        ref="approvalRequiredMsg"
-                       :project-id="skill.projectId"
-                       :skill-id="skill.skillId"
+                       :upload-url="`/api/projects/${skill.projectId}/skills/${skill.skillId}/upload`"
+                       :allow-community-elevation="true"
                        data-cy="selfReportMsgInput"
                        :aria-describedby="`reportSkillMsg-${skill.skillId}`"
                        markdownHeight="250px"
@@ -83,6 +83,7 @@ const submit = handleSubmit(formValues => {
                        :aria-label="isJustitificationRequired ? 'Optional request approval justification' : 'Required request approval justification'"
                        :placeholder="`Justification (${isJustitificationRequired ? 'required' : 'optional'})`"
                        :resizable="true"
+                       :disable-ai-prompt="true"
                        aria-errormessage="approvalMessageError" />
 
       <div class="text-right mt-2">

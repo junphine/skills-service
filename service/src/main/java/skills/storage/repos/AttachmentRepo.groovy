@@ -17,7 +17,9 @@ package skills.storage.repos
 
 
 import org.springframework.data.jpa.repository.Modifying
+import org.springframework.data.jpa.repository.Query
 import org.springframework.data.repository.CrudRepository
+import org.springframework.data.repository.query.Param
 import org.springframework.lang.Nullable
 import skills.storage.model.Attachment
 
@@ -27,9 +29,16 @@ interface AttachmentRepo extends CrudRepository<Attachment, Integer> {
     Attachment findByUuid(String uuid)
 
     @Modifying
-    int deleteByUuid(String uuid)
+    Integer deleteByUuid(String uuid)
 
     @Modifying
-    int deleteBySkillIdAndProjectIdIsNull(String skillId)
+    Integer deleteBySkillIdAndProjectIdIsNull(String skillId)
+
+    @Query(value = '''SELECT lo_get(CAST(content AS oid), :start, CAST(:length AS integer)) 
+            FROM attachments 
+            WHERE uuid = :uuid''', nativeQuery = true)
+    byte[] fetchFileChunk(@Param("uuid") String uuid,
+                          @Param("start") long start,
+                          @Param("length") long length)
 
 }

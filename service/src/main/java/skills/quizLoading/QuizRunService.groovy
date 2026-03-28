@@ -16,6 +16,8 @@
 package skills.quizLoading
 
 import callStack.profiler.Profile
+import com.fasterxml.jackson.databind.ObjectMapper
+import groovy.json.JsonSlurper
 import groovy.transform.Canonical
 import groovy.util.logging.Slf4j
 import org.apache.commons.lang3.StringUtils
@@ -41,13 +43,20 @@ import skills.services.CustomValidationResult
 import skills.services.CustomValidator
 import skills.services.LockingService
 import skills.services.admin.UserCommunityService
-import skills.services.attributes.ExpirationAttrs
-import skills.services.attributes.SkillAttributeService
+import skills.services.attributes.*
 import skills.services.events.SkillEventResult
 import skills.services.events.SkillEventsService
 import skills.services.quiz.QuizQuestionType
+import skills.services.slides.QuizAttrsStore
+import skills.services.userActions.DashboardAction
+import skills.services.userActions.DashboardItem
+import skills.services.userActions.UserActionInfo
+import skills.services.userActions.UserActionsHistoryService
+import skills.skillLoading.model.SlidesSummary
 import skills.storage.model.*
 import skills.storage.repos.*
+import skills.tasks.TaskSchedulerService
+import skills.tasks.data.TextInputAiGradingRequest
 import skills.utils.InputSanitizer
 
 import java.time.LocalDateTime
@@ -62,6 +71,9 @@ class QuizRunService {
 
     @Autowired
     QuizDefRepo quizDefRepo
+
+    @Autowired
+    QuizAttrsStore quizAttrsStore
 
     @Autowired
     QuizQuestionDefRepo quizQuestionRepo
@@ -97,6 +109,9 @@ class QuizRunService {
     UserQuizAnswerGradedRepo userQuizAnswerGradedRepo
 
     @Autowired
+    UserActionsHistoryService userActionsHistoryService
+
+    @Autowired
     UserQuizAnswerAttemptRepo quizAttemptAnswerRepo
 
     @Autowired
@@ -126,11 +141,18 @@ class QuizRunService {
     @Autowired
     UserQuizAttemptRepo userQuizAttemptRepo
 
+    @Autowired
+    TaskSchedulerService taskSchedulerService
+
     @Value('#{"${skills.config.ui.minimumSubjectPoints}"}')
     int minimumSubjectPoints
 
     @Value('#{"${skills.config.ui.minimumProjectPoints}"}')
     int minimumProjectPoints
+
+    JsonSlurper jsonSlurper = new JsonSlurper()
+    static final ObjectMapper mapper = new ObjectMapper()
+    static final String AI_GRADER_USERID = 'ai-grader'
 
     private boolean skillExpiringSoon(String skillId, String projectId) {
         ExpirationAttrs attrs = skillAttributeService.getExpirationAttrs( projectId, skillId )
@@ -198,6 +220,7 @@ class QuizRunService {
             needsGradingAttemptDate = needsGradingAttempt.updated
         }
 
+        String userCommunity = userCommunityService.getQuizUserCommunity(quizDefWithDesc.quizId)
         return new QuizInfo(
                 name: quizDefWithDesc.name,
                 description: InputSanitizer.unsanitizeForMarkdown(quizDefWithDesc.description),
@@ -217,8 +240,25 @@ class QuizRunService {
                 needsGradingAttemptDate: needsGradingAttemptDate,
                 onlyIncorrectQuestions: onlyIncorrectQuestions,
                 numIncorrectQuestions: numIncorrectQuestions,
-                showDescriptionOnQuizPage: showDescription
+                showDescriptionOnQuizPage: showDescription,
+                slidesSummary: getSlidesSummary(quizDefWithDesc.quizId),
+                userCommunity: userCommunity
         )
+    }
+
+    @Profile
+    private SlidesSummary getSlidesSummary(String quizId) {
+        SlidesAttrs slidesAttrs = quizAttrsStore.getSlidesAttrs(quizId)
+
+        SlidesSummary res = null
+        if (slidesAttrs) {
+            res = new SlidesSummary(
+                    url: slidesAttrs.url,
+                    type: slidesAttrs.type,
+                    width: slidesAttrs.width
+            )
+        }
+        return res
     }
 
     private List<QuizQuestionDef> selectOnlyIncorrectQuestions(Integer quizId, String userId, List<QuizQuestionDef> questions) {
@@ -233,9 +273,9 @@ class QuizRunService {
         return questions
     }
 
-    private List<QuizQuestionInfo> loadQuizQuestionInfo(QuizDefWithDescription quizDefWithDescription, List<QuizSetting> quizSettings, String userId) {
-        List<QuizQuestionDef> dbQuestionDefs = quizQuestionRepo.findAllByQuizIdIgnoreCase(quizDefWithDescription.quizId)
-        List<QuizAnswerDef> dbAnswersDef = quizAnswerRepo.findAllByQuizIdIgnoreCase(quizDefWithDescription.quizId)
+    private List<QuizQuestionInfo> loadQuizQuestionInfo(QuizDef quizDef, List<QuizSetting> quizSettings, String userId) {
+        List<QuizQuestionDef> dbQuestionDefs = quizQuestionRepo.findAllByQuizIdIgnoreCase(quizDef.quizId)
+        List<QuizAnswerDef> dbAnswersDef = quizAnswerRepo.findAllByQuizIdIgnoreCase(quizDef.quizId)
         Map<Integer, List<QuizAnswerDef>> byQuizId = dbAnswersDef.groupBy { it.questionRefId }
 
         QuizSetting quizLength = quizSettings?.find( { it.setting == QuizSettings.QuizLength.setting })
@@ -245,10 +285,10 @@ class QuizRunService {
         QuizSetting onlyIncorrect = quizSettings?.find({it.setting == QuizSettings.RetakeIncorrectQuestionsOnly.setting})
         boolean onlyIncorrectQuestions = onlyIncorrect?.value?.toBoolean()
         Boolean showAnswerHintsOnRetakesOnly = quizSettings?.find( { it.setting == QuizSettings.ShowAnswerHintsOnRetakeAttemptsOnly.setting })?.value?.toBoolean()
-        Boolean includeAnswerHints = !showAnswerHintsOnRetakesOnly || isRetakeAttempt(quizDefWithDescription, userId)
+        Boolean includeAnswerHints = !showAnswerHintsOnRetakesOnly || isRetakeAttempt(quizDef, userId)
 
         if(onlyIncorrectQuestions) {
-            dbQuestionDefs = selectOnlyIncorrectQuestions(quizDefWithDescription.id, userId, dbQuestionDefs)
+            dbQuestionDefs = selectOnlyIncorrectQuestions(quizDef.id, userId, dbQuestionDefs)
         }
 
         if(randomizeQuestions || forceRandomizationOfQuestions) {
@@ -261,24 +301,52 @@ class QuizRunService {
             if(randomizeAnswers) {
                 quizAnswerDefs?.shuffle()
             }
+
+            def answerOptions
+            List<String> matchingTerms = []
+
+            if(it.type == QuizQuestionType.Matching) {
+                JsonSlurper slurper = new JsonSlurper()
+                def values = []
+                quizAnswerDefs.collect{ answer ->
+                    def parsedAnswer = slurper.parseText(answer.multiPartAnswer)
+                    parsedAnswer.id = answer.id
+                    matchingTerms.push(parsedAnswer.value)
+                    values.push([value: parsedAnswer.term, id: parsedAnswer.id])
+                }
+                matchingTerms.shuffle()
+
+                answerOptions = values.collect { answer ->
+                    new QuizAnswerOptionsInfo(
+                            id: answer.id,
+                            answerOption: answer.value
+                    )
+                }.sort{ it.id }
+            } else {
+                answerOptions = quizAnswerDefs.collect {
+                    new QuizAnswerOptionsInfo(
+                            id: it.id,
+                            answerOption: it.answer ? it.answer : it.multiPartAnswer
+                    )
+                }
+            }
+
+            QuestionAttrs qAttrs = it.attributes ? mapper.readValue(it.attributes, QuestionAttrs.class) : null
             new QuizQuestionInfo(
                     id: it.id,
                     question: InputSanitizer.unsanitizeForMarkdown(it.question),
                     questionType: it.type.toString(),
                     canSelectMoreThanOne: quizAnswerDefs?.count({ Boolean.valueOf(it.isCorrectAnswer) }) > 1,
-                    answerOptions: quizAnswerDefs.collect {
-                        new QuizAnswerOptionsInfo(
-                                id: it.id,
-                                answerOption: it.answer
-                        )
-                    },
-                    answerHint: includeAnswerHints ? it.answerHint : null
+                    answerOptions: answerOptions,
+                    answerHint: includeAnswerHints ? it.answerHint : null,
+                    mediaAttributes: qAttrs,
+                    matchingTerms: matchingTerms
             )
         }
         return questions
     }
-    private Boolean isRetakeAttempt(QuizDefWithDescription quizDefWithDescription, String userId) {
-        Boolean isRetakeAttempt = quizDefWithDescription.type == QuizDef.QuizType.Quiz && quizAttemptRepo.getUserAttemptsStats(userId, quizDefWithDescription.id,
+    private Boolean isRetakeAttempt(QuizDef quizDef, String userId) {
+        Boolean isRetakeAttempt = quizDef.type == QuizDef.QuizType.Quiz && quizAttemptRepo.getUserAttemptsStats(userId, quizDef.id,
                 UserQuizAttempt.QuizAttemptStatus.INPROGRESS, UserQuizAttempt.QuizAttemptStatus.PASSED).userNumPreviousQuizAttempts > 0
         return isRetakeAttempt
     }
@@ -299,12 +367,12 @@ class QuizRunService {
 
     @Transactional
     QuizAttemptStartResult startQuizAttempt(String userId, String quizId, String skillId = null, String projectId = null) {
-        QuizDefWithDescription quizDefWithDesc = quizDefWithDescRepo.findByQuizIdIgnoreCase(quizId)
-        List<QuizSetting> quizSettings = loadQuizSettings(quizDefWithDesc.id)
+        QuizDef quizDef = getQuizDef(quizId)
+        List<QuizSetting> quizSettings = loadQuizSettings(quizDef.id)
         Integer quizTimeLimit = quizSettings?.find( { it.setting == QuizSettings.QuizTimeLimit.setting })?.value?.toInteger()
         QuizSetting quizLength = quizSettings?.find( { it.setting == QuizSettings.QuizLength.setting })
 
-        List<QuizQuestionInfo> questions = loadQuizQuestionInfo(quizDefWithDesc, quizSettings, userId)
+        List<QuizQuestionInfo> questions = loadQuizQuestionInfo(quizDef, quizSettings, userId)
         List<QuizQuestionInfo> questionsForQuiz = []
         Integer quizLengthAsInteger = quizLength ? Integer.valueOf(quizLength.value) : 0
         Integer lengthSetting = quizLengthAsInteger > 0 ? quizLengthAsInteger : questions.size()
@@ -336,8 +404,8 @@ class QuizRunService {
 
             List<UserQuizAnswerAttemptRepo.AnswerIdAndAnswerText> alreadySelected = quizAttemptAnswerRepo.getSelectedAnswerIdsAndText(inProgressAttempt.id)
 
-            List<Integer> selectedAnswerIds = alreadySelected?.findAll({!it.getAnswerText()}).collect { it.getAnswerId()}
-            List<QuizAttemptStartResult.AnswerIdAndEnteredText> enteredText = alreadySelected?.findAll({it.getAnswerText()}).collect {
+            List<Integer> selectedAnswerIds = alreadySelected?.findAll({!it.getAnswerText()})?.collect { it.getAnswerId()}
+            List<QuizAttemptStartResult.AnswerIdAndEnteredText> enteredText = alreadySelected?.findAll({it.getAnswerText()})?.collect {
                 new QuizAttemptStartResult.AnswerIdAndEnteredText(answerId: it.getAnswerId(), answerText: it.getAnswerText())
             }
 
@@ -367,7 +435,7 @@ class QuizRunService {
             it.displayOrder = index + 1
         }
 
-        QuizDef quizDef = getQuizDef(quizId)
+
         validateQuizAttempts(quizDef, userId, quizId, skillId, projectId)
         int numQuestions = quizQuestionRepo.countByQuizId(quizDef.quizId)
         QuizValidator.isTrue(numQuestions > 0, "Must have at least 1 question declared in order to start.", quizDef.quizId)
@@ -544,8 +612,29 @@ class QuizRunService {
             }
             QuizDef quizDef = getQuizDef(quizId)
             handleReportingTextInputQuestion(quizDef, userId, quizAttemptId, answerDefId, quizReportAnswerReq)
+        } else if (answerDefPartialInfo.getQuestionType() == QuizQuestionType.Matching) {
+            handleReportingMatchingQuestion(userId, quizAttemptId, answerDefId, quizReportAnswerReq, answerDefPartialInfo)
         } else {
             handleReportingAChoiceBasedQuestion(userId, quizAttemptId, answerDefId, quizReportAnswerReq, answerDefPartialInfo)
+        }
+    }
+
+    private void handleReportingMatchingQuestion(String userId, Integer quizAttemptId, Integer answerDefId, QuizReportAnswerReq quizReportAnswerReq, QuizAnswerDefRepo.AnswerDefPartialInfo answerDefPartialInfo) {
+        UserQuizAnswerAttempt existingAnswerAttempt = quizAttemptAnswerRepo.findByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefId(quizAttemptId, answerDefId)
+        def parsed = jsonSlurper.parseText(answerDefPartialInfo.multiPartAnswer)
+        if (existingAnswerAttempt) {
+            existingAnswerAttempt.answer = quizReportAnswerReq.getAnswerText()
+            existingAnswerAttempt.status = quizReportAnswerReq.getAnswerText() == parsed.value ? UserQuizAnswerAttempt.QuizAnswerStatus.CORRECT : UserQuizAnswerAttempt.QuizAnswerStatus.WRONG
+            quizAttemptAnswerRepo.save(existingAnswerAttempt)
+        } else if (quizReportAnswerReq.isSelected) {
+            UserQuizAnswerAttempt newAnswerAttempt = new UserQuizAnswerAttempt(
+                    userQuizAttemptRefId: quizAttemptId,
+                    quizAnswerDefinitionRefId: answerDefId,
+                    userId: userId,
+                    status: quizReportAnswerReq.getAnswerText() == parsed.value ? UserQuizAnswerAttempt.QuizAnswerStatus.CORRECT : UserQuizAnswerAttempt.QuizAnswerStatus.WRONG,
+                    answer: quizReportAnswerReq.getAnswerText(),
+            )
+            quizAttemptAnswerRepo.save(newAnswerAttempt)
         }
     }
 
@@ -600,26 +689,31 @@ class QuizRunService {
     }
 
     @Transactional
-    QuizAnswerGradingResult gradeQuestionAnswer(String userId, String quizId, Integer quizAttemptId, Integer answerDefId, QuizGradeAnswerReq gradeAnswerReq) {
-        UserInfo graderUserInfo = userInfoService.getCurrentUser()
-        UserAttrs graderUserAttrs = userAttrsRepo.findByUserIdIgnoreCase(graderUserInfo.username)
+    QuizAnswerGradingResult gradeQuestionAnswer(String userId, String quizId, Integer quizAttemptId, Integer answerDefId, QuizGradeAnswerReq gradeAnswerReq, Boolean aiAssistantGrader = false, Integer aiConfidenceLevel = null) {
+        String graderUserId = aiAssistantGrader ? AI_GRADER_USERID : userInfoService.getCurrentUser().username
+        UserAttrs graderUserAttrs = userAttrsRepo.findByUserIdIgnoreCase(graderUserId)
 
         QuizDef quizDef = getQuizDef(quizId)
         if (quizDef.type != QuizDefParent.QuizType.Quiz) {
             throw new SkillQuizException("Provided quizId [${quizId}] is not a quiz", ErrorCode.BadParam)
         }
+        log.debug("Obtaining lock for quizAttemptId [${quizAttemptId}], grader [${graderUserId}]")
+        lockingService.lockUserQuizAttempt(quizAttemptId)
         UserQuizAttempt userQuizAttempt = getQuizAttempt(quizAttemptId)
-        validateAttempt(userQuizAttempt, quizDef, quizAttemptId, quizId, userId)
+        boolean wasQuizAlreadyPassed = userQuizAttempt.status == UserQuizAttempt.QuizAttemptStatus.PASSED
+        validateAttempt(userQuizAttempt, quizDef, quizAttemptId, quizId, userId, gradeAnswerReq)
 
         propsBasedValidator.quizValidationMaxStrLength(PublicProps.UiProp.maxGraderFeedbackMessageLength, "Feedback", gradeAnswerReq.feedback, quizId)
-        CustomValidationResult customValidationResult = validator.validateDescription(gradeAnswerReq.feedback, null, null, quizDef.quizId)
-        if (!customValidationResult.valid) {
-            throw new SkillQuizException("Feedback is invalid: ${customValidationResult.msg}", quizId, ErrorCode.BadParam)
+        if (!aiAssistantGrader) {
+            CustomValidationResult customValidationResult = validator.validateDescription(gradeAnswerReq.feedback, null, null, quizDef.quizId)
+            if (!customValidationResult.valid) {
+                throw new SkillQuizException("Feedback is invalid: ${customValidationResult.msg}", quizId, ErrorCode.BadParam)
+            }
         }
 
         Optional<QuizAnswerDef> quizAnswerDefOptional = quizAnswerRepo.findById(answerDefId)
         if (!quizAnswerDefOptional.isPresent()) {
-            throw new SkillQuizException("Provided answer deffinition id [${quizAttemptId}] does not exist", ErrorCode.BadParam)
+            throw new SkillQuizException("Provided answer definition id [${quizAttemptId}] does not exist", ErrorCode.BadParam)
         }
         QuizAnswerDef answerDef = quizAnswerDefOptional.get()
 
@@ -630,10 +724,24 @@ class QuizRunService {
         if (userQuizAnswerAttempt.userQuizAttemptRefId != userQuizAttempt.id) {
             throw new SkillQuizException("Supplied quiz answer attempt id  [${userQuizAnswerAttempt.userQuizAttemptRefId}] does not match user quiz attempt id [${userQuizAttempt.id}]", ErrorCode.BadParam)
         }
+        if (aiAssistantGrader && aiConfidenceLevel == null) {
+            throw new SkillQuizException("AI grader confidence level must be provided for AI assistant graded answer attempt", ErrorCode.BadParam)
+        }
 
         UserQuizAnswerGraded alreadyGraded = userQuizAnswerGradedRepo.findByUserQuizAnswerAttemptRefId(userQuizAnswerAttempt.id)
-        if (alreadyGraded) {
+        if (alreadyGraded && !gradeAnswerReq.changeGrade) {
             throw new SkillQuizException("Question for quiz [${quizId}] attemptId [${quizAttemptId}] answerDefId [${answerDefId}] has already been graded", ErrorCode.BadParam)
+        }
+        if (gradeAnswerReq.changeGrade) {
+            if (!alreadyGraded) {
+                throw new SkillQuizException("Cannot request to change the grade. Question for quiz [${quizId}] attemptId [${quizAttemptId}] answerDefId [${answerDefId}] has not been graded", ErrorCode.BadParam)
+            }
+            if (gradeAnswerReq.isCorrect && userQuizAnswerAttempt.status != UserQuizAnswerAttempt.QuizAnswerStatus.WRONG) {
+                throw new SkillQuizException("Cannot request to change the grade. Question for quiz [${quizId}] attemptId [${quizAttemptId}] answerDefId [${answerDefId}] is not wrong", ErrorCode.BadParam)
+            }
+            if (!gradeAnswerReq.isCorrect && userQuizAnswerAttempt.status != UserQuizAnswerAttempt.QuizAnswerStatus.CORRECT) {
+                throw new SkillQuizException("Cannot request to change the grade. Question for quiz [${quizId}] attemptId [${quizAttemptId}] answerDefId [${answerDefId}] is not correct", ErrorCode.BadParam)
+            }
         }
 
         List<UserQuizQuestionAttempt> questionAttempts = quizQuestionAttemptRepo.findAllByUserQuizAttemptRefId(userQuizAttempt.id)
@@ -655,19 +763,47 @@ class QuizRunService {
             userQuizAttempt.status = isQuizPassed ? UserQuizAttempt.QuizAttemptStatus.PASSED : UserQuizAttempt.QuizAttemptStatus.FAILED
             quizAttemptRepo.save(userQuizAttempt)
 
-            quizNotificationService.sendGradedRequestNotification(quizDef, userQuizAttempt)
+            if (gradeAnswerReq.notifyUser) {
+                quizNotificationService.sendGradedRequestNotification(quizDef, userQuizAttempt)
+            }
         }
 
-        UserQuizAnswerGraded userQuizAnswerGraded = new UserQuizAnswerGraded(
-                graderUserAttrsRefId: graderUserAttrs.id,
-                userQuizAnswerAttemptRefId: userQuizAnswerAttempt.id,
-                feedback: gradeAnswerReq.feedback)
+        UserQuizAnswerGraded userQuizAnswerGraded
+        if (gradeAnswerReq.changeGrade) {
+            userQuizAnswerGraded = userQuizAnswerGradedRepo.findByUserQuizAnswerAttemptRefId(userQuizAnswerAttempt.id)
+            if (!userQuizAnswerGraded) {
+                throw new SkillQuizException("Cannot change grade. Could not find an existing answer graded answer for quizAttemptId=[${quizAttemptId}] and answerDefId=[${answerDefId}] and userQuizAnswerAttemptId=[${userQuizAnswerAttempt.id}]", ErrorCode.BadParam)
+            }
+            userQuizAnswerGraded.feedback = gradeAnswerReq.feedback
+            userQuizAnswerGraded.aiConfidenceLevel = null
+            userQuizAnswerGraded.graderUserAttrsRefId = graderUserAttrs.id
+
+            userActionsHistoryService.saveUserAction(new UserActionInfo(
+                    action: DashboardAction.Edit,
+                    item: DashboardItem.QuizAttempt,
+                    itemId: userQuizAttempt.id,
+                    quizId: quizId,
+                    actionAttributes: [
+                            action: 'Override Text Input Question Grade',
+                            questionNum: questionAttempt?.displayOrder,
+                            newGrade: userQuizAnswerAttempt.status,
+                    ]
+            ))
+
+        } else {
+            userQuizAnswerGraded = new UserQuizAnswerGraded(
+                    graderUserAttrsRefId: graderUserAttrs.id,
+                    userQuizAnswerAttemptRefId: userQuizAnswerAttempt.id,
+                    feedback: gradeAnswerReq.feedback,
+                    aiConfidenceLevel: aiConfidenceLevel)
+        }
         userQuizAnswerGradedRepo.save(userQuizAnswerGraded)
 
-        if (doneGradingAttempt) {
+        if (doneGradingAttempt && !wasQuizAlreadyPassed) {
             reportAnyAssociatedSkills(userQuizAttempt, quizDef)
         }
 
+        log.debug("Completed grading attempt [${quizAttemptId}] - [${doneGradingAttempt}]")
         return new QuizAnswerGradingResult(doneGradingAttempt: doneGradingAttempt)
     }
 
@@ -689,15 +825,16 @@ class QuizRunService {
         return gradedResult
     }
 
-    private static void validateAttempt(UserQuizAttempt userQuizAttempt, QuizDef quizDef, int quizAttemptId, String quizId, String userId) {
+    private static void validateAttempt(UserQuizAttempt userQuizAttempt, QuizDef quizDef, int quizAttemptId, String quizId, String userId, QuizGradeAnswerReq gradeAnswerReq = null) {
         if (userQuizAttempt.quizDefinitionRefId != quizDef.id) {
             throw new SkillQuizException("Provided quiz attempt id [${quizAttemptId}] is not for [${quizId}] quiz", ErrorCode.BadParam)
         }
         if (userQuizAttempt.userId != userId) {
             throw new SkillQuizException("Provided quiz attempt id [${quizAttemptId}] is not for [${userId}] user", ErrorCode.BadParam)
         }
-        if (userQuizAttempt.status == UserQuizAttempt.QuizAttemptStatus.PASSED || userQuizAttempt.status == UserQuizAttempt.QuizAttemptStatus.FAILED) {
-            throw new SkillQuizException("Provided quiz attempt id [${quizAttemptId}] was already completed", ErrorCode.BadParam)
+        if (!gradeAnswerReq?.changeGrade &&
+                (userQuizAttempt.status == UserQuizAttempt.QuizAttemptStatus.PASSED || userQuizAttempt.status == UserQuizAttempt.QuizAttemptStatus.FAILED)) {
+            throw new SkillQuizException("Provided quiz attempt id [${quizAttemptId}] was already completed", ErrorCode.QuizAlreadyCompleted)
         }
     }
 
@@ -725,6 +862,7 @@ class QuizRunService {
         Set<Integer> selectedAnswerIds = quizAttemptAnswerRepo.getSelectedAnswerIds(quizAttemptId).toSet()
         List<UserQuizQuestionAttempt> existingAttempt = quizQuestionAttemptRepo.findAllByUserQuizAttemptRefId(quizAttemptId)
 
+        Boolean needsManualGrading = false
         List<QuizQuestionGradedResult> gradedQuestions = dbQuestionDefs.collect { QuizQuestionDef quizQuestionDef ->
             List<QuizAnswerDef> quizAnswerDefs = answerDefByQuestionId[quizQuestionDef.id]
 
@@ -735,6 +873,29 @@ class QuizRunService {
             if (!isSurvey && quizQuestionDef.type == QuizQuestionType.TextInput) {
                 status = UserQuizQuestionAttempt.QuizQuestionStatus.NEEDS_GRADING
                 isCorrect = false
+                if (quizQuestionDef.attributes) {
+                    QuestionAttrs questionAttrs = mapper.readValue(quizQuestionDef.attributes, QuestionAttrs.class)
+                    TextInputAiGradingAttrs textInputAiGradingAttrs = questionAttrs.textInputAiGradingConf
+                    if (textInputAiGradingAttrs?.enabled) {
+                        assert quizAnswerDefs.size() == 1, "Unexpected number of quizAnswerDefs for TextInput question [${quizAnswerDefs.size()}]"
+                        Integer answerDefId = quizAnswerDefs.first().id
+                        UserQuizAnswerAttempt userQuizAnswerAttempt = quizAttemptAnswerRepo.findByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefId(quizAttemptId, answerDefId)
+                        taskSchedulerService.gradeTextInputUsingAi(new TextInputAiGradingRequest(userId: userId, quizId: quizId, quizAttemptId: quizAttemptId, answerDefId: answerDefId, textInputAiGradingAttrs: textInputAiGradingAttrs, studentAnswer: userQuizAnswerAttempt.answer, question: quizQuestionDef.question))
+                    } else {
+                        needsManualGrading = true
+                    }
+                } else {
+                    needsManualGrading = true
+                }
+            } else if (quizQuestionDef.type == QuizQuestionType.Matching) {
+                List<UserQuizAnswerAttempt> attempt = quizAttemptAnswerRepo.findAllByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefIdIn(quizAttemptId, selectedIds.toSet())
+                if(attempt) {
+                    status = attempt.find{answer -> answer.status == UserQuizAnswerAttempt.QuizAnswerStatus.WRONG } ? UserQuizQuestionAttempt.QuizQuestionStatus.WRONG : UserQuizQuestionAttempt.QuizQuestionStatus.CORRECT
+                    correctIds = attempt.findAll{answer -> answer.status == UserQuizAnswerAttempt.QuizAnswerStatus.CORRECT }.collect { it.quizAnswerDefinitionRefId }
+                } else {
+                    status = UserQuizQuestionAttempt.QuizQuestionStatus.WRONG
+                }
+                isCorrect = status == UserQuizQuestionAttempt.QuizQuestionStatus.CORRECT
             } else {
                 if (!selectedIds) {
                     status = UserQuizQuestionAttempt.QuizQuestionStatus.INCOMPLETE
@@ -780,20 +941,11 @@ class QuizRunService {
 
         boolean showCorrectAnswers = alwaysShowCorrectAnswers(quizDef.id)
         boolean quizPassed = numCorrect >= minNumQuestionsToPass
+        boolean shouldHideQuestions = quizSettingsRepo.findBySettingAndQuizRefId(QuizSettings.HideCorrectAnswersOnCompletedQuiz.setting, quizDef.id)?.isEnabled()
 
         boolean shouldReturnGradedRes = (quizPassed || showCorrectAnswers) && quizDef.type == QuizDefParent.QuizType.Quiz;
-        if (!quizPassed && quizDef.type == QuizDefParent.QuizType.Quiz) {
-            UserQuizAttemptRepo.UserQuizAttemptStats userAttemptsStats = quizAttemptRepo.getUserAttemptsStats(userId, quizDef.id,
-                    UserQuizAttempt.QuizAttemptStatus.INPROGRESS, UserQuizAttempt.QuizAttemptStatus.PASSED)
-            Integer numCurrentAttempts = (userAttemptsStats?.getUserNumPreviousQuizAttempts() ?: 0) + 1
-            int numConfiguredAttempts = getMaxQuizAttemptsSetting(quizDef.id)
-            // anything 0 or below is considered to be unlimited attempts
-            // only return graded results if there are no more attempts available
-            shouldReturnGradedRes = showCorrectAnswers || (numConfiguredAttempts > 0 && numCurrentAttempts >= numConfiguredAttempts);
-        }
-
         QuizGradedResult gradedResult = new QuizGradedResult(passed: quizPassed, numQuestionsGotWrong: quizLength - numCorrect - numQuestionsNeedGrading,
-                gradedQuestions: shouldReturnGradedRes ? gradedQuestions : [])
+                gradedQuestions: shouldReturnGradedRes && !shouldHideQuestions ? gradedQuestions : [])
 
         if (numQuestionsNeedGrading > 0) {
             userQuizAttempt.status = UserQuizAttempt.QuizAttemptStatus.NEEDS_GRADING
@@ -806,7 +958,7 @@ class QuizRunService {
         userQuizAttempt.numQuestionsToPass = minNumQuestionsToPass
         quizAttemptRepo.save(userQuizAttempt)
 
-        if(userQuizAttempt.status == UserQuizAttempt.QuizAttemptStatus.NEEDS_GRADING) {
+        if(userQuizAttempt.status == UserQuizAttempt.QuizAttemptStatus.NEEDS_GRADING && needsManualGrading) {
             quizNotificationService.sendGradingRequestNotifications(quizDef, userId)
         }
 
@@ -814,6 +966,31 @@ class QuizRunService {
         gradedResult.started = userQuizAttempt.started
         gradedResult.completed = userQuizAttempt.completed
         return gradedResult
+    }
+
+    @Transactional
+    int incrementAiGradingAttemptCount(Integer quizAttemptId, Integer answerDefId) {
+        UserQuizAnswerAttempt userQuizAnswerAttempt = quizAttemptAnswerRepo.findByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefId(quizAttemptId, answerDefId)
+        log.debug("Incrementing aiGradingAttemptCount for userQuizAnswerAttempt=[{}]", userQuizAnswerAttempt)
+        userQuizAnswerAttempt.aiGradingAttemptCount++
+        return userQuizAnswerAttempt.aiGradingAttemptCount
+    }
+
+    void scheduleTextInputAiGradingRequest(String quizId, Integer questionId, TextInputAiGradingAttrs textInputAiGradingAttrs) {
+        Optional<QuizQuestionDef> questionRes = quizQuestionRepo.findById(questionId)
+        if (questionRes.isEmpty()) {
+            throw new SkillQuizException("Provided question id [${questionId}] does not exist", quizId);
+        }
+        QuizQuestionDef quizQuestionDef = questionRes.get()
+        List<UserQuizQuestionAttempt> needsGradingAttempts = quizQuestionAttemptRepo.findAllByQuizQuestionDefinitionRefIdAndStatus(questionId, UserQuizQuestionAttempt.QuizQuestionStatus.NEEDS_GRADING)
+        needsGradingAttempts.each {UserQuizQuestionAttempt needsGradingAttempt ->
+            Integer quizAttemptId = needsGradingAttempt.userQuizAttemptRefId
+            List<QuizAnswerDef> quizAnswerDefs = quizAnswerRepo.findAllByQuestionRefId(questionId)
+            assert quizAnswerDefs.size() == 1, "Unexpected number of quizAnswerDefs for TextInput question [${quizAnswerDefs.size()}]"
+            Integer answerDefId = quizAnswerDefs.first().id
+            UserQuizAnswerAttempt userQuizAnswerAttempt = quizAttemptAnswerRepo.findByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefId(quizAttemptId, answerDefId)
+            taskSchedulerService.gradeTextInputUsingAi(new TextInputAiGradingRequest(userId: userQuizAnswerAttempt.userId, quizId: quizId, quizAttemptId: quizAttemptId, answerDefId: answerDefId, textInputAiGradingAttrs: textInputAiGradingAttrs, studentAnswer: userQuizAnswerAttempt.answer, question: quizQuestionDef.question))
+        }
     }
 
     private Integer getMinNumQuestionsRequiredToPass(QuizDef quizDef, int numTotalQuestions) {
@@ -834,9 +1011,11 @@ class QuizRunService {
             List<QuizToSkillDefRepo.ProjectIdAndSkillId> skills = quizToSkillDefRepo.getSkillsForQuiz(quizDefId)
             if (skills) {
                 skills.each {
-                    SkillEventResult skillEventResult = reportSkill(it.projectId, it.skillId, userQuizAttempt.userId, userQuizAttempt.completed)
-                    if (skillEventResult) {
-                        res.add(skillEventResult)
+                    if (Boolean.valueOf(it.enabled)) {
+                        SkillEventResult skillEventResult = reportSkill(it.projectId, it.skillId, userQuizAttempt.userId, userQuizAttempt.completed)
+                        if (skillEventResult) {
+                            res.add(skillEventResult)
+                        }
                     }
                 }
             }
@@ -891,7 +1070,7 @@ class QuizRunService {
         return new TableResult(totalCount: count, data: quizAttempts, count: count)
     }
 
-    private QuizDef getQuizDef(String quizId) {
+    QuizDef getQuizDef(String quizId) {
         QuizDef quizDef = quizDefRepo.findByQuizIdIgnoreCase(quizId)
         if (!quizDef) {
             throw new SkillQuizException("Failed to find quiz id.", quizId, ErrorCode.BadParam)

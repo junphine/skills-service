@@ -46,6 +46,7 @@ import skills.services.admin.skillReuse.SkillReuseIdUtil
 import skills.services.attributes.BonusAwardAttrs
 import skills.services.attributes.ExpirationAttrs
 import skills.services.attributes.SkillAttributeService
+import skills.services.attributes.SlidesAttrs
 import skills.services.settings.ClientPrefKey
 import skills.services.settings.ClientPrefService
 import skills.services.settings.Settings
@@ -75,6 +76,9 @@ class SkillsLoader {
 
     @Value('#{"${skills.project.minimumPoints:20}"}')
     int minimumProjectPoints
+
+    @Value('#{"${skills.config.ui.daysToRollOff:2}"}')
+    Integer daysToRollOff
 
     @Autowired
     ProjDefRepo projDefRepo
@@ -370,8 +374,9 @@ class SkillsLoader {
     @Profile
     private OverallSkillSummary.BadgeStats getBadgeStats(ProjDef projDef, String userId) {
         //these probably need to exclude badges where enabled = FALSE
+        Date rollOffDate = new Date() - daysToRollOff
         int numBadgesAchieved = achievedLevelRepository.countAchievedForUser(userId, projDef.projectId, ContainerType.Badge)
-        int numTotalBadges = skillDefRepo.countByProjectIdAndTypeWhereEnabled(projDef.projectId, ContainerType.Badge)
+        int numTotalBadges = skillDefRepo.countBadgesByProjectIdAndEnabledAndActive(projDef.projectId, userId, rollOffDate)
 
         List<UserAchievedLevelRepo.AchievementInfo> recentlyAchievedBadges = getRecentlyAchievedBadges(userId, projDef.projectId)
         List<OverallSkillSummary.SingleBadgeInfo> recentlyAwardedBadges = recentlyAchievedBadges?.collect {
@@ -440,7 +445,7 @@ class SkillsLoader {
 
     @Profile
     private List<SkillDef> loadSubjectsFromDB(ProjDef projDef) {
-        return skillDefRepo.findAllByProjectIdAndType(projDef.projectId, ContainerType.Subject)
+        return skillDefRepo.findAllByProjectIdAndTypeAndEnabled(projDef.projectId, ContainerType.Subject, 'true')
     }
 
     @Transactional(readOnly = true)
@@ -450,11 +455,16 @@ class SkillsLoader {
         if ( version >= 0 ) {
             badgeDefs = badgeDefs.findAll { it.version <= version }
         }
+
         List<SkillBadgeSummary> badges = badgeDefs.sort({ it.displayOrder }).findAll {
             (it.enabled == null || Boolean.valueOf(it.enabled)) && BadgeUtils.afterStartTime(it)
         }.collect { SkillDefWithExtra badgeDefinition ->
             loadBadgeSummary(projDef, userId, badgeDefinition, version)
         }
+        badges.removeAll{ badgeSummary ->
+            BadgeUtils.shouldRollOff(badgeSummary, daysToRollOff) && !badgeSummary.badgeAchieved
+        }
+
         return badges
     }
 
@@ -473,8 +483,8 @@ class SkillsLoader {
 
     @Transactional(readOnly = true)
     @Profile
-    UserPointHistorySummary loadPointHistorySummary(String projectId, String userId, int showHistoryForNumDays, String skillId = null, Integer version = Integer.MAX_VALUE) {
-        List<SkillHistoryPoints> historyPoints = pointsHistoryBuilder.buildHistory(projectId, userId, showHistoryForNumDays, skillId, version)
+    UserPointHistorySummary loadPointHistorySummary(String projectId, String userId, int showHistoryForNumDays, String skillId = null, Integer version = Integer.MAX_VALUE, int minNumOfDaysBeforeReturningHistory = 2) {
+        List<SkillHistoryPoints> historyPoints = pointsHistoryBuilder.buildHistory(projectId, userId, showHistoryForNumDays, skillId, version, minNumOfDaysBeforeReturningHistory)
         List<Achievement> achievements = historyPoints ? loadLevelAchievements(userId, projectId, skillId, historyPoints, showHistoryForNumDays) : []
 
         return new UserPointHistorySummary (
@@ -530,24 +540,8 @@ class SkillsLoader {
         Integer points
     }
 
-    int sortByDisplayOrder(DisplayOrderRes a, DisplayOrderRes b) {
-        if( a.groupId != null || b.groupId != null ) {
-            if( a.groupId != null && b.groupId != null) {
-                if( a.groupId != b.groupId ) {
-                    return a.skillGroupDisplayOrder <=> b.skillGroupDisplayOrder
-                }
-            }
-            else {
-                if( a.groupId != null && b.groupId == null ) {
-                    return a.skillGroupDisplayOrder <=> b.displayOrder
-                }
-                else {
-                    return a.displayOrder <=> b.skillGroupDisplayOrder
-                }
-            }
-        }
-
-        return a.displayOrder <=> b.displayOrder
+    DisplayOrderRes getSkillOrderStats(String projectId, String subjectId, String skillId) {
+        return skillDefRepo.findDisplayOrderByProjectIdAndSubjectIdAndSkillId(projectId, subjectId, skillId)
     }
 
     @Transactional(readOnly = true)
@@ -557,38 +551,18 @@ class SkillsLoader {
 
         String skillSubjectId = skillRelDefRepo.findSubjectSkillIdByChildId(skillDef.id)
 
-        def badges = skillDefRepo.findAllBadgesForSkill([skillId], crossProjectId ?: projectId);
+        String processedSkillId = SkillReuseIdUtil.isTagged(skillId) ? SkillReuseIdUtil.removeTag(skillId) : skillId
+        def badges = skillDefRepo.findAllBadgesForSkill([processedSkillId], crossProjectId ?: projectId);
 
         String groupName = null
         if(skillDef.groupId) {
             groupName = skillDefRepo.getSkillNameByProjectIdAndSkillId(projectId, skillDef.groupId)?.skillName
         }
 
-        String nextSkillId = null;
-        String prevSkillId = null;
-        int totalSkills = 0;
-        int orderInGroup = 0;
-
         boolean isCrossProjectSkill = crossProjectId && crossProjectId != projectId
+        DisplayOrderRes orderInfo = null
         if(subjectId && !isCrossProjectSkill) {
-            List<DisplayOrderRes> skills = skillDefRepo.findDisplayOrderByProjectIdAndSubjectId(projectId, subjectId)?.sort({a, b -> sortByDisplayOrder(a, b)})
-            def currentSkill = skills.find({ it -> it.getSkillId() == skillId })
-            if (!currentSkill) {
-                throw new SkillException("Provided skill id [${skillId}] des not exist under subject [${subjectId}]", projectId, skillId, ErrorCode.BadParam)
-            }
-            def orderedGroup = skills?.sort({a, b -> sortByDisplayOrder(a, b)});
-            orderInGroup = orderedGroup.findIndexOf({it -> it.skillId == currentSkill.skillId}) + 1;
-            totalSkills = orderedGroup.size();
-
-            if (currentSkill) {
-                def currentIndex = skills.findIndexOf{ it.skillId == currentSkill.skillId }
-                if(currentIndex > 0) {
-                    prevSkillId = skills[currentIndex - 1]?.skillId
-                }
-                if(currentIndex < totalSkills - 1) {
-                    nextSkillId = skills[currentIndex + 1]?.skillId
-                }
-            }
+            orderInfo = getSkillOrderStats(projectId, subjectId, skillId)
         }
 
         if (crossProjectId) {
@@ -598,7 +572,7 @@ class SkillsLoader {
         UserPoints up = userPointsRepo.findByProjectIdAndUserIdAndSkillId(crossProjectId ?: projectId, userId, skillId)
         Integer points = up ? up.points : 0
         Integer todayPoints = userPointsRepo.calculatePointsForSingleSkillForADay(userId, skillDef.id, new Date().clearTime()) ?: 0
-        Date achievedOn = achievedLevelRepository.getAchievedDateByUserIdAndProjectIdAndSkillId(userId, projectId, skillId)
+        Date achievedOn = achievedLevelRepository.getAchievedDateByUserIdAndProjectIdAndSkillId(userId, crossProjectId ?: projectId, skillId)
 
         ExpirationAttrs expirationAttrs = skillAttributeService.getExpirationAttrs(projectId, skillId)
         Date expirationDate
@@ -668,10 +642,10 @@ class SkillsLoader {
                 projectName: InputSanitizer.unsanitizeName(projDef.name),
                 skillId: skillDef.skillId,
                 subjectId: skillSubjectId,
-                prevSkillId: prevSkillId,
-                nextSkillId: nextSkillId,
-                orderInGroup: orderInGroup,
-                totalSkills: totalSkills,
+                prevSkillId: orderInfo?.previousSkillId,
+                nextSkillId: orderInfo?.nextSkillId,
+                orderInGroup: orderInfo?.overallOrder ?: 0,
+                totalSkills: orderInfo?.totalCount ?: 0,
                 skill: isReusedSkill ? SkillReuseIdUtil.removeTag(unsanitizedName) : unsanitizedName,
                 points: points, todaysPoints: todayPoints,
                 pointIncrement: skillDef.pointIncrement,
@@ -693,14 +667,16 @@ class SkillsLoader {
                 badges: badges,
                 tags: loadSkillTags(skillDef.id),
                 videoSummary: getVideoSummary(skillDef.copiedFrom ?: skillDef.id),
+                slidesSummary: getSlidesSummary(skillDef.copiedFrom ?: skillDef.id),
                 expirationDate: expirationDate,
                 isMotivationalSkill: isMotivationalSkill,
                 daysOfInactivityBeforeExp: daysOfInactivityBeforeExp,
                 mostRecentlyPerformedOn: mostRecentlyPerformedOn,
                 lastExpirationDate: lastExpirationDate,
-                groupName: groupName,
+                groupName: InputSanitizer.unsanitizeName(groupName),
                 groupSkillId: skillDef.groupId,
                 approvalHistory: approvalHistory,
+                iconClass: skillDef.iconClass,
         )
     }
 
@@ -716,6 +692,20 @@ class SkillsLoader {
                     hasTranscript: videoSummaryAttributes.hasTranscript,
                     height: videoSummaryAttributes.height,
                     width: videoSummaryAttributes.width
+            )
+        }
+        return res
+    }
+
+    @Profile
+    private SlidesSummary getSlidesSummary(Integer skillDefId) {
+        SlidesSummary res = null
+        SkillAttributesDefRepo.SlidesSummaryAttributes summaryAttributes = skillAttributesDefRepo.getSlidesSummary(skillDefId)
+        if (summaryAttributes) {
+            res = new SlidesSummary(
+                    url: summaryAttributes.url,
+                    type: summaryAttributes.type,
+                    width: summaryAttributes?.width
             )
         }
         return res
@@ -884,6 +874,7 @@ class SkillsLoader {
 
     private SkillDescription createSkillDescription(SkillDefWithExtraRepo.SkillDescDBRes it, SettingsResult helpUrlRootSetting, SkillApprovalRepo.SkillApprovalPlusSkillId skillApproval) {
         VideoSummary videoSummary = null
+        SlidesSummary slidesSummary = null
         if (StringUtils.isNotBlank(it.videoUrl)) {
             videoSummary = new VideoSummary(
                     videoUrl: it.videoUrl,
@@ -893,13 +884,22 @@ class SkillsLoader {
             )
         }
 
+        if (StringUtils.isNotBlank(it.slidesUrl)) {
+            slidesSummary = new SlidesSummary(
+                    url: it.slidesUrl,
+                    type: it.slidesType,
+                    width: it.slidesWidth,
+            )
+        }
+
         SkillDescription skillDescription = new SkillDescription(
                 skillId: it.getSkillId(),
                 description: InputSanitizer.unsanitizeForMarkdown(it.getDescription()),
                 href: getHelpUrl(helpUrlRootSetting, it.getHelpUrl()),
                 achievedOn: it.getAchievedOn(),
                 type: it.getType(),
-                videoSummary: videoSummary
+                videoSummary: videoSummary,
+                slidesSummary: slidesSummary
         )
         skillDescription
     }
@@ -1358,6 +1358,7 @@ class SkillsLoader {
                 List<SubjectDataLoader.SkillsAndPoints> groupChildren = skillDefAndUserPoints.children
                 Integer numSkillsRequired = skillDef.numSkillsRequired == - 1 ?  groupChildren.size() : skillDef.numSkillsRequired
                 skillsSummary.children = createSkillSummaries(thisProjDef, groupChildren, false, userId, version)
+                skillsSummary.numberOfChildren = skillsSummary.children.size()
 
                 skillsSummary.points = skillsSummary.children ? skillsSummary.children.collect({it.points}).sort().takeRight(numSkillsRequired).sum() as Integer: 0
                 skillsSummary.todaysPoints = skillsSummary.children ? skillsSummary.children.collect({it.todaysPoints}).sort().takeRight(numSkillsRequired).sum() as Integer: 0
@@ -1432,6 +1433,7 @@ class SkillsLoader {
                         mostRecentlyPerformedOn: mostRecentlyPerformedOn,
                         lastExpirationDate: lastExpirationDate,
                         videoSummary: getVideoSummary(skillDef.copiedFrom ?: skillDef.id),
+                        iconClass: skillDef.iconClass,
                 )
             }
         }

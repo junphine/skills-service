@@ -26,18 +26,19 @@ on:
 jobs:
   build-skills-service-for-ui-tests:
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20.17.0'
+          node-version: ${{ vars.NODE_VERSION }}
 
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '19' # The JDK version to make available on the path.
+          java-version: ${{ vars.JAVA_VERSION }}
 
       - name: Print Versions
         run: |
@@ -65,6 +66,8 @@ jobs:
 
   ui-stomp-tests:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     needs: [build-skills-service-for-ui-tests]
     strategy:
       # when one test fails, DO NOT cancel the other
@@ -85,7 +88,7 @@ jobs:
           - 61613:61613
       postgres:
         # Docker Hub image
-        image: postgres
+        image: postgres:17
         # Provide the password for postgres
         env:
           POSTGRES_PASSWORD: skillsPassword
@@ -112,12 +115,12 @@ jobs:
 
     - uses: actions/setup-node@v4
       with:
-        node-version: '20.17.0'
+        node-version: ${{ vars.NODE_VERSION }}
 
     - uses: actions/setup-java@v4
       with:
         distribution: 'temurin'
-        java-version: '19' # The JDK version to make available on the path.
+        java-version: ${{ vars.JAVA_VERSION }}
 
     - name: Print Versions
       run: |

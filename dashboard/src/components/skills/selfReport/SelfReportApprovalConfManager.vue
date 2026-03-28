@@ -29,6 +29,7 @@ import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import UserRolesUtil from '@/components/utils/UserRolesUtil.js';
 import { useColors } from '@/skills-display/components/utilities/UseColors.js'
 import { useResponsiveBreakpoints } from '@/components/utils/misc/UseResponsiveBreakpoints.js'
+import {useStorage} from "@vueuse/core";
 
 const route = useRoute();
 const announcer = useSkillsAnnouncer();
@@ -38,10 +39,11 @@ const responsive = useResponsiveBreakpoints()
 
 const data = ref([]);
 const loading = ref(true);
-const pageSize = ref(5);
-const possiblePageSizes = [5, 10, 15, 20];
+const tableIsLoading = ref(true);
+const pageSize = useStorage('selfReportApprovalConfManager-pageSize', 5)
+const possiblePageSizes = [5, 10, 15, 20, 50];
 const totalRows = ref(0);
-const sortBy = ref('userId');
+const sortBy = ref('userIdForDisplay');
 const sortOrder = ref(-1);
 const roleCount = ref(null);
 
@@ -52,6 +54,10 @@ const userTagConfKey = computed(() => {
 const userTagConfLabel = computed(() => {
   return appConfig.approvalConfUserTagLabel ? appConfig.approvalConfUserTagLabel : appConfig.approvalConfUserTagKey;
 });
+
+const maxRolePageSize = computed(() => {
+  return appConfig.maxRolePageSize ? appConfig.maxRolePageSize : 200
+})
 
 onMounted(() => {
   countUserRoles();
@@ -83,8 +89,9 @@ const maxConfigReached = computed(() => {
 })
 
 const loadData = () => {
+  tableIsLoading.value = true;
   const pageParams = {
-    limit: 200,
+    limit: maxRolePageSize.value,
     page: 1,
     ascending: sortOrder.value === 1,
     orderBy: sortBy.value,
@@ -113,7 +120,7 @@ const loadData = () => {
       totalRows.value = basicTableInfo.length;
       updateTable(basicTableInfo);
     }).finally(() => {
-      loading.value = false;
+      tableIsLoading.value = false;
     });
   });
 };
@@ -233,16 +240,16 @@ const collapseRow = (row) => {
 </script>
 
 <template>
-  <Card :pt="{ body: { class: '!p-0' } }">
+  <Card :pt="{ body: { class: 'p-0!' } }">
     <template #header>
       <SkillsCardHeader title="Configure Approval Workload"></SkillsCardHeader>
     </template>
     <template #content>
-      <SkillsSpinner :is-loading="loading" />
+      <SkillsSpinner :is-loading="loading && !shouldLoadTable" />
 
       <SkillsDataTable :value="data"
                        v-if="shouldLoadTable"
-                       :loading="loading"
+                       :loading="loading || tableIsLoading"
                        v-model:expandedRows="expandedRows"
                        dataKey="userId"
                        show-gridlines
@@ -257,7 +264,7 @@ const collapseRow = (row) => {
                        tableStoredStateId="skillApprovalConfTable"
                        aria-label="Configure Approval Workload"
                        data-cy="skillApprovalConfTable">
-        <Column field="userId" sortable :class="{'flex': responsive.md.value }">
+        <Column field="userIdForDisplay" sortable :class="{'flex': responsive.md.value }">
           <template #header>
             <span class=""><i class="fas fa-user" :class="colors.getTextClass(0)" aria-hidden="true"/> Approver</span>
           </template>
@@ -319,6 +326,7 @@ const collapseRow = (row) => {
         </template>
 
         <template #expansion="slotProps">
+          <h4 class="sr-only">Configuration for {{ slotProps.data.userIdForDisplay}}</h4>
           <div :data-cy="`expandedChild_${slotProps.data.userId}`">
             <self-report-approval-conf-user-tag v-if="userTagConfKey"
                                                 :user-info="slotProps.data"

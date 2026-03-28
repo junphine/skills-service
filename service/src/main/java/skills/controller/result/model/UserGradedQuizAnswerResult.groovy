@@ -17,9 +17,16 @@ package skills.controller.result.model
 
 class UserGradedQuizAnswerResult {
     Integer id
-    String answer
+    Object answer // could be of type String or MatchingAnswer
     Boolean isConfiguredCorrect
     Boolean isSelected
     Boolean needsGrading = false
     AnswerGradingResult gradingResult
+    AiGradingStatusResult aiGradingStatus
+
+    static class MatchingAnswer {
+        String term
+        String selectedMatch
+        String correctMatch
+    }
 }

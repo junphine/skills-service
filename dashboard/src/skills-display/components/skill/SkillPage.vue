@@ -14,19 +14,19 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import {computed, defineAsyncComponent, onMounted, ref, watch} from 'vue'
 import SkillsTitle from '@/skills-display/components/utilities/SkillsTitle.vue'
-import { useRoute } from 'vue-router'
-import { useSkillsDisplayService } from '@/skills-display/services/UseSkillsDisplayService.js'
-import { useSkillsDisplayInfo } from '@/skills-display/UseSkillsDisplayInfo.js'
+import {useRoute} from 'vue-router'
+import {useSkillsDisplayService} from '@/skills-display/services/UseSkillsDisplayService.js'
+import {useSkillsDisplayInfo} from '@/skills-display/UseSkillsDisplayInfo.js'
 import SkillProgress from '@/skills-display/components/progress/SkillProgress.vue'
 import {useScrollSkillsIntoViewState} from '@/skills-display/stores/UseScrollSkillsIntoViewState.js'
 import {useSkillsDisplaySubjectState} from '@/skills-display/stores/UseSkillsDisplaySubjectState.js'
 import {useSkillsDisplayAttributesState} from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
-import Prerequisites from '@/skills-display/components/skill/prerequisites/Prerequisites.vue'
+const Prerequisites = defineAsyncComponent(() => import('@/skills-display/components/skill/prerequisites/Prerequisites.vue'))
 import SkillAchievementMsg from "@/skills-display/components/progress/celebration/SkillAchievementMsg.vue";
-import SkillsInputSwitch from "@/components/utils/inputForm/SkillsInputSwitch.vue";
 import MarkdownText from "@/common-components/utilities/markdown/MarkdownText.vue";
+import SkillNavigation from "@/skills-display/components/utilities/SkillNavigation.vue";
 
 const attributes = useSkillsDisplayAttributesState()
 const skillsDisplayService = useSkillsDisplayService()
@@ -55,7 +55,7 @@ const loadSkillSummary = () => {
   skillState.loadSkillSummary(skillId, route.params.crossProjectId, route.params.subjectId)
     .then(() => {
       loadingSkill.value = false
-      if (skillId && skill.value.projectId && !skillsDisplayInfo.isCrossProject()) {
+      if (skillId && skill.value.projectId && !skillsDisplayInfo.isCrossProject() && !skillsDisplayInfo.isGlobalBadgeSkillDetails()) {
         skillsDisplayService.updateSkillHistory(skill.value.projectId, skillId)
       }
       scrollIntoViewState.setLastViewedSkillId(skillId)
@@ -99,36 +99,7 @@ const descriptionToggled = () => {
       <skills-title>{{ attributes.skillDisplayName }} Overview</skills-title>
       <Card class="mt-4" :pt="{ content: { class: 'p-0' }}">
         <template #content>
-          <div class="flex-col sm:flex-row items-center flex gap-2 mb-6" v-if="skill && (skill.prevSkillId || skill.nextSkillId) && !skillsDisplayInfo.isCrossProject()">
-            <div class="w-28">
-              <SkillsButton
-                @click="prevButtonClicked" v-if="skill.prevSkillId"
-                outlined
-                size="small"
-                class="skills-theme-btn"
-                data-cy="prevSkill"
-                aria-label="previous skill">
-                <i class="fas fa-arrow-alt-circle-left mr-1" aria-hidden="true"></i> Previous
-              </SkillsButton>
-            </div>
-            <div class="flex-1 text-center " style="font-size: 0.9rem;" data-cy="skillOrder"><span
-              class="italic">{{ attributes.skillDisplayName }}</span> <span class="font-semibold">{{ skill.orderInGroup
-              }}</span> <span class="italic">of</span> <span class="font-semibold">{{ skill.totalSkills }}</span>
-            </div>
-            <div class="w-28 text-right">
-              <SkillsButton
-                @click="nextButtonClicked"
-                v-if="skill.nextSkillId"
-                class="skills-theme-btn"
-                data-cy="nextSkill"
-                outlined
-                size="small"
-                aria-label="next skill">
-                Next
-                <i class="fas fa-arrow-alt-circle-right ml-1" aria-hidden="true"></i>
-              </SkillsButton>
-            </div>
-          </div>
+          <skill-navigation class="mb-6" :skill="skill" @prevButtonClicked="prevButtonClicked" @nextButtonClicked="nextButtonClicked" v-if="skill && (skill.prevSkillId || skill.nextSkillId) && !skillsDisplayInfo.isCrossProject()" />
           <div v-if="!attributes.groupInfoOnSkillPage && skill.groupName" class="mt-4 p-1 mb-4" data-cy="groupInformationSection">
             <div class="flex">
               <div class="mr-2 mt-1 text-xl">

@@ -20,29 +20,53 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.data.jpa.repository.Query
 import org.springframework.lang.Nullable
-import skills.controller.result.model.QuizRun
 import skills.controller.result.model.UserQuizAnswer
 import skills.storage.model.UserQuizAnswerAttempt
-import skills.storage.model.UserQuizAttempt
 
 interface UserQuizAnswerAttemptRepo extends JpaRepository<UserQuizAnswerAttempt, Long> {
 
     static interface AnswerIdAndAnswerText {
         Integer getAnswerAttemptId()
         Integer getAnswerId()
+        @Nullable
         String getAnswerText()
         UserQuizAnswerAttempt.QuizAnswerStatus getAnswerStatus()
+        Integer getAiGradingAttemptCount()
     }
 
     @Query('''select 
             answerAttempt.id as answerAttemptId,
             answerAttempt.quizAnswerDefinitionRefId as answerId, 
             answerAttempt.answer as answerText, 
-            answerAttempt.status as answerStatus
+            answerAttempt.status as answerStatus,
+            answerAttempt.aiGradingAttemptCount  as aiGradingAttemptCount
         from UserQuizAnswerAttempt answerAttempt
         where answerAttempt.userQuizAttemptRefId = ?1
      ''')
     List<AnswerIdAndAnswerText> getSelectedAnswerIdsAndText(Integer attemptId)
+
+    static interface QuestionAIGradingStatus {
+        Integer getQuizAttemptId()
+        Integer getQuestionId()
+        UserQuizAnswerAttempt.QuizAnswerStatus getStatus()
+        @Nullable
+        Integer getAiGradingAttemptCount()
+    }
+
+    @Nullable
+    @Query(value = '''
+        select answerDef.question_ref_id             as questionId,
+               uQuizAttempt.user_quiz_attempt_ref_id as quizAttemptId,
+               uQuizAttempt.status                   as status,
+               uQuizAttempt.ai_grading_attempt_count as aiGradingAttemptCount
+        from user_quiz_answer_attempt uQuizAttempt
+              inner join quiz_answer_definition answerDef on uQuizAttempt.quiz_answer_definition_ref_id = answerDef.id
+              inner join quiz_question_definition qDef on qDef.id = answerDef.question_ref_id
+        where uQuizAttempt.user_quiz_attempt_ref_id in ?1
+          and uQuizAttempt.status = 'NEEDS_GRADING' 
+          and (qDef.attributes -> 'textInputAiGradingConf' ->> 'enabled')::boolean = true 
+    ''', nativeQuery = true)
+    List<QuestionAIGradingStatus> findQuestionAiGradingStatus(List<Integer> attemptId)
 
 
     @Query('''select answerAttempt.quizAnswerDefinitionRefId
@@ -53,6 +77,8 @@ interface UserQuizAnswerAttemptRepo extends JpaRepository<UserQuizAnswerAttempt,
 
     @Nullable
     UserQuizAnswerAttempt findByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefId(Integer attemptId, Integer quizAnswerDefinitionRefId)
+
+    List<UserQuizAnswerAttempt> findAllByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefIdIn(Integer attemptId, Set<Integer> quizAnswerDefinitionRefId)
 
     boolean existsByUserQuizAttemptRefIdAndQuizAnswerDefinitionRefId(Integer attemptId, Integer quizAnswerDefinitionRefId)
 
@@ -78,8 +104,9 @@ interface UserQuizAnswerAttemptRepo extends JpaRepository<UserQuizAnswerAttempt,
               and answerAttempt.user_quiz_attempt_ref_id = quizAttempt.id
               and quizAttempt.status in ('PASSED', 'FAILED')
               and answerAttempt.quiz_answer_definition_ref_id = ?1
+              and (quizAttempt.completed >= ?3 and quizAttempt.completed <= ?4)
      ''', nativeQuery = true)
-    Page<UserQuizAnswer> findUserAnswers(Integer quizAnswerDefinitionRefId, String usersTableAdditionalUserTagKey, PageRequest pageRequest)
+    Page<UserQuizAnswer> findUserAnswers(Integer quizAnswerDefinitionRefId, String usersTableAdditionalUserTagKey, Date startDate, Date endDate, PageRequest pageRequest)
 
 
 }

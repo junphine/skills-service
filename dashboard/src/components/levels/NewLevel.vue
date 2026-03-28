@@ -16,10 +16,11 @@ limitations under the License.
 <script setup>
 import SkillsInputFormDialog from "@/components/utils/inputForm/SkillsInputFormDialog.vue";
 import SkillsNumberInput from '@/components/utils/inputForm/SkillsNumberInput.vue'
-import {number} from "yup";
+import {number, object} from "yup";
 import LevelService from "@/components/levels/LevelService.js";
-import { useRoute } from 'vue-router';
+import {useRoute} from 'vue-router';
 import {useSkillsAnnouncer} from "@/common-components/utilities/UseSkillsAnnouncer.js";
+import {computed, ref} from "vue";
 
 const announcer = useSkillsAnnouncer()
 const route = useRoute();
@@ -35,7 +36,8 @@ const props = defineProps({
 const emit = defineEmits(['load-levels']);
 
 const model = defineModel()
-const isDisabled = false;
+const newLevelDialog = ref();
+
 const saveLevel = (values) => {
   if (props.isEdit === true) {
     return doEditLevel({
@@ -107,7 +109,7 @@ const boundsValidator = (value) => {
     const ltOp = props.levelAsPoints ? lte : lt;
 
     if (props.boundaries.previous !== null) {
-      if (props.boundaries.next === null) {
+      if (!props.isEdit && props.boundaries.next === null) {
         // use gt regardless of points configuration if it's the last level
         gtOp = gt;
       }
@@ -122,44 +124,69 @@ const boundsValidator = (value) => {
   return valid;
 }
 
+const isLastLevel = computed(() => props.boundaries?.next === null)
 // levelAsPoints
 
-let schema = {};
+let schemaTmp = {};
 
 if (props.isEdit) {
-  schema = {
+  schemaTmp = {
     'level': number().required().min(1).label('Level'),
   }
   if (props.levelAsPoints) {
-    schema = {
-      ...schema,
-      'pointsFrom': number().required().min(0).test('overlap', ({ label }) => `${label} must not overlap with other levels`, boundsValidator).label('Points From'),
-      'pointsTo': number().required().min(0).test('overlap', ({ label }) => `${label} must not overlap with other levels`, boundsValidator).label('Points To'),
+    schemaTmp = {
+      ...schemaTmp,
+      'pointsFrom': number()
+          .required()
+          .min(0)
+          .test('overlap', ({ label }) => `${label} must not overlap with other levels`, boundsValidator)
+          .test(
+              'validRange',
+              ({ label }) => `${label} must be less than Points To.`,
+              async (value, testContext) => isLastLevel.value || testContext.parent.pointsTo > value)
+          .label('Points From'),
+    }
+    if (!isLastLevel.value) {
+      schemaTmp = {
+        ...schemaTmp,
+        'pointsTo': number()
+            .required()
+            .min(0)
+            .test('overlap', ({ label }) => `${label} must not overlap with other levels`, boundsValidator)
+            .test(
+                'validRange',
+                ({ label }) => `${label} must be greater than Points From.`,
+                async (value, testContext) => testContext.parent.pointsFrom < value)
+            .label('Points To'),
+      }
     }
   } else {
-    schema = {
-      ...schema,
+    schemaTmp = {
+      ...schemaTmp,
       'percent': number().required().min(0).max(100).label('Percent').test('overlap', ({ label }) => `${label} must not overlap with other levels`, boundsValidator),
     }
   }
 } else {
   if (props.levelAsPoints) {
-    schema = {
-      ...schema,
+    schemaTmp = {
+      ...schemaTmp,
       'points': number().required().min(0).test('overlap', ({ label }) => `${label} must not overlap with other levels`, boundsValidator).label('Points'),
     }
   } else {
-    schema = {
-      ...schema,
+    schemaTmp = {
+      ...schemaTmp,
       'percent': number().required().min(0).max(100).label('Percent').test('overlap', ({ label }) => `${label} must not overlap with other levels`, boundsValidator),
     }
   }
 }
 
+const schema = object(schemaTmp);
+
 </script>
 
 <template>
   <SkillsInputFormDialog
+      ref="newLevelDialog"
       :id="formId"
       v-model="model"
       :is-edit="isEdit"
@@ -171,25 +198,27 @@ if (props.isEdit) {
       :validation-schema="schema"
       :save-data-function="saveLevel"
       :initial-values="initialLevelData"
+      :enable-input-form-resiliency="false"
       :style="{ width: '40rem !important' }">
 
     <template #default>
       <div v-if="isEdit" class="flex flex-col gap-3">
         <SkillsNumberInput isRequired :min="1" label="Level" name="level" disabled/>
-        <SkillsNumberInput v-if="!levelAsPoints" showButtons isRequired :min="0" :max="100" suffix="%" label="Percent"
+        <SkillsNumberInput v-if="!levelAsPoints" isRequired :min="0" :max="100" label="Percent"
                            name="percent"/>
-        <SkillsNumberInput v-if="levelAsPoints" showButtons isRequired :min="0" label="Points From" name="pointsFrom"/>
-        <SkillsNumberInput v-if="levelAsPoints" showButtons isRequired :min="0" label="Points To" name="pointsTo"/>
+        <SkillsNumberInput v-if="levelAsPoints" isRequired :min="0" label="Points From" name="pointsFrom"/>
+        <SkillsNumberInput v-if="levelAsPoints && !isLastLevel" isRequired :min="0" label="Points To" name="pointsTo"/>
+        <InlineMessage v-if="levelAsPoints && isLastLevel" data-cy="noPointsToFieldMsg">The "Points To" field cannot be modified for the last level as it represents the maximum threshold.</InlineMessage>
       </div>
       <template v-else>
         <template v-if="!levelAsPoints">
           <div class="w-full">
-            <SkillsNumberInput showButtons isRequired :min="0" :max="100" suffix="%" label="Percent" name="percent" />
+            <SkillsNumberInput isRequired :min="0" :max="100" suffix="%" label="Percent" name="percent" />
           </div>
         </template>
         <template v-else>
           <div class="w-full">
-            <SkillsNumberInput showButtons isRequired :min="0" data-cy="pointsInput" label="Points" name="points" />
+            <SkillsNumberInput isRequired :min="0" data-cy="pointsInput" label="Points" name="points" />
           </div>
         </template>
       </template>

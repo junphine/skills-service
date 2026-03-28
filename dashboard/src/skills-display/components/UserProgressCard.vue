@@ -48,9 +48,9 @@ const props = defineProps({
 <template>
   <CardWithVericalSections class="skills-progress-card w-min-15rem h-full" :data-cy="componentName">
     <template #header>
-      <div class="text-center text-xl font-medium pt-4 px-4 pb-5" :data-cy="`${componentName}Title`">
+      <h2 class="text-center text-xl font-medium pt-4 px-4 pb-5" :data-cy="`${componentName}Title`">
         {{ title }}
-      </div>
+      </h2>
     </template>
     <template #content>
       <div class="px-4">
@@ -97,7 +97,6 @@ const props = defineProps({
   margin: 14px 0;
   font-size: 4.1rem;
   width: 100%;
-  //color: #0fcc15d1;
 }
 
 .skills-progress-card .skills-icon.user-rank-stack i {

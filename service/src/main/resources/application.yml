@@ -88,6 +88,8 @@ skills:
   artificialDelay:
     enabled: false
   clientLibVersion: @maven.build.timestamp@
+  openai:
+    host: null
   config:
     publiclyExposePrometheusMetrics: false
     # Changing this to a larger value once events have been compacted into WEEKLY events will cause
@@ -111,6 +113,7 @@ skills:
     allowedAttachmentMimeTypes: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/vnd.openxmlformats-officedocument.presentationml.presentation, application/msword, application/vnd.oasis.opendocument.presentation, application/vnd.oasis.opendocument.spreadsheet, application/vnd.oasis.opendocument.text, application/pdf, application/vnd.ms-powerpoint, application/vnd.ms-excel"
     allowedAttachmentFileTypes: ".xlsx, .docx, .pptx, .doc, .odp, .ods, .odt, .pdf, .ppt, .xls"
     allowedVideoUploadMimeTypes: "video/webm, video/mp4, audio/wav, audio/mpeg, audio/mp4, audio/aac, audio/aacp, audio/ogg, audio/webm, audio/flac"
+    allowedSlidesUploadMimeTypes: "application/pdf, application/x-bzpdf, application/x-gzpdf"
     attachmentWarningMessage:
     ui:
       dashboardVersion: @pom.version@
@@ -151,6 +154,7 @@ skills:
       maxQuizTextAnswerLength: 2000
       maxQuizAnswerHintLength: 2000
       maxTakeQuizInputTextAnswerLength: 50000
+      maxTextInputAiGradingCorrectAnswerLength: 10000
       maxSkillNameLength: 100
       maxSubjectNameLength: 50
       maxLevelNameLength: 50
@@ -183,6 +187,23 @@ skills:
       videoUploadLoadingBarLengthyCalculationTimeoutRatio: 75000
       activityHistoryStartDate:
       disableEncouragementsConfetti: false
+      contactSupportEnabled: false
+      contactSupportExternalUrl: https://skilltreeplatform.dev/
+      contactSupportExternalTitle: Support Center
+      contactSupportExternalDescription: If you have a feature request, need to report a bug, or simply have a question, the best way to get assistance is to visit the Support Center and create a ticket.
+      contactSupportExternalEmail: someSupport@someDomain.com
+      contactSupportExternalEmailDescription: As an alternative, you can reach out to the SkillTree team by sending an email to
+      maxRolePageSize: 200
+      openaiModelDefaultTemperature: 0.5
+      openaiTakingLongerThanExpectedTimeoutPerMsg: 12000
+      openaiTakingLongerThanExpectedMessages:
+        - "Just a moment while I get everything ready."
+        - "Hang tight! Still processing your request."
+        - "Still working on generating the best response for you."
+        - "I am still trying, sorry for the delay!"
+        - "This is taking longer than expected but I am still working on it."
+        - "I am trying but unfortunately it is still taking way longer than expected."
+      maxAiPromptLength: 5000
     client:
       loggingEnabled: false
       loggingLevel: DEBUG
@@ -192,6 +213,11 @@ db-scheduler:
   threads: 3
 ---
 spring:
+  ai:
+    model:
+      chat: none
+    openai:
+      api-key: none
   cloud:
     aws:
       s3:

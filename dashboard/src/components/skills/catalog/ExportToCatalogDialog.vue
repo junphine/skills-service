@@ -14,15 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed, onMounted, ref, toRaw } from 'vue'
-import { useFocusState } from '@/stores/UseFocusState.js'
+import {computed, onMounted, ref, toRaw} from 'vue'
+import {useFocusState} from '@/stores/UseFocusState.js'
 import CatalogService from '@/components/skills/catalog/CatalogService.js'
-import { useRoute } from 'vue-router'
-import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
-import { SkillsReporter } from '@skilltree/skills-client-js'
+import {useRoute, useRouter} from 'vue-router'
+import {useAppConfig} from '@/common-components/stores/UseAppConfig.js'
+import {SkillsReporter} from '@skilltree/skills-client-js'
 import SkillsOverlay from '@/components/utils/SkillsOverlay.vue'
 import ScrollPanel from 'primevue/scrollpanel'
 import {useDialogUtils} from "@/components/utils/inputForm/UseDialogUtils.js";
+import {useSkillsAnnouncer} from "@/common-components/utilities/UseSkillsAnnouncer.js";
+import LinkToSkillPage from "@/components/utils/LinkToSkillPage.vue";
 
 const model = defineModel()
 const props = defineProps({
@@ -40,7 +42,9 @@ const props = defineProps({
 const emit = defineEmits(['on-exported', 'on-nothing-to-export'])
 const focusState = useFocusState()
 const route = useRoute()
+const router = useRouter()
 const appConfig = useAppConfig()
+const announcer = useSkillsAnnouncer()
 
 const handleOkBtn = () => {
   if (!state.value.exported) {
@@ -79,7 +83,9 @@ const firstSkillName = ref(null)
 const allSkillsAreDups = ref(false)
 const state = ref({
   exporting: false,
-  exported: false
+  exported: false,
+  failed: false,
+  failedSkillId: null
 })
 
 onMounted(() => {
@@ -105,7 +111,7 @@ const prepSkillsForExport = () => {
 
         // re-filter if another user added to the filter or if the changes was made in another tab
         enrichedSkills = enrichedSkills.filter((skill) => !skill.skillAlreadyInCatalog)
-        const isExportableSkill = (skill) => !skill.skillIdConflictsWithExistingCatalogSkill && !skill.skillNameConflictsWithExistingCatalogSkill && !skill.hasDependencies
+        const isExportableSkill = (skill) => !skill.skillIdConflictsWithExistingCatalogSkill && !skill.skillNameConflictsWithExistingCatalogSkill && !skill.hasDependencies && skill.enabled
 
         notExportableSkills.value = enrichedSkills.filter((skill) => !isExportableSkill(skill))
         allSkillsAreDups.value = enrichedSkills.length === notExportableSkills.value.length
@@ -122,6 +128,8 @@ const prepSkillsForExport = () => {
 }
 
 const handleExport = () => {
+  state.value.failed = false
+  state.value.failedSkillId = null
   state.value.exporting = true
   CatalogService.bulkExport(route.params.projectId, skillsFiltered.value.map((skill) => skill.skillId))
     .then(() => {
@@ -130,6 +138,16 @@ const handleExport = () => {
     })
     .finally(() => {
       state.value.exporting = false
+    }).catch((err) => {
+      const isParagraphValidationFailed = err && err.response && err.response.data && err.response.data.errorCode === 'ParagraphValidationFailed'
+      if (isParagraphValidationFailed) {
+        const skillId = err.response.data.skillId
+        state.value.failed = true
+        state.value.failedSkillId = skillId
+        announcer.polite(`Project ${route.params.projectId} failed to be copied due to paragraph validation for skill with id ${skillId}`)
+      } else {
+        router.push({name: 'ErrorPage', query: {err}});
+      }
     })
 }
 
@@ -162,6 +180,25 @@ const dialogUtils = useDialogUtils()
       </Message>
       <div v-if="!isUserCommunityRestricted">
         <Message
+            v-if="state.failed"
+            :closable="false"
+            data-cy="exportFailedMessage"
+            severity="error">
+          <div>Failed to export skills to the catalog.</div>
+          <div>The skill with ID
+            <link-to-skill-page
+                :skill-id="state.failedSkillId"
+                :project-id="route.params.projectId"
+                :link-label="state.failedSkillId"
+                data-cy="failedSkillLink"
+            />
+            has a description that doesn't meet the validation requirements.
+          </div>
+          <div>
+            Please update the skill's description to resolve the issue, then try exporting again.
+          </div>
+        </Message>
+        <Message
           v-if="insufficientSubjectPoints"
           :closable="false"
           severity="warn">Export
@@ -181,7 +218,7 @@ const dialogUtils = useDialogUtils()
           </Message>
 
           <skills-overlay
-            v-if="!allSkillsExportedAlready && !state.exported"
+            v-if="!allSkillsExportedAlready && !state.exported && !state.failed"
             :show="state.exporting"
             opacity="50">
             <p v-if="!allSkillsAreDups">
@@ -225,6 +262,8 @@ const dialogUtils = useDialogUtils()
                   </Tag>
                   <Tag severity="warn" v-if="dupSkill.hasDependencies" class="ml-1">Has Prerequisites
                   </Tag>
+                  <Tag severity="warn" v-if="!dupSkill.enabled" class="ml-1">Is Disabled
+                  </Tag>
                 </li>
               </ul>
               </ScrollPanel>
@@ -252,7 +291,7 @@ const dialogUtils = useDialogUtils()
               outlined
               severity="success"
               @click="handleExport"
-              :disabled="loadingData"
+              :disabled="loadingData || state.failed"
               data-cy="exportToCatalogButton" />
           </div>
           <div v-if="!isExportable" class="text-right">

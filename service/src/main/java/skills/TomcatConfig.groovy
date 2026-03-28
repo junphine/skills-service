@@ -83,17 +83,24 @@ class TomcatConfig implements WebServerFactoryCustomizer<TomcatServletWebServerF
         }
     }
 
-    static class DnConverter extends AccessConverter {
+    static class UserIdConverter extends AccessConverter {
 
         static final String CERT_HEADER = 'jakarta.servlet.request.X509Certificate'
 
         @Override
         String convert(IAccessEvent accessEvent) {
-            String dn = getSubjectDN(accessEvent)
-            if (dn == null) {
+            try {
+                String dn = getSubjectDN(accessEvent)
+                if (dn) {
+                    return dn
+                }
+                String userIdForLogging = UserIdLoggingFilter.USER_ID.get()
+                if (userIdForLogging) {
+                    return userIdForLogging
+                }
                 return IAccessEvent.NA
-            } else {
-                return dn
+            } finally {
+                UserIdLoggingFilter.USER_ID.remove()
             }
         }
 

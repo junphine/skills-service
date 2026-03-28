@@ -15,18 +15,22 @@ limitations under the License.
 */
 <script setup>
 
-import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { useTruncateFormatter } from '@/components/utils/UseTruncateFormatter.js'
-import { useUserTagsUtils } from '@/components/utils/UseUserTagsUtils.js'
-import { useUserInfo } from '@/components/utils/UseUserInfo.js'
-import { useResponsiveBreakpoints } from '@/components/utils/misc/UseResponsiveBreakpoints.js';
+import {computed, onMounted, ref} from 'vue'
+import {useRoute} from 'vue-router'
+import {useUserTagsUtils} from '@/components/utils/UseUserTagsUtils.js'
+import {useUserInfo} from '@/components/utils/UseUserInfo.js'
+import {useResponsiveBreakpoints} from '@/components/utils/misc/UseResponsiveBreakpoints.js';
 import Column from 'primevue/column'
 import QuizService from '@/components/quiz/QuizService.js'
 import DateCell from '@/components/utils/table/DateCell.vue'
-import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import {useNumberFormat} from '@/common-components/filter/UseNumberFormat.js'
 import MarkdownText from "@/common-components/utilities/markdown/MarkdownText.vue";
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useTimeUtils} from "@/common-components/utilities/UseTimeUtils.js";
+import {useColors} from "@/skills-display/components/utilities/UseColors.js";
+import {useStorage} from "@vueuse/core";
 
+const timeUtils = useTimeUtils()
 const props = defineProps({
   answerDefId: Number,
   isSurvey: Boolean,
@@ -34,14 +38,15 @@ const props = defineProps({
     type: String,
     default: '',
   },
+  dateRange: Array,
 })
 
 const route = useRoute();
-const truncateFormatter = useTruncateFormatter();
 const userTagsUtils = useUserTagsUtils();
 const userInfo = useUserInfo();
 const numberFormat = useNumberFormat()
 const responsive = useResponsiveBreakpoints()
+const colors = useColors()
 const quizId = ref(route.params.quizId);
 const answerHistory = ref([]);
 const sortInfo = ref({  sortOrder: 1, sortBy: 'updated' })
@@ -55,10 +60,10 @@ const tableOptions = ref({
     server: true,
     currentPage: 1,
     totalRows: 0,
-    pageSize: 5,
     possiblePageSizes: [5, 10, 15, 20],
   },
 })
+const pageSize = useStorage('quizAnswerHistory-tablePageSize', 5)
 const answerTxtTruncate = {
   truncateThreshold: 600,
   truncateTo: 550,
@@ -105,11 +110,15 @@ const isTextInput = computed(() => {
 
 const loadData = () => {
   tableOptions.value.busy = true;
+  const dateRange = timeUtils.prepareDateRange(props.dateRange)
+
   const params = {
-    limit: tableOptions.value.pagination.pageSize,
+    limit: pageSize.value,
     ascending: sortInfo.value.sortOrder === 1,
     page: tableOptions.value.pagination.currentPage,
     orderBy: sortInfo.value.sortBy,
+    startDate: dateRange.startDate,
+    endDate: dateRange.endDate,
   };
   return QuizService.getQuizAnswerSelectionHistory(quizId.value, props.answerDefId, params)
       .then((res) => {
@@ -122,7 +131,7 @@ const loadData = () => {
           });
         });
         tableOptions.value.pagination.totalRows = res.count;
-        tableOptions.value.pagination.hideUnnecessary = res.totalCount <= tableOptions.value.pagination.pageSize;
+        tableOptions.value.pagination.hideUnnecessary = res.totalCount <= pageSize.value;
         if (expanded.value) {
           expandAll()
         }
@@ -133,7 +142,7 @@ const loadData = () => {
 }
 
 const pageChanged = (pagingInfo) => {
-  tableOptions.value.pagination.pageSize = pagingInfo.rows;
+  pageSize.value = pagingInfo.rows;
   tableOptions.value.pagination.currentPage = pagingInfo.page + 1;
   loadData();
 };
@@ -161,7 +170,7 @@ const collapseAll = () => {
 <template>
   <div>
     <SkillsDataTable
-        tableStoredStateId="answerHistory"
+        :tableStoredStateId="`answerHistory${answerDefId}`"
         :value="answerHistory"
         :loading="tableOptions.busy"
         stripedRows
@@ -169,7 +178,7 @@ const collapseAll = () => {
         :paginator="true"
         dataKey="userQuizAttemptId"
         v-model:expandedRows="expandedRows"
-        :rows="tableOptions.pagination.pageSize"
+        :rows="pageSize"
         :rowsPerPageOptions="tableOptions.pagination.possiblePageSizes"
         :total-records="tableOptions.pagination.totalRows"
         @page="pageChanged"
@@ -202,10 +211,7 @@ const collapseAll = () => {
       </template>
 
       <template #empty>
-        <div class="flex justify-center flex-wrap">
-          <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle" aria-hidden="true"></i>
-          <span class="flex items-center justify-center">There are no records to show</span>
-        </div>
+        <table-no-res />
       </template>
       <template #expansion="slotProps">
         <MarkdownText
@@ -218,14 +224,14 @@ const collapseAll = () => {
           <span class="sr-only">Expander Control</span>
         </template>
       </Column>
-      <Column v-for="col of tableOptions.fields"
+      <Column v-for="(col, index) of tableOptions.fields"
               :key="col.key"
               :field="col.key"
               :sortable="col.sortable"
               class="align-top"
               :class="{'flex': responsive.md.value }">
         <template #header>
-          <span :data-cy="col.dataCy" ><i :class="col.imageClass" aria-hidden="true"></i> {{ col.label }}</span>
+          <span :data-cy="col.dataCy" ><i :class="`${col.imageClass} ${colors.getTextClass(index)}`" aria-hidden="true"></i> {{ col.label }}</span>
         </template>
         <template #body="slotProps">
           <div v-if="slotProps.field === 'userIdForDisplay'" class="flex flex-row flex-wrap items-center"  :data-cy="`row${slotProps.index}-colUserId`">

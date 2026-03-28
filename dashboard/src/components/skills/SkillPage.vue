@@ -27,6 +27,7 @@ import { useProjConfig } from '@/stores/UseProjConfig.js'
 import ShowMore from '@/components/skills/selfReport/ShowMore.vue'
 import EditSkill from '@/components/skills/EditSkill.vue'
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
+import SkillNavigation from "@/skills-display/components/utilities/SkillNavigation.vue";
 
 const route = useRoute()
 const router = useRouter()
@@ -82,6 +83,7 @@ const navItems = ref([])
 const buildNavItems = () => {
   const items = []
   items.push({ name: 'Overview', iconClass: 'fa-info-circle skills-color-overview', page: 'SkillOverview' })
+  items.push({ name: 'Slides', iconClass: 'fa-solid fa-file-pdf', page: 'ConfigureSlides' })
   items.push({ name: 'Audio/Video', iconClass: 'fa-play-circle skills-color-video', page: 'ConfigureVideo' })
   items.push({
     name: 'Expiration',
@@ -89,7 +91,7 @@ const buildNavItems = () => {
     page: 'ConfigureExpiration'
   })
   items.push({ name: 'Users', iconClass: 'fa-users skills-color-users', page: 'SkillUsers' })
-  if (!isImported?.value && !isReadOnlyProj.value) {
+  if (!isImported?.value && !isReadOnlyProj.value && !isDisabled.value) {
     items.push({
       name: 'Add Event',
       iconClass: 'fa-user-plus skills-color-events',
@@ -103,6 +105,9 @@ const buildNavItems = () => {
 const isImported = computed(() => {
   return skillsState.skill && skillsState.skill.copiedFromProjectId && skillsState.skill.copiedFromProjectId.length > 0
 })
+const isDisabled = computed(() => {
+  return skillsState.skill && !skillsState.skill.enabled
+})
 
 // Methods
 const displayEdit = () => {
@@ -114,7 +119,7 @@ const loadData = () => {
   skillsState.loadSkill(route.params.projectId, route.params.subjectId, route.params.skillId)
     .then(() => {
       headerOptions.value = buildHeaderOptions()
-      if (subjectState.subject) {
+      if (subjectState.subject && subjectState.subject.subjectId === route.params.subjectId) {
         navItems.value = buildNavItems()
       } else {
         subjectState.loadSubjectDetailsState().then(() => {
@@ -137,8 +142,10 @@ const skillEdited = (editedSkill) => {
 
 const buildHeaderOptions = () => {
   const skillId = skillsState.skill?.skillId ? SkillReuseIdUtil.removeTag(skillsState.skill.skillId) : ''
+  const iconClass = skillsState.skill?.iconClass ? skillsState.skill.iconClass : 'fas fa-graduation-cap'
+
   return {
-    icon: 'fas fa-graduation-cap skills-color-skills',
+    icon: `${iconClass} skills-color-skills`,
     title: `SKILL: ${skillsState.skill?.name}`,
     subTitle: `ID: ${skillId} | GROUP ID: ${skillsState.skill?.groupId}`,
     stats: [{
@@ -152,10 +159,26 @@ const buildHeaderOptions = () => {
 const skillId = computed(() => {
   return skillsState.skill ? `ID: ${SkillReuseIdUtil.removeTag(skillsState.skill.skillId)}` : 'Loading...'
 })
+
+const prevButtonClicked = () => {
+  const params = { skillId: skillsState.skill.prevSkillId, projectId: route.params.projectId }
+  router.push({ name: route.name, params: params })
+}
+
+const nextButtonClicked = () => {
+  const params = { skillId: skillsState.skill.nextSkillId, projectId: route.params.projectId }
+  router.push({ name: route.name, params: params })
+}
+
 </script>
 
 <template>
-  <div>
+  <div class="mt-2">
+    <Card class="p-2" :pt="{ body: { class: 'p-0!' } }" v-if="skillsState.skill && (skillsState.skill.prevSkillId || skillsState.skill.nextSkillId)" >
+      <template #content>
+        <skill-navigation @prevButtonClicked="prevButtonClicked" @nextButtonClicked="nextButtonClicked" :skill="skillsState.skill" buttonSeverity="info" />
+      </template>
+    </Card>
     <page-header :loading="isLoading" :options="headerOptions">
       <template #subTitle v-if="skillsState.skill">
         <div v-for="(tag) in skillsState.skill.tags" :key="tag.tagId" class="h6 mr-2 d-inline-block"
@@ -173,7 +196,7 @@ const skillId = computed(() => {
       </template>
       <template #subSubTitle v-if="!isImported">
         <SkillsButton
-          id="edidSkillBtn"
+          id="editSkillBtn"
           v-if="skillsState.skill && !isReadOnlyProj"
           @click="displayEdit"
           size="small"
@@ -187,20 +210,21 @@ const skillId = computed(() => {
           ref="editSkillInPlaceBtn" />
       </template>
       <template #right-of-header
-                v-if="!isLoading && (skillsState.skill.sharedToCatalog || isImported)">
+                v-if="!isLoading && (skillsState.skill.sharedToCatalog || isImported || !skillsState.skill.enabled)">
         <Tag v-if="skillsState.skill.sharedToCatalog" class="ml-2" data-cy="exportedBadge"><i
           class="fas fa-book" aria-hidden="true"></i> EXPORTED
         </Tag>
-        <Tag v-if="isImported" class="ml-2" severity="success" data-cy="importedBadge">
-          <span v-if="skillsState.skill.reusedSkill"><i class="fas fa-recycle"></i> Reused</span>
+        <Tag v-if="isImported" class="ml-2" severity="success" data-cy="importedBadge" aria-label="Reused">
+          <span v-if="skillsState.skill.reusedSkill"><i class="fas fa-recycle"  aria-hidden="true"></i> Reused</span>
           <span v-else><i class="fas fa-book" aria-hidden="true"></i> IMPORTED</span>
         </Tag>
         <Tag v-if="!skillsState.skill.enabled"
              severity="secondary"
              class="ml-2" data-cy="disabledSkillBadge"><i
-          class="fas fa-book mr-1" aria-hidden="true"></i> DISABLED</Tag>
+          class="fas fa-eye-slash mr-1" aria-hidden="true"></i> DISABLED</Tag>
       </template>
     </page-header>
+
     <navigation :nav-items="navItems">
     </navigation>
 
@@ -208,6 +232,9 @@ const skillId = computed(() => {
       v-if="showEdit"
       v-model="showEdit"
       :skill="skillsState.skill"
+      :is-subject-enabled="subjectState.subject.enabled"
+      :group-id="skillsState.skill.groupId"
+      :is-group-enabled="skillsState.skill.groupEnabled"
       :is-edit="true"
       :project-user-community="projConfig.getProjectCommunityValue()"
       @skill-saved="skillEdited" />

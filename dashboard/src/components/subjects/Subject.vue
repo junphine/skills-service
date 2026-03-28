@@ -45,7 +45,7 @@ const buildCardOptions = () => {
     navTo: buildManageNavLink(),
     icon: subjectInternal.value.iconClass,
     title: subjectInternal.value.name,
-    subTitle: `ID: ${subjectInternal.value.subjectId}`,
+    subTitle: `ID: ${subjectInternal.value?.subjectId || ''}`,
     stats: [{
       label: '# Skills',
       count: subjectInternal.value.numSkills,
@@ -76,6 +76,7 @@ const buildCardOptions = () => {
       id: subjectInternal.value.subjectId,
     },
     displayOrder: subject.displayOrder,
+    disabled: !subjectInternal.value.enabled
   };
 };
 

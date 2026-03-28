@@ -16,7 +16,7 @@ limitations under the License.
 <script setup>
 import SkillsTitle from '@/skills-display/components/utilities/SkillsTitle.vue'
 import { useSkillsDisplaySubjectState } from '@/skills-display/stores/UseSkillsDisplaySubjectState.js'
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import UserOverallProgress from '@/skills-display/components/home/UserOverallProgress.vue'
 import { tryOnBeforeMount } from '@vueuse/core'
@@ -34,6 +34,10 @@ onMounted(() => {
   subject.loadSubjectSummary(route.params.subjectId)
 })
 
+watch( () => route.params.subjectId, () => {
+  subject.loadSubjectSummary(route.params.subjectId)
+});
+
 </script>
 
 <template>
@@ -45,12 +49,12 @@ onMounted(() => {
         <user-overall-progress :is-subject="true"/>
       </div>
 
-      <div class="mt-4 flex flex-col md:flex-row gap-6 ">
+      <div class="mt-4 flex flex-col lg:flex-row gap-6 ">
         <div class="flex items-center">
           <my-rank class="w-full"/>
         </div>
-        <div class="flex-1 items-center">
-          <point-progress-chart />
+        <div class="flex-1 min-w-0">
+          <point-progress-chart class="w-full" />
         </div>
       </div>
 

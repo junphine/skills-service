@@ -80,6 +80,10 @@ class SettingsDataAccessor {
         settingRepo.findAllByTypeAndSetting(Setting.SettingType.Project, setting)
     }
 
+    List<Setting> getAllUserProjectSettings(String setting, Integer userRefId) {
+        settingRepo.findAllByTypeAndSettingAndUserRefId(SettingType.UserProject, setting, userRefId)
+    }
+
     List<Setting> getProjectSettingForAllProjectsInList(String setting, List<String> projectIds) {
         settingRepo.findSettingsInProjectList(setting, projectIds)
     }
@@ -125,6 +129,14 @@ class SettingsDataAccessor {
         return settingRepo.findUserSettingValueByUserIdAndSettingAndProjectIdIsNull(userId, setting)
     }
 
+    Setting getSkillSetting(Integer skillRefId, String setting, String settingGroup){
+        settingRepo.findByTypeAndSkillRefIdAndSettingGroupAndSetting(SettingType.Skill, skillRefId, settingGroup, setting)
+    }
+
+    Setting getSkillSetting(String projectId, String skillId, String setting, String settingGroup){
+        settingRepo.findSkillSettingByProjectIdAndSkillId(projectId, skillId, settingGroup, setting)
+    }
+
     void save(Setting setting){
         settingRepo.save(setting)
     }
@@ -151,6 +163,10 @@ class SettingsDataAccessor {
         settingRepo.deleteBySettingAndTypeAndUserRefId(setting, SettingType.User, userRefId)
     }
 
+    void deleteGlobalMetricsUserSetting(String setting, String projectId, SettingType type, Integer userRefId) {
+        settingRepo.deleteBySettingAndProjectIdAndTypeAndUserRefId(setting, projectId, type, userRefId)
+    }
+
     void deleteUserProjectSetting(Integer userRefId, String setting, String settingGroup, String projectId=null) {
         settingRepo.deleteBySettingAndSettingGroupAndProjectIdAndTypeAndUserRefId(setting, settingGroup, projectId, SettingType.UserProject, userRefId)
     }
@@ -166,6 +182,8 @@ class SettingsDataAccessor {
     Setting loadSetting(SettingsRequest request, Integer userRefId=null){
         if(request instanceof UserProjectSettingsRequest){
             return getUserProjectSetting(userRefId, request.projectId, request.setting, request.settingGroup)
+        } else if(request instanceof GlobalMetricsSettingsRequest){
+            return getUserProjectSetting(userRefId, request.projectId, request.setting, request.settingGroup)
         } else if (request instanceof UserSettingsRequest) {
             return getUserSetting(userRefId, request.setting, request.settingGroup)
         } else if(request instanceof GlobalSettingsRequest){
@@ -174,6 +192,8 @@ class SettingsDataAccessor {
             return getRootUserProjectSetting(request.settingGroup, request.setting, request.projectId)
         } else if(request instanceof ProjectSettingsRequest){
             return getProjectSetting(request.projectId, request.setting, request.settingGroup)
+        } else if(request instanceof SkillSettingsRequest){
+            return getSkillSetting(request.skillRefId, request.setting, request.settingGroup)
         } else {
             log.error("unable SettingRequest [${request.getClass()}]")
             throw new SkillException("Unrecognized Setting type")

@@ -115,7 +115,7 @@ const emailUsers = () => {
             <Tag data-cy="projectAdminCount">{{ numFormat.pretty(currentCount) }}</Tag>
             Project Administrators
           </div>
-          <div class="uppercase text-xl my-6">Email Content</div>
+          <h2 class="uppercase text-xl my-6">Email Content</h2>
           <div>
             <SkillsTextInput name="subjectLine" label="Subject Line" data-cy="emailUsers_subject" class="w-full" />
             <markdown-editor data-cy="emailUsers_body"
@@ -124,6 +124,7 @@ const emailUsers = () => {
                              name="emailBody"
                              :resizable="true"
                              :allow-attachments="false"
+                             :disable-ai-prompt="true"
                              :use-html="true"/>
           </div>
           <div class="mt-2 flex gap-2">

@@ -544,7 +544,7 @@ const previewEmail = () => {
         </Message>
 
         <BlockUI :blocked="!emailFeatureConfigured">
-          <div class="font-bold text-lg  uppercase mb-4">Filters</div>
+          <h3 class="font-bold text-lg  uppercase mb-4">Filters</h3>
           <div class="">
             <SkillsDropDown
               label="Type"
@@ -614,11 +614,11 @@ const previewEmail = () => {
 
           <hr />
 
-          <div class="py-2 font-bold text-lg uppercase">Email Content</div>
+          <h3 class="py-2 font-bold text-lg uppercase">Email Content</h3>
           <div class="mt-2">
             <SkillsTextInput name="subjectLine" label="Subject Line" data-cy="emailUsers_subject" class="w-full" :disabled="!emailFeatureConfigured" />
           </div>
-          <div class="flex w-full">
+          <div class="flex w-full mt-2">
             <markdown-editor class="w-full"
                              data-cy="emailUsers_body"
                              label="Email Body"
@@ -626,6 +626,7 @@ const previewEmail = () => {
                              v-if="emailFeatureConfigured"
                              :resizable="false"
                              :allow-attachments="false"
+                             :disable-ai-prompt="true"
                              :use-html="true"/>
             <SkillsTextarea v-else data-cy="emailUsers_body"
                             label="Email Body"

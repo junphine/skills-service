@@ -18,8 +18,10 @@ package skills.controller
 import groovy.util.logging.Slf4j
 import org.apache.commons.lang3.StringUtils
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.data.domain.PageRequest
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
+import org.springframework.web.servlet.ModelAndView
 import skills.PublicProps
 import skills.auth.UserInfoService
 import skills.auth.aop.ExcludeFromLimitDashboardAccess
@@ -27,16 +29,17 @@ import skills.auth.aop.LimitDashboardAccess
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
 import skills.controller.exceptions.SkillsValidator
-import skills.controller.request.model.AdminGroupDefExistsRequest
-import skills.controller.request.model.AdminGroupDefRequest
-import skills.controller.request.model.ProjectExistsRequest
-import skills.controller.request.model.ProjectRequest
-import skills.controller.request.model.QuizDefExistsRequest
-import skills.controller.request.model.QuizDefRequest
+import skills.controller.request.model.*
 import skills.controller.result.model.*
+import skills.controller.result.model.globalMetrics.GlobalMetricsResult
+import skills.controller.result.model.globalMetrics.SingleUserOverallProgress
+import skills.controller.result.model.globalMetrics.UsersOverallProgressResult
 import skills.dbupgrade.DBUpgradeSafe
 import skills.icons.CustomIconFacade
+import skills.metrics.GlobalProgressMetricsService
+import skills.metrics.MetricsService
 import skills.profile.EnableCallStackProf
+import skills.services.GlobalBadgesService
 import skills.services.IdFormatValidator
 import skills.services.admin.InviteOnlyProjectService
 import skills.services.admin.ProjAdminService
@@ -45,6 +48,10 @@ import skills.services.admin.SkillsAdminService
 import skills.services.adminGroup.AdminGroupService
 import skills.services.quiz.QuizDefService
 import skills.utils.InputSanitizer
+import skills.utils.TablePageUtil
+import skills.utils.TimeRangeFormatterUtil
+
+import java.nio.charset.StandardCharsets
 
 @RestController
 @RequestMapping("/app")
@@ -63,6 +70,9 @@ class AppController {
     AdminGroupService adminGroupService
 
     @Autowired
+    GlobalBadgesService globalBadgesService
+
+    @Autowired
     CustomIconFacade customIconFacade
 
     @Autowired
@@ -76,6 +86,21 @@ class AppController {
 
     @Autowired
     InviteOnlyProjectService inviteOnlyProjectService
+
+    @Autowired
+    GlobalProgressMetricsService globalMetricsService
+
+    @Autowired
+    MetricsService metricsServiceNew
+
+    @Autowired
+    GlobalProgressMetricsService globalProgressMetricsService
+
+    @Autowired
+    GlobalProgressExportResult globalProgressExportResult
+
+    @Autowired
+    QuizRunsExportResult quizRunsExportResult
 
     static final RESERVERED_PROJECT_ID = ShareSkillsService.ALL_SKILLS_PROJECTS
 
@@ -129,7 +154,7 @@ class AppController {
 
         projectRequest.projectId = InputSanitizer.sanitize(projectRequest.projectId)
         projectRequest.name = InputSanitizer.sanitize(projectRequest.name)?.trim()
-        projectRequest.description = StringUtils.trimToNull(InputSanitizer.sanitize(projectRequest.description))
+        projectRequest.description = StringUtils.trimToNull(InputSanitizer.sanitizeDescription(projectRequest.description))
 
         projAdminService.saveProject(null, projectRequest)
         return new RequestResult(success: true)
@@ -240,5 +265,143 @@ class AppController {
     ProjectDescription getProjectDescription(@PathVariable("id") String projectId) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         return projAdminService.getProjectDescription(projectId)
+    }
+
+
+    @RequestMapping(value = "/badges", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    List<GlobalBadgeResult> getBadges() {
+        return globalBadgesService.getBadgesForUser()
+    }
+
+    @DBUpgradeSafe
+    @RequestMapping(value = "/badges/name/exists", method = RequestMethod.POST, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    boolean doesBadgeNameExist(@RequestBody() NameExistsRequest nameExistsRequest) {
+        String badgeName = nameExistsRequest.name?.trim()
+        SkillsValidator.isNotBlank(badgeName, "Badge Name")
+        String decodedName = InputSanitizer.sanitize(badgeName)
+        return globalBadgesService.existsByBadgeName(decodedName)
+    }
+
+    @RequestMapping(value = "/badges/id/{badgeId}/exists", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    boolean doesBadgeIdExist(@PathVariable("badgeId") String badgeId) {
+        SkillsValidator.isNotBlank(badgeId, "Badge Id")
+        String decodedId = InputSanitizer.sanitize(URLDecoder.decode(badgeId,  StandardCharsets.UTF_8.toString()))
+        return globalBadgesService.existsByBadgeId(decodedId)
+    }
+
+    @RequestMapping(value = "/badges/{badgeId}", method = [RequestMethod.POST, RequestMethod.PUT], produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    RequestResult createBadge(@PathVariable("badgeId") String badgeId,
+                            @RequestBody GlobalBadgeRequest badgeRequest) {
+        SkillsValidator.isNotBlank(badgeId, "Badge Id")
+        badgeRequest.badgeId = badgeRequest.badgeId ?: badgeId
+        SkillsValidator.isNotBlank(badgeRequest?.name, "Badge Name")
+
+        IdFormatValidator.validate(badgeRequest.badgeId)
+
+        if (doesBadgeIdExist(badgeId)) {
+            throw new SkillException("Global Badge with id [${badgeRequest.badgeId}] already exists! Sorry!", ErrorCode.ConstraintViolation)
+        }
+
+        propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.maxIdLength, "Badge Id", badgeRequest.badgeId)
+        propsBasedValidator.validateMinStrLength(PublicProps.UiProp.minIdLength, "Badge Id", badgeRequest.badgeId)
+
+        propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.maxBadgeNameLength, "Badge Name", badgeRequest.name)
+        propsBasedValidator.validateMinStrLength(PublicProps.UiProp.minNameLength, "Badge Name", badgeRequest.name)
+        propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.descriptionMaxLength, "Badge Description", badgeRequest.description)
+
+        badgeRequest.name = InputSanitizer.sanitize(badgeRequest.name)?.trim()
+        badgeRequest.badgeId = InputSanitizer.sanitize(badgeRequest.badgeId)
+        badgeRequest.description = InputSanitizer.sanitizeDescription(badgeRequest.description)
+        badgeRequest.helpUrl = InputSanitizer.sanitizeUrl(badgeRequest.helpUrl)
+
+        globalBadgesService.saveBadge(badgeId, badgeRequest)
+        return new RequestResult(success: true)
+    }
+
+    @RequestMapping(value = "/progress-metrics", method =  RequestMethod.GET, produces = "application/json")
+    UsersOverallProgressResult getGlobalUserProgressMetrics(@RequestParam(required = false, defaultValue = "10") int limit,
+                                                            @RequestParam(required = false, defaultValue = "1") int page,
+                                                            @RequestParam(required = false, defaultValue = "userId") String orderBy,
+                                                            @RequestParam(required = false, defaultValue = "true") Boolean ascending,
+                                                            @RequestParam(required = false, defaultValue = "") String userQuery,
+                                                            @RequestParam(required = false, defaultValue = "") String userTagFilter) {
+
+        PageRequest pageRequest = TablePageUtil.createPagingRequestWithValidation(limit, page, orderBy, ascending);
+        return globalMetricsService.loadUsersOverallProgress(userQuery, userTagFilter, pageRequest)
+    }
+
+    @GetMapping(value = "/progress-metrics/export/excel")
+    ModelAndView exportGlobalUserProgressMetrics(@RequestParam(required = false, defaultValue = "userId") String orderBy,
+                                                 @RequestParam(required = false, defaultValue = "true") Boolean ascending,
+                                                 @RequestParam(required = false, defaultValue = "") String userQuery,
+                                                 @RequestParam(required = false, defaultValue = "") String userTagFilter) {
+        
+        PageRequest pageRequest = TablePageUtil.createPagingRequest(Integer.MAX_VALUE, 1, orderBy, ascending)
+        ModelAndView mav = new ModelAndView(globalProgressExportResult)
+        mav.addObject(GlobalProgressExportResult.QUERY, userQuery)
+        mav.addObject(GlobalProgressExportResult.USER_TAG_FILTER, userTagFilter)
+        mav.addObject(GlobalProgressExportResult.PAGE_REQUEST, pageRequest)
+        return mav
+    }
+
+    @RequestMapping(value = "/quiz-runs", method = RequestMethod.GET, produces = "application/json")
+    @ResponseBody
+    TableResult getQuizRuns(@RequestParam(name = "query", defaultValue = "") String userQuery,
+                            @RequestParam(name = "nameQuery", defaultValue = "") String nameQuery,
+                            @RequestParam int limit,
+                            @RequestParam int page,
+                            @RequestParam String orderBy,
+                            @RequestParam Boolean ascending,
+                            @RequestParam(name = "userIdFilter", defaultValue = "") String userIdFilter,
+                            @RequestParam(required = false) String startDate,
+                            @RequestParam(required = false) String endDate) {
+        PageRequest pageRequest = TablePageUtil.validateAndConstructQuizPageRequest(limit, page, orderBy, ascending)
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate, false)
+        userIdFilter = "null" == userIdFilter ? "" : userIdFilter
+        return globalMetricsService.getQuizRuns(userQuery, userIdFilter, nameQuery, null, pageRequest, dates[0], dates[1]);
+    }
+
+    @RequestMapping(value = "/quiz-runs/export/excel", method = RequestMethod.GET)
+    ModelAndView exportGlobalQuizRuns(@RequestParam(name = "userQuery", defaultValue = "") String userQuery,
+                                   @RequestParam(name = "nameQuery", defaultValue = "") String nameQuery,
+                                   @RequestParam String orderBy,
+                                   @RequestParam Boolean ascending,
+                                   @RequestParam(required = false) String startDate,
+                                   @RequestParam(required = false) String endDate) {
+        PageRequest pageRequest = TablePageUtil.createPagingRequest(Integer.MAX_VALUE, 1, orderBy, ascending)
+        List<Date> dates = TimeRangeFormatterUtil.formatTimeRange(startDate, endDate, false)
+
+        GlobalProgressMetricsService.ProjectIdsAndQuizIds projectIdsAndQuizIds = globalProgressMetricsService.getProjectIdsAndQuizIdsForCurrentUser()
+        List<String> quizIds = projectIdsAndQuizIds.quizIds
+
+        ModelAndView mav = new ModelAndView(quizRunsExportResult)
+        mav.addObject(QuizRunsExportResult.QUIZ_IDS, quizIds)
+        mav.addObject(QuizRunsExportResult.USER_QUERY, userQuery)
+        mav.addObject(QuizRunsExportResult.NAME_QUERY, nameQuery)
+        mav.addObject(QuizRunsExportResult.PAGE_REQUEST, pageRequest)
+        mav.addObject(QuizRunsExportResult.START_DATE, dates[0])
+        mav.addObject(QuizRunsExportResult.END_DATE, dates[1])
+        mav.addObject(QuizRunsExportResult.IS_GLOBAL, true)
+        return mav
+    }
+
+    @RequestMapping(value = "/progress-metrics/{userId}", method =  RequestMethod.GET, produces = "application/json")
+    SingleUserOverallProgress getGlobalSingleUserProgressMetrics(@PathVariable("userId") String userId) {
+        return globalMetricsService.loadSingleUserProgress(userId)
+    }
+
+    @RequestMapping(value = "/overall-metrics", method = RequestMethod.GET, produces = "application/json")
+    GlobalMetricsResult getOverallMetrics() {
+        return globalMetricsService.loadOverallMetrics()
+    }
+
+    @RequestMapping(value = "/overall-metrics/{metricsId}", method =  RequestMethod.GET, produces = "application/json")
+    def getChartData(@PathVariable("metricsId") String metricsId,
+                     @RequestParam Map<String,String> metricsProps) {
+        return metricsServiceNew.loadGlobalMetrics(metricsId, metricsProps)
     }
 }

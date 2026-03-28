@@ -23,6 +23,7 @@ import DateCell from "@/components/utils/table/DateCell.vue";
 import * as yup from "yup";
 import {useForm} from "vee-validate";
 import DataTable from "primevue/datatable";
+import {useStorage} from "@vueuse/core";
 
 const emit = defineEmits(['conf-added', 'conf-removed']);
 const announcer = useSkillsAnnouncer();
@@ -46,7 +47,7 @@ const data = ref([]);
 const enteredTag = ref('');
 const sortBy = ref('updated');
 const sortOrder = ref(-1);
-const pageSize = 4;
+const pageSize = useStorage('selfReportApprovalConfUserTag-pageSize', 4)
 const possiblePageSizes = [4, 10, 15, 20];
 
 const hadData = computed(() => {
@@ -83,9 +84,9 @@ const removeTagConf = (removedIem) => {
 </script>
 
 <template>
-<Card :pt="{ body: { class: '!p-0' } }">
+<Card :pt="{ body: { class: 'p-0!' } }">
   <template #header>
-    <SkillsCardHeader :title="'Split Workload By ' + tagLabel"></SkillsCardHeader>
+    <SkillsCardHeader :title="'Split Workload By ' + tagLabel" title-tag="h5"></SkillsCardHeader>
   </template>
   <template #content>
     <div class="flex gap-2 px-4 pt-4 flex-col sm:flex-row">

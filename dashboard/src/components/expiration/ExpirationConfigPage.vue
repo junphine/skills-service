@@ -230,7 +230,7 @@ const schema = yup.object().shape({
       }),
 })
 
-const { values, meta, handleSubmit, resetForm, validate, errors } = useForm({ validationSchema: schema, })
+const { values, meta, handleSubmit, resetForm, setFieldValue, validate, errors } = useForm({ validationSchema: schema, })
 const saveSettings = handleSubmit((values) => {
   saving.value = true;
   loading.value = true;
@@ -307,13 +307,18 @@ const saveSettings = handleSubmit((values) => {
         });
   }
 });
+
+const resetYearlyDayOfMonth = () => {
+  yearlyDayOfMonth.value=1;
+  setFieldValue('yearlyDayOfMonth', 1);
+}
 </script>
 
 <template>
   <div>
     <SubPageHeader title="Configure Expiration" />
     <SkillsOverlay :show="loading || skillsState.loadingSkill">
-<!--      :pt="{ body: { class: '!p-0' } }"-->
+<!--      :pt="{ body: { class: 'p-0!' } }"-->
       <Card v-if="saving || (!loading && !skillsState.loadingSkill)">
         <template #content>
           <Message v-if="isReadOnly" severity="info" icon="fas fa-exclamation-triangle" data-cy="readOnlyAlert" :closable="false">
@@ -370,7 +375,6 @@ const saveSettings = handleSubmit((values) => {
                       name="yearlyYears"
                       inputClass="w-24"
                       inputId="minmax-buttons"
-                      showButtons
                       :suffix="` year${yearlyYears > 1 ? 's' : ''}`"
                       :min="0" :max="99"/>
                   <!--                  <span class="ml-2">year{{yearlyYears > 1 ? 's' : ''}} on:</span>-->
@@ -384,7 +388,7 @@ const saveSettings = handleSubmit((values) => {
                                   name="yearlyMonth"
                                   optionLabel="text"
                                   optionValue="value"
-                                  @change="yearlyDayOfMonth=1"
+                                  @change="resetYearlyDayOfMonth"
                                   aria-label="Month of year"
                                   data-cy="yearlyMonth"/>
                   <SkillsDropDown v-model="yearlyDayOfMonth"
@@ -427,7 +431,6 @@ const saveSettings = handleSubmit((values) => {
                       name="monthlyMonths"
                       inputClass="w-24"
                       inputId="minmax-buttons"
-                      showButtons
                       :suffix="` month${monthlyMonths > 1 ? 's' : ''}`"
                       :min="0" :max="99"/>
                   <!--                  <span class="ml-2">year{{monthlyMonths > 1 ? 's' : ''}} on:</span>-->
@@ -487,7 +490,6 @@ const saveSettings = handleSubmit((values) => {
                       name="dailyDays"
                       inputClass="w-24"
                       inputId="minmax-buttons"
-                      showButtons
                       :suffix="` day${dailyDays > 1 ? 's' : ''}`"
                       :min="0" :max="999"/>
                   <span class="">of inactivity</span>

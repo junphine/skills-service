@@ -31,19 +31,23 @@ import { useUpgradeInProgressErrorChecker } from '@/components/utils/errors/UseU
 import QuizService from '@/components/quiz/QuizService.js';
 import RemovalValidation from '@/components/utils/modal/RemovalValidation.vue';
 import { SkillsReporter } from '@skilltree/skills-client-js'
+import {useStorage} from "@vueuse/core";
+import {useRouter} from "vue-router";
 
 const dialogMessages = useDialogMessages()
 // role constants
 const ROLE_APP_USER = 'ROLE_APP_USER';
 const ROLE_PROJECT_ADMIN = 'ROLE_PROJECT_ADMIN';
-const ROLE_SUPERVISOR = 'ROLE_SUPERVISOR';
 const ROLE_SUPER_DUPER_USER = 'ROLE_SUPER_DUPER_USER';
 const ROLE_PROJECT_APPROVER = 'ROLE_PROJECT_APPROVER';
 const ROLE_DASHBOARD_ADMIN_ACCESS = 'ROLE_DASHBOARD_ADMIN_ACCESS'
 const ROLE_ADMIN_GROUP_MEMBER = 'ROLE_ADMIN_GROUP_MEMBER'
 const ROLE_ADMIN_GROUP_OWNER = 'ROLE_ADMIN_GROUP_OWNER'
-const ALL_ROLES = [ROLE_APP_USER, ROLE_PROJECT_ADMIN, ROLE_SUPERVISOR, ROLE_SUPER_DUPER_USER, ROLE_PROJECT_APPROVER];
+const ROLE_GLOBAL_BADGE_ADMIN = 'ROLE_GLOBAL_BADGE_ADMIN'
+const ROLE_QUIZ_ADMIN = 'ROLE_QUIZ_ADMIN'
+const ALL_ROLES = [ROLE_APP_USER, ROLE_PROJECT_ADMIN, ROLE_SUPER_DUPER_USER, ROLE_PROJECT_APPROVER];
 
+const router = useRouter()
 const appConfig = useAppConfig();
 const announcer = useSkillsAnnouncer();
 const userInfo = useUserInfo();
@@ -93,6 +97,14 @@ const props = defineProps({
     type: String,
     default: null,
   },
+  badgeId: {
+    type: String,
+    default: null,
+  },
+  roleType: {
+    type: String,
+    default: null,
+  }
 });
 
 onMounted(() => {
@@ -100,9 +112,9 @@ onMounted(() => {
 });
 
 
-const sortInfo = ref({ sortOrder: 1, sortBy: 'userId' })
+const sortInfo = ref({ sortOrder: 1, sortBy: 'userIdForDisplay' })
 const possiblePageSizes = [ 5, 10, 15, 20]
-const pageSize = ref(5)
+const pageSize = useStorage('roleManager-pageSize', 5)
 const isLoading = ref(true)
 
 const expandedRows = ref([])
@@ -111,6 +123,21 @@ const assignedAdminGroups = ref([])
 const allAdminGroups = ref([])
 const selectedUser = ref(null);
 const isSaving = ref(false);
+const numberOfAdmins = computed(() => {
+  return assignedLocalAdmins.value?.filter((o) => o?.roleName === ROLE_PROJECT_ADMIN).length
+});
+const numberOfGroupOwners = computed(() => {
+  return assignedLocalAdmins.value?.filter((o) => o?.roleName === ROLE_ADMIN_GROUP_OWNER).length
+});
+const numberOfQuizAdmins = computed(() => {
+  return assignedLocalAdmins.value?.filter((o) => o?.roleName === ROLE_QUIZ_ADMIN).length
+});
+const numberOfGlobalBadgeAdmins = computed(() => {
+  return assignedLocalAdmins.value?.filter((o) => o?.roleName === ROLE_GLOBAL_BADGE_ADMIN).length
+});
+const numberOfRootUsers = computed(() => {
+  return assignedLocalAdmins.value?.filter((o) => o?.roleName === ROLE_SUPER_DUPER_USER).length
+});
 const errNotification = ref({
   enable: false,
   msg: '',
@@ -121,6 +148,7 @@ const userRole = ref({
 });
 const removeRoleInfo = ref({
   showDialog: false,
+  isCurrentUser: false,
   userInfo: {}
 })
 const data = computed(() => {
@@ -136,7 +164,7 @@ const data = computed(() => {
 })
 
 const adminGroupsSupported = computed(() => {
-  return !props.adminGroupId && (!!props.projectId || !!props.quizId);
+  return !props.adminGroupId && (!!props.projectId || !!props.quizId || !!props.badgeId);
 })
 const availableAdminGroups = computed(() => {
   const assignedAdminGroupIds = assignedAdminGroups.value.map((ag) => ag.adminGroupId);
@@ -161,7 +189,7 @@ const emptyAdminGroupsMessage = computed(() => {
 
 const assignedUserIds = computed(() => {
   const assignedUserIds = new Set(assignedLocalAdmins.value.map((u) => appConfig.isPkiAuthenticated ? u.userIdForDisplay : u.userId));
-  assignedAdminGroups.value.forEach((ag) => {
+  assignedAdminGroups.value?.forEach((ag) => {
     ag.allMembers.forEach((u) => {
       appConfig.isPkiAuthenticated ? assignedUserIds.add(u.userIdForDisplay) : assignedUserIds.add(u.userId);
     })
@@ -177,15 +205,16 @@ const isOnlyOneRole = computed(() => {
   return props.roles.length === 1;
 });
 
+const maxRolePageSize = computed(() => {
+  return appConfig.maxRolePageSize ? appConfig.maxRolePageSize : 200
+})
+
 function getRoleDisplay(roleName) {
-  if (roleName === ROLE_PROJECT_ADMIN) {
+  if (roleName === ROLE_PROJECT_ADMIN || roleName === ROLE_GLOBAL_BADGE_ADMIN) {
     return 'Administrator';
   }
   if (roleName === ROLE_APP_USER) {
     return 'Skills Display';
-  }
-  if (roleName === ROLE_SUPERVISOR) {
-    return 'Supervisor';
   }
   if (roleName === ROLE_SUPER_DUPER_USER) {
     return 'Root';
@@ -205,18 +234,20 @@ function getRoleDisplay(roleName) {
 const loadData = () => {
   isLoading.value = true;
   const pageParams = {
-    limit: 200,
+    limit: maxRolePageSize.value,
     page: 1,
     ascending: sortInfo.value.sortOrder === 1,
     orderBy: sortInfo.value.sortBy
   };
+
   const getUserRoles = props.quizId ?
       QuizService.getQuizUserRoles(props.quizId).then((result) => {
         assignedLocalAdmins.value = adminGroupsSupported.value ? result.filter((u) => !u.adminGroupId) : result;
       }) :
-      AccessService.getUserRoles(props.projectId, props.roles, pageParams, props.adminGroupId).then((result) => {
-        assignedLocalAdmins.value = adminGroupsSupported.value ? result.data.filter((u) => !u.adminGroupId) : result.data
+      AccessService.getUserRoles(props.projectId, props.roles, pageParams, props.adminGroupId, props.badgeId).then((result) => {
+        assignedLocalAdmins.value = adminGroupsSupported.value ? result.data?.filter((u) => !u.adminGroupId) : result.data
       });
+
   const getAdminGroupsForProject = props.projectId ? AdminGroupsService.getAdminGroupsForProject(props.projectId).then((result) => {
     assignedAdminGroups.value = result;
   }) : Promise.resolve();
@@ -225,11 +256,16 @@ const loadData = () => {
     assignedAdminGroups.value = result;
   }) : Promise.resolve();
 
+  const getAdminGroupsForGlobalBadge = props.badgeId ? AdminGroupsService.getAdminGroupsForGlobalBadge(props.badgeId).then((result) => {
+    assignedAdminGroups.value = result;
+  }) : Promise.resolve();
+
+
   const getOwnedAdminGroups = adminGroupsSupported.value ? AdminGroupsService.getAdminGroupDefs().then((result) => {
     allAdminGroups.value = result;
   }) : Promise.resolve();
 
-  Promise.all([getUserRoles, getAdminGroupsForProject, getAdminGroupsForQuiz, getOwnedAdminGroups]).then(() => {
+  Promise.all([getUserRoles, getAdminGroupsForProject, getAdminGroupsForQuiz, getAdminGroupsForGlobalBadge, getOwnedAdminGroups]).then(() => {
     isLoading.value = false;
   })
 }
@@ -266,7 +302,7 @@ function doAddUserRole() {
   if (props.quizId) {
     addQuizUserRole(role);
   } else {
-    AccessService.saveUserRole(props.projectId, selectedUser.value, role, pkiAuthenticated, props.adminGroupId).then(() => {
+    AccessService.saveUserRole(props.projectId, selectedUser.value, role, pkiAuthenticated, props.adminGroupId, props.badgeId).then(() => {
       completeAddRole(role)
     }).catch((e) => {
       handleError(e);
@@ -316,14 +352,23 @@ function getUserDisplay(item) {
   return item.lastName && item.firstName ? `${item.firstName} ${item.lastName} (${item.userIdForDisplay})` : item.userIdForDisplay;
 }
 
-function notCurrentUser(userId) {
+function canDeleteUser(userId, userRole) {
+  return !(userRole === ROLE_PROJECT_ADMIN && numberOfAdmins.value === 1)
+      && !(userRole === ROLE_ADMIN_GROUP_OWNER && numberOfGroupOwners.value === 1)
+      && !(userRole === ROLE_SUPER_DUPER_USER && numberOfRootUsers.value === 1)
+      && !(userRole === ROLE_QUIZ_ADMIN && numberOfQuizAdmins.value === 1)
+      && !(userRole === ROLE_GLOBAL_BADGE_ADMIN && numberOfGlobalBadgeAdmins.value === 1);
+}
+
+function isCurrentUser(userId) {
   const currentUser = userInfo?.userInfo?.value?.userId;
-  return currentUser && userId !== currentUser;
+  return currentUser && userId === currentUser;
 }
 
 function deleteUserRoleConfirm(row) {
   removeRoleInfo.value.userInfo = row
   removeRoleInfo.value.showDialog = true
+  removeRoleInfo.value.isCurrentUser = isCurrentUser(row.userId);
 }
 
 function doDeleteUserRole() {
@@ -332,13 +377,13 @@ function doDeleteUserRole() {
   if (props.quizId) {
     deleteQuizAdminUserRole(row)
   } else {
-    AccessService.deleteUserRole(row.projectId, row.userId, row.roleName, props.adminGroupId).then(() => {
+    AccessService.deleteUserRole(row.projectId, row.userId, row.roleName, props.adminGroupId, props.badgeId).then(() => {
       completeDelete(row)
     });
   }
 }
 const deleteQuizAdminUserRole = (row) => {
-  QuizService.deleteQuizAdmin(props.quizId, appConfig.isPkiAuthenticated ? row.dn : row.userId)
+  QuizService.deleteQuizAdmin(props.quizId, row.userId)
       .then(() => {
         completeDelete(row)
       })
@@ -349,6 +394,10 @@ const completeDelete = (row) => {
   emit('role-deleted', { userId: row.userId, role: row.roleName });
   isLoading.value = false;
   document.getElementById('existingUserInput').firstElementChild.focus()
+
+  if(isCurrentUser(row.userId)) {
+    router.push('/administrator')
+  }
 }
 
 function editItem(item) {
@@ -376,7 +425,7 @@ function updateUserRole(selectedRole) {
     });
 
     const pkiAuthenticated = appConfig.isPkiAuthenticated;
-    AccessService.saveUserRole(props.projectId, userRoleToUpdate, newRole, pkiAuthenticated, props.adminGroupId)
+    AccessService.saveUserRole(props.projectId, userRoleToUpdate, newRole, pkiAuthenticated, props.adminGroupId, props.badgeId)
         .then(() => {
           assignedLocalAdmins.value = assignedLocalAdmins.value.map((user) => {
             if (user.isEdited) {
@@ -398,11 +447,20 @@ function updateUserRole(selectedRole) {
   }
 }
 
-const addProjectOrQuizToAdminGroup = (adminGroup) => {
+const addProjectOrQuizOrGlobalBadgeToAdminGroup = (adminGroup) => {
   isLoading.value = true;
   if (props.projectId) {
     AdminGroupsService.addProjectToAdminGroup(adminGroup.adminGroupId, props.projectId).then(() => {
       announcer.polite(`Admin Group ${adminGroup.name} was added to project successfully`);
+      loadData();
+    }).catch((e) => {
+      handleError(e);
+    }).finally(() => {
+      isLoading.value = false;
+    })
+  } else if (props.badgeId) {
+    AdminGroupsService.addGlobalBadgeToAdminGroup(adminGroup.adminGroupId, props.badgeId).then(() => {
+      announcer.polite(`Admin Group ${adminGroup.name} was added to badge successfully`);
       loadData();
     }).catch((e) => {
       handleError(e);
@@ -432,7 +490,7 @@ defineExpose({
 
 <template>
   <div>
-    <Card :pt="{ body: { class: '!p-0' } }">
+    <Card :pt="{ body: { class: 'p-0!' } }">
       <template #header>
         <SkillsCardHeader v-if="title" :title="title"></SkillsCardHeader>
       </template>
@@ -472,7 +530,7 @@ defineExpose({
                     filter
                     placeholder="Please select Admin Group"
                     optionLabel="name"
-                    @update:modelValue="addProjectOrQuizToAdminGroup"
+                    @update:modelValue="addProjectOrQuizOrGlobalBadgeToAdminGroup"
                     :emptyMessage=emptyAdminGroupsMessage
                     :options="availableAdminGroups">
                   <template #value="slotProps">
@@ -519,8 +577,8 @@ defineExpose({
                 <span class="sr-only">Rows expand and collapse control - No filtering</span>
               </template>
             </Column>
-            <Column :header="roleDescription" field="userId" sortable :class="{'flex': responsive.md.value }">
-              <template #header>
+            <Column :header="roleDescription" field="userIdForDisplay" sortable :class="{'flex': responsive.md.value }">
+            <template #header>
               <span class="mr-2"><i class="fas fa-user skills-color-users" :class="colors.getTextClass(0)"
                                     aria-hidden="true"></i> </span>
               </template>
@@ -562,23 +620,23 @@ defineExpose({
               <template #body="slotProps">
                 <div v-if="!slotProps.data.adminGroupId || props.adminGroupId">
                   <div class="float-right mr-1 flex flex-col gap-2" :data-cy="`controlsCell_${slotProps.data.userId}`">
-                    <ButtonGroup v-if="notCurrentUser(slotProps.data.userId)">
+                    <ButtonGroup v-if="canDeleteUser(slotProps.data.userId, slotProps.data.roleName)">
                       <SkillsButton v-if="!isOnlyOneRole" @click="editItem(slotProps.data)"
-                                    :disabled="!notCurrentUser(slotProps.data.userId)"
+                                    :disabled="!canDeleteUser(slotProps.data.userId, slotProps.data.roleName)"
                                     :aria-label="`edit access role from user ${getUserDisplay(slotProps.data)}`"
                                     data-cy="editUserBtn" icon="fas fa-edit" label="Edit" size="small">
                       </SkillsButton>
                       <SkillsButton @click="deleteUserRoleConfirm(slotProps.data)"
-                                    :disabled="!notCurrentUser(slotProps.data.userId)"
+                                    :disabled="!canDeleteUser(slotProps.data.userId, slotProps.data.roleName)"
                                     :id="`removeUserBtn_${slotProps.data.userId}`"
                                     :track-for-focus="true"
                                     :aria-label="`remove access role from user ${getUserDisplay(slotProps.data)}`"
                                     data-cy="removeUserBtn" icon="fas fa-trash" label="Delete" size="small">
                       </SkillsButton>
                     </ButtonGroup>
-                    <InlineMessage v-if="!notCurrentUser(slotProps.data.userId)" class="mt-1" severity="info" size="small"
+                    <InlineMessage v-if="!canDeleteUser(slotProps.data.userId, slotProps.data.roleName)" class="mt-1" severity="info" size="small"
                                    aria-live="polite" data-cy="cannotRemoveWarning">
-                      Cannot modify yourself
+                      Cannot delete the only admin
                     </InlineMessage>
                   </div>
 
@@ -612,6 +670,8 @@ defineExpose({
         @do-remove="doDeleteUserRole"
         :item-name="removeRoleInfo.userInfo.userIdForDisplay"
         item-type="from having admin privileges"
+        :role-type="roleType"
+        :is-self="removeRoleInfo.isCurrentUser"
         :enable-return-focus="true">
     </RemovalValidation>
   </div>

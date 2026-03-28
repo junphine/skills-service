@@ -16,15 +16,15 @@
 import tinycolor from 'tinycolor2';
 
 export default {
-  nonCSSConfig: ['charts', 'landingPageTitle', 'disableSkillTreeBrand', 'disableBreadcrumb', 'iconColors', 'prerequisites', 'circleProgressInteriorTextColor', 'disableEncouragementsConfetti'],
-  bothCssAndThemModule: ['progressIndicators', 'pageTitleTextColor', 'pageTitle', 'skillTreeBrandColor', 'infoCards', 'backgroundColor', 'textPrimaryColor', 'textSecondaryColor', 'tiles', 'breadcrumb'],
+  nonCSSConfig: ['progressIndicators', 'charts', 'landingPageTitle', 'disableSkillTreeBrand', 'disableSearchButton', 'disableBreadcrumb', 'iconColors', 'prerequisites', 'circleProgressInteriorTextColor', 'disableEncouragementsConfetti'],
+  bothCssAndThemModule: ['pageTitleTextColor', 'pageTitle', 'skillTreeBrandColor', 'infoCards', 'backgroundColor', 'textPrimaryColor', 'textSecondaryColor', 'tiles', 'breadcrumb'],
   selectorKey: {
     maxWidth: {
       selector: 'body #app .sd-theme-home',
       styleName: 'max-width'
     },
     backgroundColor: [{
-      selector: 'body #app .sd-theme-home, .p-overlaypanel.p-component,' +
+      selector: 'body #app .in-skills-client, body #app .sd-theme-home, .p-overlaypanel.p-component,' +
         'body #app .sd-theme-background-color',
       styleName: 'background-color'
     }, {
@@ -108,6 +108,9 @@ export default {
         'body #app .sd-theme-home .toastui-editor-popup label,' +
         'body #app .sd-theme-home .p-chip.p-component,' +
         'body #app .sd-theme-home .p-inputtext.p-component,' +
+        '.p-listbox-option,' +
+        '.p-listbox-empty-message,' +
+        'div[data-cy="trainingSearchDialog"],' +
         '.p-autocomplete-panel.p-component .p-autocomplete-item,' +
         '.p-autocomplete-panel.p-component .p-autocomplete-item .text-orange-600,' +
         '.p-autocomplete-panel.p-component .p-autocomplete-item .text-orange-700,' +
@@ -115,7 +118,10 @@ export default {
         '.p-popover.p-component .p-panelmenu-panel .p-panelmenu-header-content,' +
         'body .sd-theme-home a, body .sd-theme-home .skills-theme-skills-progress a,' +
         '.sd-theme-home .editor-help-footer,' +
-        '.sd-theme-home .editor-help-footer i',
+        '.sd-theme-home .editor-help-footer i,' +
+        '.sd-theme-home .sd-theme-icon,' +
+        '.sd-theme-home .p-fieldset, .sd-theme-home .p-fieldset-legend,'+
+        '.p-menu-overlay .p-menu-item-content',
       styleName: 'color'
     }, {
       selector: '.toastui-editor-popup [data-type="Heading"]:hover,' +
@@ -128,14 +134,14 @@ export default {
         '.sd-theme-home .editor-help-footer',
       styleName: 'border-color'
     }, {
-      selector: 'body #app .sd-theme-home .apexcharts-toolbar svg, body #app .sd-theme-home .vs__open-indicator',
+      selector: 'body #app .sd-theme-home .vs__open-indicator',
       styleName: 'fill'
     }],
     textPrimaryMutedColor: [{
       selector: 'body #app .sd-theme-home .todo',
       styleName: 'color'
     }, {
-      selector: 'body #app .sd-theme-home .skills-theme-menu:hover, body #app .sd-theme-home .apexcharts-menu.apexcharts-menu-open .apexcharts-menu-item:hover',
+      selector: 'body #app .sd-theme-home .skills-theme-menu:hover',
       styleName: 'background-color'
     }],
     textSecondaryColor: {
@@ -161,6 +167,20 @@ export default {
         styleName: 'line-height'
       }
     },
+  searchButton: {
+    padding: {
+      selector: 'body #app .sd-theme-home .skills-theme-page-title .skills-search-btn',
+      styleName: 'padding'
+    },
+    fontSize: {
+      selector: 'body #app .sd-theme-home .skills-theme-page-title .skills-search-btn',
+      styleName: 'font-size'
+    },
+    lineHeight: {
+      selector: 'body #app .sd-theme-home .skills-theme-page-title .skills-search-btn',
+      styleName: 'line-height'
+    }
+  },
     tiles: {
       backgroundColor: [{
         selector: '.sd-theme-home .p-card, '
@@ -173,15 +193,18 @@ export default {
           + 'body #app .sd-theme-home .p-chip.p-component,'
           + '.p-autocomplete-panel.p-component,'
           + '.p-popover.p-component,'
+          + '.p-listbox.p-component,'
           + '.p-autocomplete-overlay.p-component,'
           + '.p-popover.p-component .p-panelmenu-panel,'
-          + '.sd-theme-home .apexcharts-menu.apexcharts-menu-open,'
           + '.sd-theme-home .p-avatar.p-component,'
           + '.sd-theme-home .toastui-editor-ww-container,'
           + '.sd-theme-home .toastui-editor-defaultUI-toolbar,'
           + '.sd-theme-home .toastui-editor-popup,'
           + '.sd-theme-home .editor-help-footer,'
-          + '.sd-theme-home .sd-theme-tile-background',
+          + '.sd-theme-home .sd-theme-tile-background,'
+          + '.sd-theme-home .p-fieldset, .sd-theme-home .p-fieldset-legend,'
+          + '.p-menu-overlay .p-menu-list,'
+          + '.p-dialog',
         styleName: 'background-color'
       }, {
         selector: '.p-autocomplete-panel.p-component .p-autocomplete-item:hover,' +
@@ -195,12 +218,15 @@ export default {
           '.p-autocomplete-panel.p-component .p-autocomplete-item:hover .text-orange-700,' +
           '.p-popover.p-component .p-panelmenu-item.p-focus > .p-panelmenu-item-content .p-panelmenu-item-link,' +
           '.p-popover.p-component .p-panelmenu.p-component .p-panelmenu-header:focus .p-panelmenu-header-content .sd-theme-menu-header,' +
+          '.p-listbox-option.p-focus,' +
+          '.p-listbox-option:hover,' +
           'body #app .sd-theme-home .sd-theme-tile-background-color,' +
           'body #app .sd-theme-home .p-paginator.p-component .p-paginator-element.p-link.p-highlight,' +
           'body #app .sd-theme-home .fa-stack .fa-stack-1x.fa-inverse,' +
           'body #app .sd-theme-home .toastui-editor-contents pre code,' +
           'body #app .sd-theme-home .toastui-editor-popup [data-type="Heading"]:hover,' +
-          'body #app .sd-theme-home .toastui-editor-popup .drop-down .drop-down-item:hover',
+          'body #app .sd-theme-home .toastui-editor-popup .drop-down .drop-down-item:hover,' +
+          '.p-menu-overlay .p-menu-item-content:hover',
         styleName: 'color'
       }],
       borderColor: [{
@@ -210,6 +236,14 @@ export default {
       watermarkIconColor: {
         selector: 'body #app .sd-theme-home .watermark-icon',
         styleName: 'color'
+      },
+      subTitleOverlayTextColor: {
+        selector: 'body #app .sd-theme-home .skills-progress-card .user-rank-text',
+        styleName: 'color'
+      },
+      subTitleOverlayBackgroundColor: {
+        selector: 'body #app .sd-theme-home .skills-progress-card .user-rank-text',
+        styleName: 'background-color'
       }
     },
     stars: {
@@ -286,25 +320,6 @@ export default {
       foregroundColor: [{
         selector: 'body #app .sd-theme-home .p-tag.p-component',
         styleName: 'color'
-      }]
-    },
-    progressIndicators: {
-      completeColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.is-completed .p-progressbar-value',
-        styleName: 'background-color'
-      }],
-      incompleteColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.p-progressbar-determinate.sd-theme-today-progress.is-not-completed,' +
-            'body #app .sd-theme-home .sd-theme-achieved-skills-progress .p-progressbar.p-component.p-progressbar-determinate.is-completed',
-        styleName: 'background-color'
-      }],
-      beforeTodayColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.sd-theme-total-progress.is-not-completed  .p-progressbar-value',
-        styleName: 'background-color'
-      }],
-      earnedTodayColor: [{
-        selector: 'body #app .sd-theme-home .p-progressbar.p-component.p-progressbar-determinate.sd-theme-today-progress.is-not-completed .p-progressbar-value',
-        styleName: 'background-color'
       }]
     },
     breadcrumb: {
@@ -498,11 +513,6 @@ export default {
     }
     handleMenuItemLinkHoverColor(theme, this.selectorKey)
     populateResult(this.selectorKey, theme)
-
-    // Some CSS may mess up some things, fix those here
-    // Apex charts context menu
-    res.css += 'body #app .sd-theme-home .apexcharts-menu.open { color: black !important; }'
-    res.css += ' body #app .sd-theme-home .apexcharts-tooltip { color: black !important; }'
 
     return res
   }

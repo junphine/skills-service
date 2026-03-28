@@ -26,6 +26,8 @@ import EditSubject from '@/components/subjects/EditSubject.vue'
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import ImportFinalizeAlert from '@/components/skills/catalog/ImportFinalizeAlert.vue'
 import CopySubjectOrSkillsDialog from "@/components/subjects/CopySubjectOrSkillsDialog.vue";
+import { useSubjectSkillsState } from '@/stores/UseSubjectSkillsState.js'
+import { useFinalizeInfoState } from '@/stores/UseFinalizeInfoState.js'
 
 const appConfig = useAppConfig()
 const route = useRoute()
@@ -33,6 +35,8 @@ const router = useRouter()
 const announcer = useSkillsAnnouncer()
 const projConfig = useProjConfig()
 const subjectState = useSubjectsState()
+const subjectSkillsState = useSubjectSkillsState()
+const finalizeInfoState = useFinalizeInfoState()
 const focusState = useFocusState()
 
 const showEditSubject = ref(false)
@@ -45,7 +49,7 @@ onMounted(() => {
 })
 
 const isLoadingData = computed(() => {
-  return subjectState.isLoadingSubject.value; // || projConfig.loadingProjConfig
+  return subjectState.isLoadingSubject.value || subjectState.subject.subjectId === undefined; // || projConfig.loadingProjConfig
 })
 
 const navItems = computed(() => {
@@ -67,12 +71,17 @@ const headerOptions = computed(() => {
   return {
     icon: 'fas fa-cubes skills-color-subjects',
     title: `SUBJECT: ${subject.name}`,
-    subTitle: `ID: ${subject.subjectId}`,
+    subTitle: `ID: ${subject.subjectId || ''}`,
     stats: [{
       label: 'Groups',
       count: subject.numGroups,
       disabledCount: subject.numGroupsDisabled,
-      icon: 'fas fa-layer-group skills-color-groups'
+      icon: 'fas fa-layer-group skills-color-groups',
+      secondaryStats: [{
+        label: 'disabled',
+        count: subject.numGroupsDisabled,
+        badgeVariant: 'warning'
+      }]
     }, {
       label: 'Skills',
       count: subject.numSkills,
@@ -137,6 +146,11 @@ const subjectEdited = (updatedSubject) => {
   } else {
     focusState.focusOnLastElement()
   }
+  const enabledStateChanged = updatedSubject.enabled !== subjectState.subject.enabled
+  if (enabledStateChanged) {
+    subjectSkillsState.loadSubjectSkills(updatedSubject.projectId, updatedSubject.subjectId)
+    finalizeInfoState.loadInfo()
+  }
   subjectState.subject = updatedSubject;
   announcer.polite(`Subject ${updatedSubject.name} has been edited`)
 }
@@ -175,6 +189,13 @@ const subjectEdited = (updatedSubject) => {
             severity="info"
             data-cy="btn_copy-subject"
             :aria-label="`Copy Subject ${subjectState.subject.name} to another project`" />
+      </template>
+      <template #right-of-header
+                v-if="!isLoadingData && (!subjectState.subject.enabled)">
+        <Tag v-if="!subjectState.subject.enabled"
+             severity="secondary"
+             class="ml-2" data-cy="disabledSubjectBadge"><i
+            class="fas fa-eye-slash mr-1" aria-hidden="true"></i> DISABLED</Tag>
       </template>
       <template #footer>
         <!--        <import-finalize-alert />-->

@@ -121,6 +121,26 @@ class CopySkillsValidationEndpointSpecs extends CopyIntSpec {
         ].sort()
     }
 
+    def "subj dest - validate that enabled skill is not being copied into a disabled subject"() {
+        def p1 = createProject(1)
+        def p1subj1 = createSubject(1, 1)
+        def p1Subj1Skills = createSkills(3, 1, 1, 100)
+        skillsService.createProjectAndSubjectAndSkills(p1, p1subj1, p1Subj1Skills)
+
+        def p2 = createProject(2)
+        def p2subj1 = createSubject(2, 2)
+        p2subj1.enabled = false
+        skillsService.createProjectAndSubjectAndSkills(p2, p2subj1, [])
+
+        when:
+        def res = skillsService.validateCopySkillDefsIntoAnotherProject(p1.projectId,
+                p1Subj1Skills.collect { it.skillId as String },
+                p2.projectId, p2subj1.subjectId)
+        then:
+        res.isAllowed == false
+        res.validationErrors.sort() == ["The following Skills are enabled and cannot be added to the destination subject because it is currently disabled: ${p1Subj1Skills.skillId.sort().join(", ")}."]
+    }
+
     def "group dest - validate that there is no skill id collisions - collision is not under the group"() {
         def p1 = createProject(1)
         def p1subj1 = createSubject(1, 1)
@@ -585,4 +605,23 @@ class CopySkillsValidationEndpointSpecs extends CopyIntSpec {
         res.validationErrors == ["Subjects from Divine Dragon projects cannot be copied to All Dragons projects."]
     }
 
+    def "skills cannot be copied tp another project if they will exceed the max skills per subject"() {
+        def p1 = createProject(1)
+        def p1subj1 = createSubject(1, 1)
+        def p1Subj1Skills = createSkills(6, 1, 1, 100)
+        skillsService.createProjectAndSubjectAndSkills(p1, p1subj1, p1Subj1Skills)
+
+        def p2 = createProject(2)
+        def p2subj1 = createSubject(2, 2)
+        def p2Subj1Skills = createSkillsStartingAt(95, 9000, 2, 2)
+        skillsService.createProjectAndSubjectAndSkills(p2, p2subj1, p2Subj1Skills)
+
+        when:
+        def res = skillsService.validateCopySkillDefsIntoAnotherProject(p1.projectId,
+                p1Subj1Skills.collect { it.skillId as String },
+                p2.projectId, p2subj1.subjectId)
+        then:
+        res.isAllowed == false
+        res.validationErrors == ["Each Subject is limited to [100] Skills, currently [TestSubject2] has [95] Skills, copying [6] would exceed the maximum"]
+    }
 }

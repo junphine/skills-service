@@ -46,6 +46,9 @@ class DefaultIntSpec extends Specification {
     };
 
     SkillsService skillsService
+    SkillsService localRootSkillsService
+
+    Boolean isPkiMode = false;
 
     GreenMail greenMail
 
@@ -144,6 +147,8 @@ class DefaultIntSpec extends Specification {
         dataResetHelper.resetData()
 
         skillsService = createService()
+
+        isPkiMode = mockUserInfoService != null
     }
 
     def cleanup() {
@@ -171,8 +176,8 @@ class DefaultIntSpec extends Specification {
         greenMail = new GreenMail(ServerSetupTest.SMTP)
         greenMail.start()
 
-        SkillsService rootSkillsService = createRootSkillService()
-        rootSkillsService.getWsHelper().rootPost("/saveEmailSettings", [
+        localRootSkillsService = createRootSkillService()
+        localRootSkillsService.getWsHelper().rootPost("/saveEmailSettings", [
                 "host"       : "localhost",
                 "port"       : ServerSetupTest.SMTP.port,
                 "protocol"   : "smtp",
@@ -197,16 +202,6 @@ class DefaultIntSpec extends Specification {
             SkillsService.UseParams userParams,
             String url = "http://localhost:${localPort}".toString()){
        return skillsServiceFactory.createService(userParams, url)
-    }
-
-    SkillsService createSupervisor(){
-        String ultimateRoot = 'jh@dojo.com'
-        SkillsService rootSkillsService = createService(ultimateRoot, 'aaaaaaaa')
-        rootSkillsService.grantRoot()
-        String supervisorUserId = 'foo@bar.com'
-        SkillsService supervisorService = createService(supervisorUserId)
-        rootSkillsService.grantSupervisorRole(supervisorUserId)
-        return supervisorService
     }
 
     /*

@@ -122,9 +122,10 @@ const onSubmit = handleSubmit((values) => {
   <div>
     <div class="pt-10">
       <div class="max-w-md lg:max-w-xl mx-auto" style="min-width: 20rem;">
+        <h1 class="sr-only">SkillTree New Account</h1>
         <div class="text-center">
           <logo1 class="mb-4" />
-          <Message :closable="false" role="heading" aria-level="1">New <span v-if="isRootAccount">Root </span>Account</Message>
+          <Message :closable="false">New <span v-if="isRootAccount">Root </span>Account</Message>
         </div>
         <Card v-if="!oAuthOnly" class="mt-4 text-left">
           <template #content>
@@ -213,7 +214,7 @@ const onSubmit = handleSubmit((values) => {
                               data-cy="createAccountButton">
                 </SkillsButton>
               </div>
-              <div v-if="createInProgress && isRootAccount" class="mt-2 text-primary">
+              <div v-if="createInProgress && isRootAccount" class="mt-2 text-center">
                 Bootstrapping! May take a second...
               </div>
               <div v-if="!isRootAccount" class="p-1">

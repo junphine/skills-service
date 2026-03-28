@@ -83,7 +83,10 @@ const setFilterId = (newFilterId) => {
 const buildBadgeLink = (badge) => {
   let globalBadgeUnderProjectId = null
   if (!route.params.projectId) {
-    globalBadgeUnderProjectId = badgesWithTypes.value.find((b) => b.projectId).projectId
+    const hasData = badge.projectLevelsAndSkillsSummaries && badge.projectLevelsAndSkillsSummaries.length > 0
+    if (hasData) {
+      globalBadgeUnderProjectId = badge.projectLevelsAndSkillsSummaries[0].projectId
+    }
   }
   return skillsDisplayInfo.createToBadgeLink(badge, globalBadgeUnderProjectId)
 }
@@ -93,6 +96,7 @@ const buildBadgeLink = (badge) => {
 <template>
   <Card class="card" data-cy="myBadges">
     <template #header>
+      <h2 class="sr-only">Available Badges</h2>
       <div class="flex p-4" v-if="badges && badges.length > 0">
         <div class="">
           <InputGroup>
@@ -102,7 +106,7 @@ const buildBadgeLink = (badge) => {
               aria-label="Search badges"
               data-cy="badgeSearchInput" />
             <InputGroupAddon class="p-0 m-0">
-              <SkillsButton :pt="{ root: { class: '!border-0' } }"
+              <SkillsButton :pt="{ root: { class: 'border-0!' } }"
                 icon="fas fa-times"
                 text
                 outlined

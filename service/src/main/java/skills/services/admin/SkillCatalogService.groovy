@@ -32,6 +32,8 @@ import skills.controller.request.model.ImportedSkillUpdate
 import skills.controller.request.model.SkillImportRequest
 import skills.controller.request.model.SkillRequest
 import skills.controller.result.model.*
+import skills.services.CustomValidationResult
+import skills.services.CustomValidator
 import skills.services.RuleSetDefGraphService
 import skills.services.admin.skillReuse.SkillReuseIdUtil
 import skills.services.attributes.SkillAttributeService
@@ -114,6 +116,9 @@ class SkillCatalogService {
 
     @Autowired
     UserActionsHistoryService userActionsHistoryService
+
+    @Autowired
+    CustomValidator customValidator
 
     @Transactional(readOnly = true)
     TotalCountAwareResult<ProjectNameAwareSkillDefRes> getSkillsAvailableInCatalog(String projectId, String projectNameSearch, String subjectNameSearch, String skillNameSearch, PageRequest pageable) {
@@ -220,8 +225,15 @@ class SkillCatalogService {
         if (skillDef.type != SkillDef.ContainerType.Skill) {
             throw new SkillException("Only type=[${SkillDef.ContainerType.Skill}] is supported but provided type=[${skillDef.type}] for skillId=[${skillId}]", projectId, skillId, ErrorCode.BadParam)
         }
+        if (!Boolean.valueOf(skillDef.enabled)) {
+            throw new SkillException("Skill [${skillDef.skillId}] is disabled. Disabled skills may not be exported to the catalog", projectId, skillId, ErrorCode.ExportToCatalogNotAllowed)
+        }
         if (doesSkillNameAlreadyExistInCatalog(skillDef.name)) {
             throw new SkillException("Skill name [${skillDef.name}] already exists in the catalog. Duplicate skill names are not allowed", projectId, skillId, ErrorCode.SkillAlreadyInCatalog)
+        }
+        CustomValidationResult validationResult = customValidator.validateDescription(skillDef.description, skillDef.projectId)
+        if (!validationResult.isValid()) {
+            throw new SkillException("Skill description is invalid", null, skillDef.projectId, skillDef.skillId, ErrorCode.ParagraphValidationFailed)
         }
         SkillDef mySubject = relationshipService.getMySubjectParent(skillDef.id)
         insufficientPointsValidator.validateSubjectPoints(mySubject.totalPoints, mySubject.projectId,  mySubject.skillId, null, ", export to catalog is disallowed")
@@ -416,6 +428,11 @@ class SkillCatalogService {
             insufficientPointsForFinalizationValidator.validateSubjectPoints(it.totalIncPendingFinalized, projectId, it.subjectId)
         }
 
+        long numSkillsToFinalizeThatBelongToADisabledSubjectOrGroup = skillDefRepo.countNumSkillsToFinalizeThatBelongToADisabledSubjectOrGroup(projectId)
+        if (numSkillsToFinalizeThatBelongToADisabledSubjectOrGroup > 0) {
+            throw new SkillException("Cannot finalize imported skills, there are [${numSkillsToFinalizeThatBelongToADisabledSubjectOrGroup}] skill(s) pending finalization that belong to a disabled subject or group", projectId)
+        }
+
         skillCatalogFinalizationService.requestFinalizationOfImportedSkills(projectId)
         userActionsHistoryService.saveUserAction(new UserActionInfo(
                 action: DashboardAction.FinalizeCatalogImport,
@@ -426,7 +443,8 @@ class SkillCatalogService {
     }
 
     CatalogFinalizeInfoResult getFinalizeInfo(String projectId) {
-        int numDisabled = skillDefRepo.countByProjectIdAndEnabledAndCopiedFromIsNotNull(projectId, Boolean.FALSE.toString())
+        long numSkillsToFinalize = skillDefRepo.countByProjectIdAndEnabledAndCopiedFromIsNotNull(projectId, Boolean.FALSE.toString())
+        long numSkillsToFinalizeThatBelongToADisabledSubjectOrGroup = skillDefRepo.countNumSkillsToFinalizeThatBelongToADisabledSubjectOrGroup(projectId)
         boolean isRunning = skillCatalogFinalizationService.getCurrentState(projectId) == SkillCatalogFinalizationService.FinalizeState.RUNNING
         SkillDefRepo.MinMaxPoints points = skillDefRepo.getSkillMinAndMaxTotalPoints(projectId)
 
@@ -437,9 +455,11 @@ class SkillCatalogService {
                 new SkillWithPointsResult(skillId: it.skillId, skillName: it.skillName, totalPoints: it.totalPoints)
             }
         }
+
         return new CatalogFinalizeInfoResult(
                 projectId: projectId,
-                numSkillsToFinalize: numDisabled,
+                numSkillsToFinalize: numSkillsToFinalize,
+                numSkillsToFinalizeThatBelongToADisabledSubjectOrGroup: numSkillsToFinalizeThatBelongToADisabledSubjectOrGroup,
                 isRunning: isRunning,
                 projectSkillMinPoints: points.getMinPoints(),
                 projectSkillMaxPoints: points.getMaxPoints(),
@@ -570,7 +590,7 @@ class SkillCatalogService {
                 copy.skillId = SkillReuseIdUtil.addTag(og.skillId, reuseCounter)
                 copy.name = SkillReuseIdUtil.addTag(og.name, reuseCounter)
             }
-            skillsAdminService.saveSkill(imported.skillId, copy)
+            skillsAdminService.saveSkill(imported.skillId, copy, false)
         }
     }
 
@@ -718,7 +738,7 @@ class SkillCatalogService {
         esr.exportedOn = exportedSkillTiny.exportedOn
         esr.subjectId = exportedSkillTiny.subjectId
         esr.importedProjectCount = exportedSkillTiny.importedProjectCount
-        esr.groupName = exportedSkillTiny.groupName
+        esr.groupName = InputSanitizer.unsanitizeName(exportedSkillTiny.groupName)
         return esr
     }
 

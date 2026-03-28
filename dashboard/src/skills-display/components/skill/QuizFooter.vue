@@ -24,6 +24,9 @@ import QuizRunService from "@/skills-display/components/quiz/QuizRunService.js";
 import SkillsSpinner from "@/components/utils/SkillsSpinner.vue";
 import QuizSingleRun from "@/components/quiz/runsHistory/QuizSingleRun.vue";
 import {useRoute} from "vue-router";
+import {usePluralize} from "@/components/utils/misc/UsePluralize.js";
+import {useSkillsDisplayAttributesState} from "@/skills-display/stores/UseSkillsDisplayAttributesState.js";
+import QuizCompletedMessage from "@/skills-display/components/quiz/QuizCompletedMessage.vue";
 
 const props = defineProps({
   skill: Object,
@@ -33,6 +36,8 @@ const numFormat = useNumberFormat()
 const skillsDisplayInfo = useSkillsDisplayInfo()
 const timeUtils = useTimeUtils()
 const route = useRoute()
+const pluralize = usePluralize()
+const attributes = useSkillsDisplayAttributesState()
 
 const selfReporting = computed(() => props.skill.selfReporting)
 const isQuizSkill = computed(() => selfReporting.value && QuizType.isQuiz(selfReporting.value.type))
@@ -53,18 +58,42 @@ const isLocked = computed(() => {
   return lockedDueToSkillPrerequisites || lockedDueToBadgePrerequisites
 })
 const isCrossProject = computed(() => props.skill.crossProject)
-const selfReportAvailable = computed(() => isQuizOrSurveySkill?.value && (!isCompleted.value || isMotivationalSkill.value) && !isLocked.value && !isCrossProject.value)
+const selfReportAvailable = computed(() => isQuizOrSurveySkill?.value && (!isCompleted.value || isMotivationalSkill.value) && !isLocked.value)
 const quizOrSurveyPassed = computed(() => selfReporting.value?.quizOrSurveyPassed)
 const subjectId = computed(() => props.skill.subjectId || route.params.subjectId)
 
 const navToQuiz = () => {
-  skillsDisplayInfo.routerPush('quizPage',
-      {
-        subjectId: subjectId.value,
-        skillId: props.skill.skillId,
-        quizId: props.skill.selfReporting.quizId,
-      }
-  )
+  if (props.skill.crossProject) {
+    if (route.params.badgeId) {
+      // global badge
+      skillsDisplayInfo.routerPush('quizPageForGlobalBadgeCrossProjectSkill',
+          {
+            crossProjectId: props.skill.projectId,
+            skillId: props.skill.skillId,
+            quizId: props.skill.selfReporting.quizId,
+            badgeId: route.params.badgeId,
+          }
+      )
+    } else {
+      // learning path cross-project skill
+      skillsDisplayInfo.routerPush('quizPageForLearningPathCrossProjectSkill',
+          {
+            crossProjectId: props.skill.projectId,
+            subjectId: subjectId.value,
+            skillId: props.skill.skillId,
+            quizId: props.skill.selfReporting.quizId,
+          }
+      )
+    }
+  } else {
+    skillsDisplayInfo.routerPush('quizPage',
+        {
+          subjectId: subjectId.value,
+          skillId: props.skill.skillId,
+          quizId: props.skill.selfReporting.quizId,
+        }
+    )
+  }
 }
 
 const showQuizResults = ref(false)
@@ -84,15 +113,16 @@ const loadQuizAttempt = () => {
 const viewResultsBtnLabel = computed(() => {
   return `${showQuizResults.value ? 'Hide' : 'View'} ${typeWord.value} Results`
 })
+const pointsLabelWithTotalPts = computed(() => pluralize.plural(attributes.pointDisplayName, props.skill.totalPoints).toLowerCase())
 </script>
 
 <template>
   <div v-if="skill">
     <div v-if="selfReportAvailable && isQuizOrSurveySkill" class="mb-2">
-      <Message :closable="false">
+      <Message v-if="!isQuizPendingGrading" :closable="false">
         <template #container>
           <div class="p-4">
-            <div v-if="!isQuizPendingGrading" class="flex gap-2 items-center" data-cy="takeQuizMsg">
+            <div class="flex gap-2 items-center" data-cy="takeQuizMsg">
               <div>
                 <i class="fas fa-user-check text-2xl" aria-hidden="true"></i>
               </div>
@@ -100,11 +130,11 @@ const viewResultsBtnLabel = computed(() => {
                   v-if="hasQuestions">&nbsp;{{ selfReporting.numQuizQuestions }}-question</span>&nbsp;<b>{{
                   selfReporting.quizName
                 }}</b>&nbsp;{{ typeWord }} and earn <span class="font-size-1"><Tag
-                  severity="info">{{ numFormat.pretty(skill.totalPoints) }}</Tag></span> points!
+                  severity="info">{{ numFormat.pretty(skill.totalPoints) }}</Tag></span> {{ pointsLabelWithTotalPts }}!
               </div>
               <div class="flex-1" data-cy="quizAlert" v-else-if="isCompleted && isMotivationalSkill">
-                This skill's achievement expires <span class="font-semibold">{{ timeUtils.relativeTime(skill.expirationDate) }}</span>, but your <span class="font-size-1">
-                <Tag severity="info">{{ numFormat.pretty(skill.totalPoints) }}</Tag></span> points can be retained by completing the {{ typeWord }} again.
+                This {{ attributes.skillDisplayNameLower }}'s achievement expires <span class="font-semibold">{{ timeUtils.relativeTime(skill.expirationDate) }}</span>, but your <span class="font-size-1">
+                <Tag severity="info">{{ numFormat.pretty(skill.totalPoints) }}</Tag></span> {{  pointsLabelWithTotalPts }} can be retained by completing the {{ typeWord }} again.
               </div>
               <SkillsButton
                   :label="isQuizSkill ? 'Take Quiz' : 'Complete Survey'"
@@ -118,30 +148,16 @@ const viewResultsBtnLabel = computed(() => {
                   @click="navToQuiz"
                   data-cy="takeQuizBtn"/>
             </div>
-            <div v-if="isQuizPendingGrading" class="flex gap-2 items-center" data-cy="quizRequiresGradingMsg">
-              <div>
-                <i class="fas fa-user-clock text-2xl" aria-hidden="true"/>
-              </div>
-              <div>
-                <div>You completed the quiz on
-                  <Tag>{{ timeUtils.formatDate(selfReporting.quizNeedsGradingAttemptDate) }}</Tag>
-                  but it <b>requires grading</b>.
-                </div>
-                <div class="mt-4">It will be assessed by a quiz administrator, so there is nothing to do but wait for
-                  the
-                  grades to roll in!
-                </div>
-              </div>
-            </div>
           </div>
         </template>
       </Message>
+      <quiz-completed-message v-if="isQuizPendingGrading" :attempt-timestamp="selfReporting.quizNeedsGradingAttemptDate" />
     </div>
     <Message v-if="isCompleted && isQuizOrSurveySkill && quizOrSurveyPassed" :closable="false" severity="success" data-cy="quizCompletedMsg">
       <template #container>
         <div class="flex flex-col md:flex-row gap-2 p-4 items-center">
           <div>
-            <i class="far fa-smile text-2xl" aria-hidden=""></i>
+            <i class="far fa-smile text-2xl" aria-hidden="true"></i>
           </div>
           <div class="flex-1">
             Congratulations! You have {{ completionWordInThePast }} <b>{{selfReporting.quizName }}</b>&nbsp;{{ typeWord }}.
@@ -159,7 +175,7 @@ const viewResultsBtnLabel = computed(() => {
         </div>
         <div v-if="showQuizResults" class="border-t">
           <skills-spinner v-if="loadingAttempt" :is-loading="true"/>
-          <div v-if="!loadingAttempt" class="pl-12 pr-8 pb-6">
+          <div v-if="!loadingAttempt" class="pl-12 pr-8 pb-6 sd-theme-tile-background">
             <quiz-single-run  :run-info="lastQuizAttempt"  :show-cards="false" />
           </div>
         </div>

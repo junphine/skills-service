@@ -87,10 +87,15 @@ const setMarkdownText = (newText) => {
 </style>
 
 <style>
-.markdown-text-theme-dark pre,
-.markdown-text-theme-dark code {
+.markdown .markdown-text-theme-dark pre,
+.markdown .markdown-text-theme-dark code {
   background-color: #374151 !important;
 }
+.markdown code {
+  background-color: #fbf7fa !important;
+  color: #aa566c !important;
+}
+
 .markdown-text-theme-dark .toastui-editor-contents table tbody tr td,
 .markdown-text-theme-dark .toastui-editor-contents h1,
 .markdown-text-theme-dark .toastui-editor-contents h2,
@@ -107,5 +112,18 @@ const setMarkdownText = (newText) => {
 
 .markdown .toastui-editor-contents  blockquote p {
   color: #636363;
+}
+
+.markdown .toastui-editor-contents a {
+  color: #075985 !important;
+}
+.markdown .toastui-editor-contents a:hover {
+  color: #038cd3 !important;
+}
+.st-dark-theme .markdown .toastui-editor-contents a {
+  color: #a1c7dd !important;
+}
+.st-dark-theme .markdown .toastui-editor-contents a:hover {
+  color: #62b7dc !important;
 }
 </style>

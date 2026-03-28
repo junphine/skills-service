@@ -25,6 +25,8 @@ import HighlightedValue from '@/components/utils/table/HighlightedValue.vue'
 import { useSkillsDisplayInfo } from '@/skills-display/UseSkillsDisplayInfo.js'
 import { useScrollSkillsIntoViewState } from '@/skills-display/stores/UseScrollSkillsIntoViewState.js'
 import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
+import {usePluralize} from "@/components/utils/misc/UsePluralize.js";
+import {useColors} from "@/skills-display/components/utilities/UseColors.js";
 
 const props = defineProps({
   skill: Object,
@@ -40,6 +42,10 @@ const props = defineProps({
   isExpanded: {
     type: Boolean,
     default: true
+  },
+  index: {
+    type: Number,
+    default: -1
   }
 })
 const emit = defineEmits(['toggle-row']);
@@ -47,8 +53,10 @@ const numFormat = useNumberFormat()
 const timeUtils = useTimeUtils()
 const appConfig = useAppConfig()
 const attributes = useSkillsDisplayAttributesState()
+const pluralize = usePluralize()
 const route = useRoute()
 const skillDisplayInfo = useSkillsDisplayInfo()
+const colors = useColors()
 
 const isSkillsGroupWithChildren = computed(() => props.skill?.isSkillsGroupType && props.skill?.children && props.skill?.children.length > 0)
 const numSkillsRequired = computed(() => {
@@ -87,20 +95,6 @@ const expirationDate = (includeTime = false) => {
   return ''
 }
 
-// const buildToRoute = () => {
-//   let name = 'skillDetails'
-//   const params = { skillId: props.skill.skillId, projectId: props.skill.projectId }
-//   if (route.params.subjectId) {
-//     params.subjectId = route.params.subjectId
-//   } else if (route.params.badgeId) {
-//     params.badgeId = route.params.badgeId
-//     name = (props.type === 'global-badge') ? 'globalBadgeSkillDetails' : 'badgeSkillDetails'
-//   } else if (props.skill.crossProject && props.skill.projectId) {
-//     params.crossProjectId = props.skill.projectId
-//   }
-//   return { name, params }
-// }
-
 const someSkillsAreOptional = computed(() => {
   return isSkillsGroupWithChildren.value && props.skill.numSkillsRequired !== -1 && props.skill.numSkillsRequired < props.skill.children.length
 })
@@ -127,6 +121,25 @@ const skillId = computed(() => {
 const isAudio = computed(() => {
   return props.skill.videoSummary?.videoType?.includes('audio/')
 })
+const titleComponent = computed(() => route.params.skillId ? 'h2' : 'h3')
+const groupLabel = computed(() => attributes.groupDisplayName)
+const iconClass = computed(() => {
+  const color = props.index >= 0 ? colors.getTextClass(props.index): ''
+  const commonCss = 'skill-icon sd-theme-icon'
+  if (props.skill.isSkillsGroupType) {
+    return `${commonCss} fas fa-layer-group`
+  }
+  if (!props.skill.copiedFromProjectId && !props.skill.isSkillsGroupType) {
+    const icon =  props.skill?.iconClass ? props.skill?.iconClass : 'fas fa-graduation-cap'
+    return `${commonCss} ${icon} ${color}`
+  }
+  if (props.skill.copiedFromProjectId) {
+    const icon = props.skill?.iconClass ? props.skill?.iconClass : 'fas fa-book'
+    return `${commonCss} text-secondary ${icon} ${color}`
+  }
+
+  return null
+})
 </script>
 
 <template>
@@ -134,32 +147,34 @@ const isAudio = computed(() => {
        :data-cy="`skillProgressTitle-${skillId}`"
        :id="`skillProgressTitle-${skillId}`">
     <div class=" flex-1 text-2xl w-min-12rem">
-      <div class="py-1 md:flex">
+      <div class="py-1 md:flex items-center">
         <div class="sd-theme-primary-color font-medium flex">
-          <div class="mr-1">
-            <i  v-if="skill.isSkillsGroupType" class="fas fa-layer-group"></i>
-            <i v-if="!skill.copiedFromProjectId && !skill.isSkillsGroupType" class="fas fa-graduation-cap text-muted-color"></i>
-            <i v-if="skill.copiedFromProjectId" class="fas fa-book text-secondary"></i>
+          <div class="rounded-border w-16 skill-icon-container text-primary text-center border mr-2">
+            <i v-if="iconClass" :class="iconClass" />
           </div>
-          <div>
-            <div v-if="skillDisplayInfo.isGlobalBadgePage.value">
-              <span class="italic text-muted-color">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}
+          <div class="flex items-center">
+            <div class="flex flex-col">
+              <router-link
+                :id="`skillProgressTitleLink-${skillId}`"
+                v-if="toRoute"
+                :to="toRoute"
+                data-cy="skillProgressTitle"
+                :aria-label="`${skill.isSkillType ? `Navigate to ${skill.skill}` : skill.skill }`">
+                <component :is="titleComponent"><highlighted-value :value="skill.skill" :filter="childSkillHighlightString" /></component>
+              </router-link>
+              <component :is="titleComponent" v-else data-cy="skillProgressTitle" :class="skill.isSkillsGroupType ? 'flex' : 'inline-block'">
+                <highlighted-value :value="skill.skill" :filter="childSkillHighlightString" />
+                <div v-if="skill.isSkillsGroupType" class="content-center ml-2 text-sm mt-1">({{ skill.numberOfChildren }} skills{{ skill.children.length === 0 ? ' - no matches' : ''}})</div>
+              </component>
+              <div v-if="skillDisplayInfo.isGlobalBadgePage.value" class="text-sm" data-cy="skillProjectName">
+                <span class="italic text-muted-color">{{ attributes.projectDisplayName }}:</span> {{ skill.projectName }}
+              </div>
             </div>
-            <router-link
-              :id="`skillProgressTitleLink-${skillId}`"
-              v-if="toRoute"
-              :to="toRoute"
-              data-cy="skillProgressTitle"
-              :aria-label="`${skill.isSkillType ? `Navigate to ${skill.skill}` : skill.skill }`">
-              <highlighted-value :value="skill.skill" :filter="childSkillHighlightString" />
-            </router-link>
-            <div v-else class="inline-block" data-cy="skillProgressTitle">
-              <highlighted-value :value="skill.skill" :filter="childSkillHighlightString" />
-            </div>
+
             <SkillsButton :icon="!isExpanded ? 'fas fa-plus' : 'fas fa-minus'"
                     v-if="skill.isSkillsGroupType"
                     outlined
-                    :aria-label="!isExpanded ? 'Expand Group' : 'Collapse Group'"
+                    :aria-label="!isExpanded ? `Expand ${groupLabel}` : `Collapse ${groupLabel}`"
                     style="padding: 0.3rem 0.3rem 0.3rem 0.3rem;"
                     class="ml-2"
                     :data-cy="`toggleGroup-${skillId}`"
@@ -175,7 +190,7 @@ const isAudio = computed(() => {
         <div
           v-if="skill.isSkillsGroupType && skill.numSkillsRequired > 0 && skill.numSkillsRequired < skill.children.length"
           :title="`A ${attributes.groupDisplayName} allows a ${attributes.skillDisplayName} to be defined by the collection ` +
-                            `of other ${attributes.skillDisplayName}s within a ${attributes.projectDisplayName}. A ${attributes.skillDisplayName} Group can require the completion of some or all of the included ${attributes.skillDisplayName}s before the group be achieved.`"
+                            `of other ${attributes.skillDisplayNamePlural} within a ${attributes.projectDisplayName}. A ${attributes.skillDisplayName} ${attributes.groupDisplayName} can require the completion of some or all of the included ${attributes.skillDisplayNamePlural} before the ${attributes.groupDisplayNameLower} be achieved.`"
           class="text-sm content-center ml-2"
           data-cy="groupSkillsRequiredBadge">
           <span class="mr-1">Requires </span>
@@ -186,7 +201,7 @@ const isAudio = computed(() => {
         </div>
 
         <Tag v-if="skill.selfReporting && skill.selfReporting.enabled"
-             class="self-report-badge ml-2 max-h-8">
+             class="self-report-badge ml-2 max-h-8 place-content-center">
           <i
             class="fas fa-user-check mr-1"></i><span class="sr-spelled-out mr-1">Self Reportable:</span>
           <span v-if="skill.selfReporting.type === 'Quiz'" data-cy="selfReportQuizTag"><span
@@ -220,18 +235,18 @@ const isAudio = computed(() => {
            aria-hidden="true" />
         <span v-if="skill.isSkillsGroupType">
           <animated-number :num="numChildSkillsComplete" />
-          / {{ numFormat.pretty(numSkillsRequired) }} Skill{{ (numSkillsRequired === 1) ? '' : 's' }}
+          / {{ numFormat.pretty(numSkillsRequired) }} {{ pluralize.plural(attributes.skillDisplayName, numSkillsRequired) }}
           {{ someSkillsAreOptional ? 'Required' : '' }}
         </span>
         <span v-else class="content-end">
-          <animated-number :num="skill.points" />
-          / {{ numFormat.pretty(skill.totalPoints) }} {{ attributes.pointDisplayName }}s
+          <animated-number :num="skill.points" data-cy="skillPoints"/>
+          / {{ numFormat.pretty(skill.totalPoints) }} {{ pluralize.plural(attributes.pointDisplayName, skill.totalPoints) }}
         </span>
       </div>
 
       <div v-if="skill.points > 0 && expirationDate() && !skill.isMotivationalSkill" data-cy="expirationDate">
         <div class="my-2 text-orange-500">
-          <i class="fas fa-hourglass-end text-orange-600 mr-2" aria-hidden="true"></i>{{ attributes.pointDisplayName }}s will expire on <span
+          <i class="fas fa-hourglass-end text-orange-600 mr-2" aria-hidden="true"></i>{{ attributes.pointDisplayNamePlural }} will expire on <span
           class="font-semibold">{{ expirationDate() }}</span>
         </div>
       </div>
@@ -239,12 +254,12 @@ const isAudio = computed(() => {
         <div class="my-2 text-orange-500">
           Expires <span
           class="font-semibold">{{ timeUtils.relativeTime(expirationDate(true)) }}</span>,
-          perform this skill to keep your {{ attributes.pointDisplayName.toLowerCase() }}s!
+          perform this {{ attributes.skillDisplayNameLower }} to keep your {{ attributes.pointDisplayNamePlural.toLowerCase() }}!
         </div>
       </div>
       <div v-if="showHasExpiredMessage" data-cy="hasExpired">
         <div class="my-2 text-orange-500">
-          <i class="fas fa-clock skills-color-expiration mr-2"></i>{{ attributes.pointDisplayName }}s expired <span
+          <i class="fas fa-clock skills-color-expiration mr-2"></i>{{ attributes.pointDisplayNamePlural }} expired <span
           class="font-weight-bold">{{ timeUtils.relativeTime(skill.lastExpirationDate) }}</span>
         </div>
       </div>
@@ -274,4 +289,19 @@ const isAudio = computed(() => {
   display: inline-block;
 }
 
+.skill-icon {
+  height: 100% !important;
+  width: 100% !important;
+  background-size: cover;
+  background-position: center;
+  font-size: 30px !important;
+  line-height: 46px !important;
+}
+
+.skill-icon-container {
+  max-width:48px;
+  max-height:48px;
+  height:48px;
+  width: 48px;
+}
 </style>

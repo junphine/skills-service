@@ -26,6 +26,7 @@ import { useColors } from '@/skills-display/components/utilities/UseColors.js'
 import { useResponsiveBreakpoints } from '@/components/utils/misc/UseResponsiveBreakpoints.js'
 import { useAppInfoState } from '@/stores/UseAppInfoState.js'
 import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
+import {useStorage} from "@vueuse/core";
 
 
 const route = useRoute();
@@ -38,7 +39,7 @@ const numberFormat = useNumberFormat()
 
 const approvals = ref([]);
 const loading = ref(true);
-const pageSize = ref(5);
+const pageSize = useStorage('selfReportApproval-pageSize', 5)
 const possiblePageSizes = ref([5, 10, 25]);
 const currentPage = ref(1);
 const sortOrder = ref(-1);
@@ -58,6 +59,11 @@ onMounted(() => {
   }
 });
 
+const filters = ref({
+  userId: '',
+  skillName: '',
+});
+
 const pageChanged = (pagingInfo) => {
   currentPage.value = pagingInfo.page + 1;
   pageSize.value = pagingInfo.rows;
@@ -74,12 +80,15 @@ const sortTable = (sortContext) => {
 };
 
 const loadApprovals = () => {
+  selectedItems.value = [];
   loading.value = true;
   const pageParams = {
     limit: pageSize.value,
     ascending: sortOrder.value === 1,
     page: currentPage.value,
     orderBy: sortBy.value,
+    userFilter: filters.value.userId,
+    skillFilter: filters.value.skillName,
   };
   return SelfReportService.getApprovals(route.params.projectId, pageParams)
       .then((res) => {
@@ -155,10 +164,16 @@ const toggleRow = (row) => {
 
   expandedRows.value = { ...expandedRows.value };
 }
+
+const reset = () => {
+  filters.value.userId = '';
+  filters.value.skillName = '';
+  loadApprovals();
+};
 </script>
 
 <template>
-  <Card :pt="{ body: { class: '!p-0' } }">
+  <Card :pt="{ body: { class: 'p-0!' } }">
     <template #header>
       <SkillsCardHeader title="Self Reported Skills Requiring Approval">
         <template #headerContent>
@@ -173,13 +188,27 @@ const toggleRow = (row) => {
       </SkillsCardHeader>
     </template>
     <template #content>
-      <div class="flex p-4 gap-2 flex-col sm:flex-row">
+      <div class="flex flex-col md:flex-row gap-2 pt-4 px-4">
+        <div class="w-full">
+          <label for="selfReportApproval-skill-filter" class="ml-1">Skill Name</label>
+          <InputText type="text" class="w-full mt-2" placeholder="Skill Name" v-model="filters.skillName" id="selfReportApproval-skill-filter"
+                     v-on:keydown.enter="loadApprovals" data-cy="selfReportApproval-skillNameFilter" />
+        </div>
+        <div class="w-full">
+          <label for="selfReportApproval-userId-filter" class="ml-1">User Id</label>
+          <InputText type="text" class="w-full mt-2" placeholder="User Id" v-model="filters.userId" id="selfReportApproval-userId-filter"
+                     v-on:keydown.enter="loadApprovals" data-cy="selfReportApproval-userIdFilter" />
+        </div>
+      </div>
+      <div class="flex gap-2 mt-6 mb-6 px-4">
         <div class="flex flex-1 justify-center sm:justify-start">
           <SkillsButton size="small" @click="loadApprovals" aria-label="Sync Records" data-cy="syncApprovalsBtn" class="" icon="fas fa-sync-alt" />
+          <SkillsButton size="small" @click="loadApprovals" data-cy="selfReportApproval-filterBtn" icon="fa fa-filter" label="Filter" class="ml-1"/>
+          <SkillsButton size="small" @click="reset" class="ml-1" data-cy="selfReportApproval-resetBtn" label="Reset" icon="fa fa-times" />
         </div>
         <div class="flex flex-1 justify-center sm:justify-end">
-          <SkillsButton size="small" @click="showRejectModal" data-cy="rejectBtn" class="" :disabled="selectedItems.length === 0" icon="fa fa-times-circle" label="Reject" />
-          <SkillsButton size="small" @click="showApproveModal" data-cy="approveBtn" class="ml-2" :disabled="selectedItems.length === 0" icon="fa fa-check" label="Approve" />
+          <SkillsButton size="small" @click="showRejectModal" data-cy="rejectBtn" class="" :disabled="selectedItems.length === 0 || loading" icon="fa fa-times-circle" label="Reject" />
+          <SkillsButton size="small" @click="showApproveModal" data-cy="approveBtn" class="ml-2" :disabled="selectedItems.length === 0 || loading" icon="fa fa-check" label="Approve" />
         </div>
       </div>
 
@@ -192,7 +221,7 @@ const toggleRow = (row) => {
                        :rows="pageSize"
                        :rowsPerPageOptions="possiblePageSizes"
                        :totalRecords="totalRows"
-                       :busy="loading"
+                       :loading="loading"
                        v-model:sort-field="sortBy"
                        v-model:sort-order="sortOrder"
                        @page="pageChanged"

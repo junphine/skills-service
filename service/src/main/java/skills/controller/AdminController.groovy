@@ -30,6 +30,7 @@ import org.springframework.web.multipart.MultipartFile
 import org.springframework.web.servlet.ModelAndView
 import skills.PublicProps
 import skills.auth.UserInfoService
+
 import skills.controller.exceptions.ErrorCode
 import skills.controller.exceptions.SkillException
 import skills.controller.exceptions.SkillsValidator
@@ -47,6 +48,7 @@ import skills.services.adminGroup.AdminGroupService
 import skills.services.attributes.ExpirationAttrs
 import skills.services.attributes.SkillAttributeService
 import skills.services.attributes.SkillVideoAttrs
+import skills.services.attributes.SlidesAttrs
 import skills.services.events.BulkSkillEventResult
 import skills.services.events.pointsAndAchievements.InsufficientPointsValidator
 import skills.services.inception.InceptionProjectService
@@ -54,6 +56,7 @@ import skills.services.settings.ProjectSettingsValidator
 import skills.services.settings.Settings
 import skills.services.settings.SettingsService
 import skills.services.settings.listeners.ValidationRes
+import skills.services.slides.AdminSlidesService
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionsHistoryService
@@ -101,6 +104,9 @@ class AdminController {
 
     @Autowired
     ProjAdminService projAdminService
+
+    @Autowired
+    AttachmentService attachmentService
 
     @Autowired
     SubjAdminService subjAdminService
@@ -178,6 +184,9 @@ class AdminController {
     AdminVideoService adminVideoService
 
     @Autowired
+    AdminSlidesService adminSlidesService
+
+    @Autowired
     UserAchievementExpirationService userAchievementExpirationService
 
     @Autowired
@@ -253,7 +262,7 @@ class AdminController {
         SkillsValidator.isTrue(!inviteRequest?.recipients?.isEmpty(), "at least one email is required")
         SkillsValidator.isTrue(inviteRequest?.recipients?.size() <= maxInviteEmails, "No more than ${maxInviteEmails} project invites may  be sent at one time")
 
-        InviteUsersResult res = inviteOnlyProjectService.inviteUsers(projectId, inviteRequest.recipients, inviteRequest.validityDuration)
+        InviteUsersResult res = inviteOnlyProjectService.inviteUsers(projectId, inviteRequest.recipients, inviteRequest.ccRecipients, inviteRequest.validityDuration)
         return res
     }
 
@@ -357,10 +366,13 @@ class AdminController {
         propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.descriptionMaxLength, "Subject Description", subjectRequest.description)
 
         subjectRequest.subjectId = InputSanitizer.sanitize(subjectRequest.subjectId)
-        subjectRequest.description = InputSanitizer.sanitize(subjectRequest.description)
+        subjectRequest.description = InputSanitizer.sanitizeDescription(subjectRequest.description)
         subjectRequest.name = InputSanitizer.sanitize(subjectRequest.name)?.trim()
         subjectRequest.iconClass = InputSanitizer.sanitize(subjectRequest.iconClass)
         subjectRequest.helpUrl = InputSanitizer.sanitizeUrl(subjectRequest.helpUrl)
+
+        // default to enabled
+        subjectRequest.enabled = subjectRequest.enabled == null ? "true" : subjectRequest.enabled
 
         subjAdminService.saveSubject(InputSanitizer.sanitize(projectId), subjectId, subjectRequest)
         return new RequestResult(success: true)
@@ -486,7 +498,7 @@ class AdminController {
 
         badgeRequest.name = InputSanitizer.sanitize(badgeRequest.name)?.trim()
         badgeRequest.badgeId = InputSanitizer.sanitize(badgeRequest.badgeId)
-        badgeRequest.description = InputSanitizer.sanitize(badgeRequest.description)
+        badgeRequest.description = InputSanitizer.sanitizeDescription(badgeRequest.description)
         badgeRequest.helpUrl = InputSanitizer.sanitizeUrl(badgeRequest.helpUrl)
 
         badgeAdminService.saveBadge(projectId, badgeId, badgeRequest)
@@ -608,6 +620,14 @@ class AdminController {
         return skillsAdminService.getSkillsByProjectSkillAndType(projectId, groupId, SkillDef.ContainerType.SkillsGroup, SkillRelDef.RelationshipType.SkillsGroupRequirement)
     }
 
+    @RequestMapping(value = "/projects/{projectId}/groups/{groupId}/subject", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    SubjectResult getSubjectForGroup(@PathVariable("projectId") String projectId, @PathVariable("groupId") String groupId) {
+        SkillsValidator.isNotBlank(projectId, "Project Id")
+        SkillsValidator.isNotBlank(groupId, "Group Id", projectId)
+        return subjAdminService.getSubjectForGroup(projectId, groupId)
+    }
+
     @RequestMapping(value = "/projects/{projectId}/subjects/{subjectId}/skills/{skillId}", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
     SkillDefRes getSkill(
@@ -653,6 +673,36 @@ class AdminController {
         SkillVideoAttrs res = adminVideoService.saveVideo(projectId, skillId, isAlreadyHosted, file, videoUrl, captions, transcript, width, height)
         return res
     }
+
+    @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/slides", method = [RequestMethod.POST, RequestMethod.PUT], produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    SlidesAttrs saveSkillSlidesAttrs(@PathVariable("projectId") String projectId,
+                                     @PathVariable("skillId") String skillId,
+                                     @RequestParam(name = "file", required = false) MultipartFile file,
+                                     @RequestParam(name = "url", required = false) String slidesUrl,
+                                     @RequestParam(name = "isAlreadyHosted", required = false, defaultValue = "false") Boolean isAlreadyHosted,
+                                     @RequestParam(name = "width", required = false) Double width) {
+        if (width != null && width > 100000) {
+            throw new SkillException("Width cannot be greater than 100000", projectId, skillId, ErrorCode.BadParam)
+        }
+        return adminSlidesService.saveSlides(projectId, skillId, isAlreadyHosted, file, slidesUrl, width)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/slides", method = RequestMethod.GET, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    SlidesAttrs getSlidesAttrs(@PathVariable("projectId") String projectId,
+                                       @PathVariable("skillId") String skillId) {
+        return skillAttributeService.getSlidesAttrs(projectId, skillId)
+    }
+
+    @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/slides", method = RequestMethod.DELETE, produces = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    RequestResult deleteSlidesAttrs(@PathVariable("projectId") String projectId,
+                                        @PathVariable("skillId") String skillId) {
+        skillAttributeService.deleteSlidesAttrs(projectId, skillId)
+        return new RequestResult(success: true)
+    }
+
 
     @RequestMapping(value = "/projects/{projectId}/skills/{skillId}/video", method = RequestMethod.DELETE, produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
@@ -739,6 +789,7 @@ class AdminController {
         skillRequest.projectId = InputSanitizer.sanitize(skillRequest.projectId)
         skillRequest.skillId = InputSanitizer.sanitize(skillRequest.skillId)
         skillRequest.subjectId = InputSanitizer.sanitize(skillRequest.subjectId)
+        skillRequest.iconClass = InputSanitizer.sanitize(skillRequest.iconClass)
 
         if (isBasicSkill) {
             SkillsValidator.isTrue(skillRequest.pointIncrement > 0, "pointIncrement must be > 0", projectId, skillId)
@@ -760,7 +811,7 @@ class AdminController {
             propsBasedValidator.validateMaxIntValue(PublicProps.UiProp.maxSkillVersion, "Skill Version", skillRequest.version)
 
             propsBasedValidator.validateMaxStrLength(PublicProps.UiProp.descriptionMaxLength, "Skill Description", skillRequest.description)
-            skillRequest.description = InputSanitizer.sanitize(skillRequest.description)
+            skillRequest.description = InputSanitizer.sanitizeDescription(skillRequest.description)
             skillRequest.helpUrl = InputSanitizer.sanitizeUrl(skillRequest.helpUrl)
         }
 
@@ -1068,12 +1119,15 @@ class AdminController {
                                 @RequestParam int page,
                                 @RequestParam String orderBy,
                                 @RequestParam Boolean ascending,
-                                @RequestParam int minimumPoints) {
+                                @RequestParam int minimumPoints,
+                                @RequestParam(required = false, defaultValue = "100") int maximumPoints,
+                                @RequestParam String userTagFilter) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         SkillsValidator.isTrue(minimumPoints >=0, "Minimum Points is less than 0", projectId)
+        SkillsValidator.isTrue(maximumPoints <=100, "Maximum Points is greater than 100", projectId)
 
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
-        return adminUsersService.loadUsersPageForProject(projectId, query, pageRequest, minimumPoints)
+        return adminUsersService.loadUsersPageForProject(projectId, query, pageRequest, minimumPoints, maximumPoints, userTagFilter)
     }
 
     @GetMapping(value = "/projects/{projectId}/users/count")
@@ -1089,15 +1143,20 @@ class AdminController {
                                     @RequestParam String query,
                                     @RequestParam String orderBy,
                                     @RequestParam Boolean ascending,
-                                    @RequestParam int minimumPoints) {
+                                    @RequestParam int minimumPoints,
+                                    @RequestParam(required = false, defaultValue = "100") int maximumPoints,
+                                    @RequestParam String userTagFilter) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         SkillsValidator.isTrue(minimumPoints >=0, "Minimum Points is less than 0", projectId)
+        SkillsValidator.isTrue(maximumPoints <=100, "Maximum Points is greater than 100", projectId)
 
         PageRequest pageRequest = PageRequest.of(0, Integer.MAX_VALUE, ascending ? ASC : DESC, orderBy)
         ModelAndView mav = new ModelAndView(userProgressExportResult);
         mav.addObject(UserProgressExportResult.PROJECT_ID, projectId)
         mav.addObject(UserProgressExportResult.QUERY, query)
+        mav.addObject(UserProgressExportResult.USER_TAG_FILTER, userTagFilter)
         mav.addObject(UserProgressExportResult.MINIMUM_POINTS, minimumPoints)
+        mav.addObject(UserProgressExportResult.MAXIMUM_POINTS, maximumPoints)
         mav.addObject(UserProgressExportResult.PAGE_REQUEST, pageRequest)
         return mav;
     }
@@ -1155,13 +1214,16 @@ class AdminController {
                                 @RequestParam int page,
                                 @RequestParam String orderBy,
                                 @RequestParam Boolean ascending,
-                                @RequestParam int minimumPoints) {
+                                @RequestParam int minimumPoints,
+                                @RequestParam(required = false, defaultValue = "100") int maximumPoints,
+                               @RequestParam String userTagFilter) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         SkillsValidator.isNotBlank(subjectId, "Subject Id", projectId)
         SkillsValidator.isTrue(minimumPoints >=0, "Minimum Points is less than 0", projectId)
+        SkillsValidator.isTrue(maximumPoints <=100, "Maximum Points is greater than 100", projectId)
 
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
-        return adminUsersService.loadUsersPageForSubject(projectId, subjectId, query, pageRequest, minimumPoints)
+        return adminUsersService.loadUsersPageForSubject(projectId, subjectId, query, pageRequest, minimumPoints, maximumPoints, userTagFilter)
     }
 
     @GetMapping(value = "/projects/{projectId}/skills/{skillId}/users", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -1173,13 +1235,16 @@ class AdminController {
                               @RequestParam int page,
                               @RequestParam String orderBy,
                               @RequestParam Boolean ascending,
-                              @RequestParam int minimumPoints) {
+                              @RequestParam int minimumPoints,
+                              @RequestParam String userTagFilter,
+                              @RequestParam(required = false, defaultValue = "100") int maximumPoints) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         SkillsValidator.isNotBlank(skillId, "Skill Id", projectId)
         SkillsValidator.isTrue(minimumPoints >=0, "Minimum Points is less than 0", projectId)
+        SkillsValidator.isTrue(maximumPoints <=100, "Maximum Points is greater than 100", projectId)
 
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
-        return adminUsersService.loadUsersPageForSkills(projectId, Collections.singletonList(skillId), query, pageRequest, minimumPoints)
+        return adminUsersService.loadUsersPageForSkills(projectId, Collections.singletonList(skillId), query, pageRequest, minimumPoints, maximumPoints, userTagFilter)
     }
 
     @GetMapping(value = "/projects/{projectId}/badges/{badgeId}/users", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -1191,10 +1256,13 @@ class AdminController {
                               @RequestParam int page,
                               @RequestParam String orderBy,
                               @RequestParam Boolean ascending,
-                              @RequestParam int minimumPoints) {
+                              @RequestParam int minimumPoints,
+                              @RequestParam String userTagFilter,
+                              @RequestParam(required = false, defaultValue = "100") int maximumPoints) {
         SkillsValidator.isNotBlank(projectId, "Project Id")
         SkillsValidator.isNotBlank(badgeId, "Badge Id", projectId)
         SkillsValidator.isTrue(minimumPoints >=0, "Minimum Points is less than 0", projectId)
+        SkillsValidator.isTrue(maximumPoints <=100, "Maximum Points is greater than 100", projectId)
 
         PageRequest pageRequest = PageRequest.of(page - 1, limit, ascending ? ASC : DESC, orderBy)
         List<SkillDefRes> badgeSkills = getBadgeSkills(projectId, badgeId)
@@ -1202,7 +1270,7 @@ class AdminController {
         if (!skillIds) {
             return new TableResult()
         }
-        return adminUsersService.loadUsersPageForSkills(projectId, skillIds, query, pageRequest, minimumPoints)
+        return adminUsersService.loadUsersPageForSkills(projectId, skillIds, query, pageRequest, minimumPoints, maximumPoints, userTagFilter)
     }
 
     @GetMapping(value = "/projects/{projectId}/userTags/{userTagKey}/{userTagValue}/users", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -1691,7 +1759,7 @@ class AdminController {
     }
 
     @RequestMapping(value = "/projects/{projectId}/skills/reuse", method = [RequestMethod.POST, RequestMethod.PUT], produces = "application/json")
-    RequestResult reuseASkill(@PathVariable("projectId") String projectId,
+    RequestResult reuseSkills(@PathVariable("projectId") String projectId,
                               @RequestBody SkillsActionRequest skillReuseRequest) {
         SkillsValidator.isNotBlank(projectId, "projectId")
         SkillsValidator.isNotEmpty(skillReuseRequest.skillIds, "skillReuseRequest.skillIds")
@@ -1896,5 +1964,14 @@ class AdminController {
 
         return new RequestResult(success: projAdminService.isUserArchived(projectId, userKey))
     }
+
+    @RequestMapping(value = "/projects/{projectId}/upload", method = [RequestMethod.PUT, RequestMethod.POST], produces = "application/json")
+    @ResponseBody
+    UploadAttachmentResult uploadFileToProject(@RequestParam("file") MultipartFile file,
+                                             @PathVariable("projectId") String projectId) {
+        return attachmentService.saveAttachment(file, projectId, null, null);
+    }
+
+
 }
 

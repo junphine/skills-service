@@ -26,6 +26,8 @@ import { useSkillsDisplayInfo } from '@/skills-display/UseSkillsDisplayInfo.js'
 import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
 import { useRoute } from 'vue-router'
 import { useThemesHelper } from '@/components/header/UseThemesHelper.js'
+import {useMatomoSupport} from "@/stores/UseMatomoSupport.js";
+import MatomoEvents from "@/utils/MatomoEvents.js";
 
 const props = defineProps({
   showDescriptions: {
@@ -60,6 +62,7 @@ const subjectAndSkillsState = useSkillsDisplaySubjectState()
 const parentFrame = useSkillsDisplayParentFrameState()
 const skillsDisplayInfo = useSkillsDisplayInfo()
 const route = useRoute()
+const matomo = useMatomoSupport()
 const themeHelper = useThemesHelper()
 const searchString = ref('')
 
@@ -127,6 +130,7 @@ const onDetailsToggle = () => {
         loading.value = false
       })
   }
+  matomo.trackEvent(MatomoEvents.category.ToggleSwitch, MatomoEvents.action.Toggle, 'Skill Details')
 }
 
 const selectedTagFilters = ref([])
@@ -189,7 +193,9 @@ const skillsToShow = computed(() => {
         return true
       }
       return false
-    }).map((item) => ({ ...item, children: item.children?.map((child) => ({ ...child })) }))
+    }).map((item) => ({ ...item, children: item.children?.filter((child) => {
+      return child.skill?.trim()?.toLowerCase().includes(searchStrNormalized)
+    })?.map((child) => ({ ...child })) }))
   }
 
   if (resultSkills && filterId.value && filterId.value.length > 0) {
@@ -254,6 +260,7 @@ const toggle = (event) => {
         :class="{'skills-display-test-link': skillsDisplayInfo.isLocalTestPath() && themeHelper.isDarkTheme.value }"
         v-if="(skillsInternal && skillsInternal.length > 0 || searchString || showNoDataMsg)">
     <template #header>
+      <h2 class="sr-only">Skills</h2>
       <div class="px-6 pt-4">
         <div class=" flex flex-wrap gap-4 flex-col md:flex-row"
              v-if="skillsInternal && skillsInternal.length > 0">
@@ -267,7 +274,7 @@ const toggle = (event) => {
                     :aria-label="`Search ${attributes.skillDisplayName}s`"
                     data-cy="skillsSearchInput" />
                   <InputGroupAddon class="p-0 m-0">
-                    <SkillsButton :pt="{ root: { class: '!border-0' } }"
+                    <SkillsButton :pt="{ root: { class: 'border-0!' } }"
                       icon="fas fa-times"
                       text
                       outlined
@@ -312,7 +319,7 @@ const toggle = (event) => {
                     data-cy="groupToggle"
                     aria-controls="group_control_menu">
                   <i class="fas fa-list mr-1" aria-hidden="true"></i>
-                  <span>Groups</span>
+                  <span>{{ attributes.groupDisplayNamePlural }}</span>
                   <i class="fas fa-caret-down ml-2"></i>
                 </Button>
                 <div id="group_control_menu">
@@ -337,7 +344,7 @@ const toggle = (event) => {
               icon="fas fa-tag"
               :data-cy="`skillTagFilter-${index}`"
               :key="tag.tagId"
-              :pt="{ root: { class: '!p-0'}}"
+              :pt="{ root: { class: 'p-0!'}}"
               @remove="removeTagFilter(tag)"
               outlined
               removable>
@@ -349,8 +356,6 @@ const toggle = (event) => {
       </div>
     </template>
     <template #content>
-      <!--      <skills-spinner :loading="loading"/>-->
-      <!--      <div v-if="!loading">-->
       <div v-if="skillsToShow.length > 0" class="skills-theme-progress-rows">
         <div v-for="(skill, index) in skillsToShow"
              :key="`skill-${skill.skillId}`"
@@ -358,13 +363,6 @@ const toggle = (event) => {
              class="skills-theme-bottom-border-with-background-color"
         >
           <div class="p-4 pt-6">
-            <!--            :show-group-descriptions="showGroupDescriptions"-->
-            <!--            @points-earned="onPointsEarned"-->
-            <!--            @add-tag-filter="addTagFilter"-->
-            <!--            :subjectId="subject.subjectId"-->
-            <!--            :badgeId="subject.badgeId"-->
-
-
             <skill-progress
               :id="`skill-${skill.skillId}`"
               :ref="`skillProgress${skill.skillId}`"
@@ -379,6 +377,7 @@ const toggle = (event) => {
               :child-skill-highlight-string="searchString"
               :video-collapsed-by-default="true"
               @add-tag-filter="addTagFilter"
+              :index="index"
             />
           </div>
         </div>
@@ -399,7 +398,7 @@ const toggle = (event) => {
 
       <no-content2
         v-if="!(skillsInternal && skillsInternal.length > 0) && showNoDataMsg"
-        :title="`${attributes.skillDisplayName}s have not been added yet.`"
+        :title="`${attributes.skillDisplayNamePlural} have not been added yet.`"
         :message="`Please contact this ${attributes.projectDisplayName.toLowerCase()}'s administrator.`" />
     </template>
   </Card>

@@ -50,6 +50,7 @@ import SkillNameRouterLink from '@/components/skills/SkillNameRouterLink.vue';
 import { useFocusState } from '@/stores/UseFocusState.js'
 import skillsService from '@/components/skills/SkillsService.js';
 import CopySubjectOrSkillsDialog from "@/components/subjects/CopySubjectOrSkillsDialog.vue";
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
 
 const YEARLY = 'YEARLY';
 const MONTHLY = 'MONTHLY';
@@ -57,7 +58,8 @@ const DAILY = 'DAILY';
 const LAST_DAY_OF_MONTH = 'LAST_DAY_OF_MONTH';
 
 const props = defineProps({
-  groupId: String
+  groupId: String,
+  groupEnabled: Boolean
 })
 
 const responsive = useResponsiveBreakpoints()
@@ -76,10 +78,8 @@ const log = useLog()
 const subjectId = computed(() => route.params.subjectId)
 const projectId = computed(() => route.params.projectId)
 const tableId = props.groupId || route.params.subjectId
-const pagination = {
-  pageSize: 10,
-  possiblePageSizes: [10, 20, 50, 100]
-}
+const possiblePageSizes = [10, 20, 50, 100]
+const pageSize = useStorage(`${tableId}-skillsTable-pageSize`, 10)
 
 const sortInfo = ref({ sortOrder: -1, sortBy: 'created' })
 const options = ref({
@@ -144,6 +144,12 @@ const options = ref({
       label: 'Version',
       sortable: true,
       imageClass: 'fas fa-code-branch'
+    },
+    {
+      key: 'updated',
+      label: 'Last Updated',
+      sortable: true,
+      imageClass: 'fas fa-clock'
     }
   ]
 })
@@ -229,7 +235,7 @@ const onColumnSort = () => {
 
 
 const addSkillDisabled = computed(() => {
-  return subjectState.subject.numSkills >= appConfig.maxSkillsPerSubject;
+  return (subjectState.subject?.numSkills || 0) + (subjectState.subject?.numSkillsReused || 0) >= appConfig.maxSkillsPerSubject;
 })
 const createOrUpdateSkill = inject('createOrUpdateSkill')
 const handleEditBtnClick = (skill) => {
@@ -237,7 +243,7 @@ const handleEditBtnClick = (skill) => {
     editImportedSkillInfo.value.skill = skill
     editImportedSkillInfo.value.show = true
   } else {
-    createOrUpdateSkill(skill, true, false, skill.groupId)
+    createOrUpdateSkill(skill, true, false, skill.groupId, props.groupEnabled)
   }
 }
 
@@ -266,6 +272,7 @@ const doDeleteSkill = () => {
         skillsState.setGroupSkills(skill.groupId, skills)
         const parentGroup = skillsState.subjectSkills.find((item) => item.skillId === skill.groupId)
         parentGroup.totalPoints = skills
+          .filter((item) => item.enabled === true)
           .map((item) => item.totalPoints)
           .reduce((accumulator, currentValue) => {
             return accumulator + currentValue
@@ -492,6 +499,10 @@ const exportSkills = () => {
 const onRowExpand = () => {
   SkillsReporter.reportSkill('ExpandSkillDetailsSkillsPage')
 }
+
+const pageChanged = (pagingInfo) => {
+  pageSize.value = pagingInfo.rows
+}
 </script>
 
 <template>
@@ -569,7 +580,7 @@ const onRowExpand = () => {
                   :popup="true">
               <template #item="{ item, props }">
                 <a :href="item.url" target="_blank" v-bind="props.action">
-                  <span class="w-7 border text-center rounded text-green-800 bg-green-50 dark:bg-gray-900 dark:text-green-500 dark:border-green-700"><i :class="item.icon"/></span>
+                  <span class="w-7 border text-center rounded-sm text-green-800 bg-green-50 dark:bg-gray-900 dark:text-green-500 dark:border-green-700"><i :class="item.icon"/></span>
                   <span class="">{{ item.label }}</span>
                 </a>
               </template>
@@ -593,9 +604,10 @@ const onRowExpand = () => {
       @update:first="(val) => indexOfFirstRow = val"
       @filter="onFilter"
       @sort="onColumnSort"
-      :paginator="totalRows > pagination.pageSize"
-      :rows="pagination.pageSize"
-      :rowsPerPageOptions="pagination.possiblePageSizes"
+      @page="pageChanged"
+      paginator
+      :rows="pageSize"
+      :rowsPerPageOptions="possiblePageSizes"
       :globalFilterFields="['name']"
       :exportFilename="`skilltree-${subjectId}-skills`"
       :row-class="disableRow"
@@ -640,6 +652,9 @@ const onRowExpand = () => {
           <div v-if="slotProps.field == 'name'"
                class="flex flex-wrap items-center flex-col sm:flex-row"
                :data-cy="`nameCell_${slotProps.data.skillId}`">
+            <div class="d-inline-block rounded-border w-16 skill-icon-container text-primary text-center border mr-4">
+              <i class="skill-icon" :class="`${slotProps.data.iconClass ? slotProps.data.iconClass : 'fas fa-graduation-cap'}`"></i>
+            </div>
             <div v-if="slotProps.data.isGroupType" class="flex-1">
               <div>
                 <i class="fas fa-layer-group" aria-hidden="true"></i> <span class="uppercase">Group</span>
@@ -651,6 +666,13 @@ const onRowExpand = () => {
                 class="text-lg w-min-10rem"
                 :value="slotProps.data.name"
                 :filter="filters.global.value" />
+              <Tag
+                  v-if="!slotProps.data.enabled"
+                  severity="secondary"
+                  class="mt-1"
+                  :data-cy="`disabledBadge-${slotProps.data.skillId}`">
+                <span><i class="fas fa-eye-slash" aria-hidden="true"></i> Disabled</span>
+              </Tag>
             </div>
             <div v-if="!slotProps.data.isGroupType" class="flex-1">
               <div class="flex w-min-10rem">
@@ -659,11 +681,12 @@ const onRowExpand = () => {
                                      :read-only="projConfig.isReadOnlyProj || slotProps.data.isCatalogImportedSkills"
                 />
               </div>
-              <div class="flex flex-wrap gap-1">
+              <div class="flex flex-wrap gap-2 items-center">
                 <Tag
                   v-if="slotProps.data.isCatalogImportedSkills"
                   severity="success"
                   class="mt-1"
+                  aria-label="Reused"
                   :data-cy="`importedBadge-${slotProps.data.skillId}`">
                   <span v-if="slotProps.data.reusedSkill"><i class="fas fa-recycle"
                                                              aria-hidden="true"></i> Reused</span>
@@ -674,7 +697,7 @@ const onRowExpand = () => {
                   severity="secondary"
                   class="mt-1"
                   :data-cy="`disabledBadge-${slotProps.data.skillId}`">
-                  <span><i class="fas fa-book" aria-hidden="true"></i> Disabled</span>
+                  <span><i class="fas fa-eye-slash" aria-hidden="true"></i> Disabled</span>
                 </Tag>
                 <Tag
                   v-if="slotProps.data.sharedToCatalog"
@@ -682,7 +705,7 @@ const onRowExpand = () => {
                   :data-cy="`exportedBadge-${slotProps.data.skillId}`">
                   <span><i class="fas fa-book" aria-hidden="true"></i> Exported</span>
                 </Tag>
-                <Chip :pt="{ root: { class: '!p-0'}}"
+                <Chip :pt="{ root: { class: 'p-0!'}}"
                       v-for="(tag) in slotProps.data.tags"
                       :key="tag.tagId"
                       :data-cy="`skillTag-${slotProps.data.skillId}-${tag.tagId}`">
@@ -690,6 +713,14 @@ const onRowExpand = () => {
                       class="fas fa-tag text-sm" aria-hidden="true"/></span>
                         <span class="font-medium pr-3">{{ tag.tagValue }}</span>
                 </Chip>
+              </div>
+              <div v-if="slotProps.data.badges && slotProps.data.badges.length > 0" class="mt-2">
+                <i class="fa fa-award text-purple-500" aria-hidden="true"></i> Badges:
+                <router-link v-for="badge in slotProps.data.badges" :key="badge.id"
+                             :to="{ name: badge.skillType === 'GlobalBadge' ? 'GlobalBadgeSkills' : 'BadgeSkills', params: { badgeId: badge.badgeId, projectId: projectId } }"
+                             class="skills-theme-primary-color mr-2" style="text-decoration:underline;">
+                  {{ badge.name }}
+                </router-link>
               </div>
             </div>
             <div class="flex items-start justify-end">
@@ -712,7 +743,7 @@ const onRowExpand = () => {
                     :id="`copySkillButton_${slotProps.data.skillId}`"
                     v-if="slotProps.data.type === 'Skill' && !slotProps.data.isCatalogImportedSkills"
                     icon="fas fa-copy"
-                    @click="createOrUpdateSkill(slotProps.data, false, true, slotProps.data.groupId)"
+                    @click="createOrUpdateSkill(slotProps.data, false, true, slotProps.data.groupId, groupEnabled)"
                     size="small"
                     outlined
                     severity="info"
@@ -769,7 +800,7 @@ const onRowExpand = () => {
               </ButtonGroup>
             </div>
           </div>
-          <div v-else-if="slotProps.field === 'created'">
+          <div v-else-if="slotProps.field === 'created' || slotProps.field === 'updated'">
             <DateCell :value="slotProps.data[col.key]" />
           </div>
           <div v-else-if="slotProps.field === 'expiration'">
@@ -850,24 +881,9 @@ const onRowExpand = () => {
       <template #paginatorstart>
         <span>Total Rows:</span> <span class="font-semibold" data-cy=skillsBTableTotalRows>{{ totalRows }}</span>
       </template>
-      <!--      <template #paginatorend>-->
-      <!--        &lt;!&ndash;        <SkillsButton type="button" icon="fas fa-download" text @click="exportCSV" label="Export"/>&ndash;&gt;-->
-      <!--      </template>-->
 
       <template #empty>
-        <div class="flex justify-center flex-wrap">
-          <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle"
-             aria-hidden="true"></i>
-          <span class="flex items-center justify-center">No Skills Found.
-            <SkillsButton class="flex flex items-center justify-center px-1"
-                          label="Reset"
-                          link
-                          size="small"
-                          @click="clearFilter"
-                          aria-label="Reset skills filter"
-                          data-cy="skillResetBtnNoFilterRes" /> to clear the existing filter.
-              </span>
-        </div>
+        <table-no-res no-res-msg="No Skills Found." :showResetFilter="true" @resetFilter="clearFilter"/>
       </template>
     </SkillsDataTable>
 
@@ -941,5 +957,21 @@ const onRowExpand = () => {
 <style>
 .remove-checkbox .p-checkbox {
   visibility: hidden !important;
+}
+
+.skill-icon {
+  height: 100% !important;
+  width: 100% !important;
+  background-size: cover;
+  background-position: center;
+  font-size: 30px !important;
+  line-height: 46px !important;
+}
+
+.skill-icon-container {
+  max-width:48px;
+  max-height:48px;
+  height:48px;
+  width: 48px;
 }
 </style>

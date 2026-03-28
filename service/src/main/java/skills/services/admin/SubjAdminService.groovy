@@ -32,15 +32,12 @@ import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
 import skills.services.userActions.UserActionInfo
 import skills.services.userActions.UserActionsHistoryService
-import skills.storage.model.ProjDef
-import skills.storage.model.SkillCounts
-import skills.storage.model.SkillDef
-import skills.storage.model.SkillDefWithExtra
-import skills.storage.model.SkillRelDef
 import skills.storage.accessors.ProjDefAccessor
+import skills.storage.model.*
 import skills.storage.repos.ProjDefRepo
 import skills.storage.repos.SkillDefRepo
 import skills.storage.repos.SkillDefWithExtraRepo
+import skills.storage.repos.SkillRelDefRepo
 import skills.utils.InputSanitizer
 import skills.utils.Props
 
@@ -67,6 +64,9 @@ class SubjAdminService {
     SkillDefRepo skillDefRepo
 
     @Autowired
+    SkillRelDefRepo skillRelDefRepo
+
+    @Autowired
     SkillDefWithExtraRepo skillDefWithExtraRepo
 
     @Autowired
@@ -80,6 +80,9 @@ class SubjAdminService {
 
     @Autowired
     RuleSetDefGraphService ruleSetDefGraphService
+
+    @Autowired
+    RuleSetDefinitionScoreUpdater ruleSetDefinitionScoreUpdater
 
     @Autowired
     DisplayOrderService displayOrderService
@@ -100,8 +103,10 @@ class SubjAdminService {
         CustomValidationResult customValidationResult = customValidator.validate(subjectRequest, projectId)
         if (performCustomValidation && !customValidationResult.valid) {
             String msg = "Custom validation failed: msg=[${customValidationResult.msg}], type=[subject], subjectId=[${subjectRequest.subjectId}], name=[${subjectRequest.name}], description=[${subjectRequest.description}]"
-            throw new SkillException(msg)
+            throw new SkillException(msg, projectId, subjectRequest.subjectId, ErrorCode.ParagraphValidationFailed)
         }
+
+        final boolean isEnabledSkillInRequest = Boolean.valueOf(subjectRequest.enabled)
 
         SkillDefWithExtra existing = skillDefWithExtraRepo.findByProjectIdAndSkillIdIgnoreCaseAndType(projectId, origSubjectId, SkillDef.ContainerType.Subject)
 
@@ -118,6 +123,11 @@ class SubjAdminService {
             }
         }
 
+        Boolean isExistingEnabled = Boolean.valueOf(existing?.enabled)
+        if (existing && isExistingEnabled && !isEnabledSkillInRequest) {
+            throw new SkillException("Cannot disable an existing enabled Subject. SubjectId=[${origSubjectId}]", projectId, null, ErrorCode.BadParam)
+        }
+
         SkillDefWithExtra res
         if (existing) {
             Props.copy(subjectRequest, existing)
@@ -125,6 +135,9 @@ class SubjAdminService {
             existing.skillId = subjectRequest.subjectId
             DataIntegrityExceptionHandlers.subjectDataIntegrityViolationExceptionHandler.handle(projectId) {
                 res = skillDefWithExtraRepo.save(existing)
+            }
+            if (!isExistingEnabled && isEnabledSkillInRequest) {
+                enableSubject(existing)
             }
             log.debug("Updated [{}]", existing)
         } else {
@@ -134,7 +147,7 @@ class SubjAdminService {
 
             Integer lastDisplayOrder = skillDefRepo.calculateHighestDisplayOrderByProjectIdAndType(projectId, SkillDef.ContainerType.Subject)
             int displayOrder = lastDisplayOrder != null ? lastDisplayOrder + 1 : 1
-
+            String enabled = isEnabledSkillInRequest.toString()
             SkillDefWithExtra skillDef = new SkillDefWithExtra(
                     type: SkillDef.ContainerType.Subject,
                     projectId: projectId,
@@ -145,7 +158,7 @@ class SubjAdminService {
                     projRefId: projDef.id,
                     displayOrder: displayOrder,
                     helpUrl: subjectRequest.helpUrl,
-                    enabled: Boolean.TRUE.toString(),
+                    enabled: enabled,
             )
 
             DataIntegrityExceptionHandlers.subjectDataIntegrityViolationExceptionHandler.handle(projectId) {
@@ -165,6 +178,25 @@ class SubjAdminService {
                 itemRefId: res.id,
                 projectId: res.projectId,
         ))
+    }
+
+    private void enableSubject(SkillDefWithExtra subject) {
+        List<SkillRelDef.RelationshipType> relationshipTypes = [SkillRelDef.RelationshipType.RuleSetDefinition, SkillRelDef.RelationshipType.GroupSkillToSubject]
+        List<SkillDef> subjectSkills = skillRelDefRepo.findChildrenByParent(subject.id, relationshipTypes)
+        // need to enable skill group children before their group so that point total is calculated correctly
+        subjectSkills.sort { skill -> skill.type == SkillDef.ContainerType.SkillsGroup ? 1 : 0 }.each { skill ->
+            if (skill.copiedFrom == null) {
+                skill.enabled = true
+                DataIntegrityExceptionHandlers.skillDataIntegrityViolationExceptionHandler.handle(subject.projectId, subject.skillId) {
+                    skillDefRepo.save(skill)
+                }
+                if (skill.type == SkillDef.ContainerType.SkillsGroup) {
+                    ruleSetDefinitionScoreUpdater.updateGroupDef(skill)
+                }
+            }
+        }
+        ruleSetDefinitionScoreUpdater.updateSubjectSkillDef(skillDefRepo.findById(subject.id).get())
+        ruleSetDefinitionScoreUpdater.updateProjDef(subject.projectId)
     }
 
     @Transactional
@@ -218,6 +250,15 @@ class SubjAdminService {
     }
 
     @Transactional(readOnly = true)
+    SubjectResult getSubjectForGroup(String projectId, String groupId) {
+        SkillDefWithExtra skillDef = skillDefWithExtraRepo.findSubjectForGroup(projectId, groupId)
+        if (!skillDef) {
+            throw new SkillException("Subject not found for group [${groupId}] in project [${projectId}]", projectId, null, ErrorCode.SubjectNotFound)
+        }
+        convertToSubject(skillDef)
+    }
+
+    @Transactional(readOnly = true)
     List<SubjectResult> getSubjects(String projectId) {
         List<SkillDefWithExtra> subjects = skillDefWithExtraRepo.findAllByProjectIdAndType(projectId, SkillDef.ContainerType.Subject)
         List<SubjectResult> res = subjects.collect { convertToSubject(it) }
@@ -265,6 +306,8 @@ class SubjAdminService {
 
         res.numSkills -= res.numSkillsReused
         res.totalPoints -= res.totalPointsReused
+
+        res.enabled = skillDef.enabled == "true"
 
         return res
     }

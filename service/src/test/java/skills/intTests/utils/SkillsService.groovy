@@ -24,6 +24,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.util.StreamUtils
 import skills.controller.request.model.ActionPatchRequest
 import skills.controller.request.model.CopyToAnotherProjectRequestType
+import skills.controller.request.model.PageVisitRequest
 import skills.services.settings.Settings
 import skills.services.userActions.DashboardAction
 import skills.services.userActions.DashboardItem
@@ -68,7 +69,7 @@ class SkillsService {
                 skillsService: service,
                 firstName: userParams.firstName,
                 lastName: userParams.lastName,
-                email: userParams.email,
+                email: userParams.email ?: (userParams.username?.contains("@") ? userParams.username : "${userParams.username}@skills.org"),
                 certificateRegistry: certificateRegistry).init(certificateRegistry != null)
     }
 
@@ -137,6 +138,10 @@ class SkillsService {
     @Profile
     def validateAdminGroupForEnablingCommunity(String adminGroupId) {
         wsHelper.adminGet("/admin-group-definitions/${adminGroupId}/validateEnablingCommunity")
+    }
+    @Profile
+    def validateGlobalBadgeForEnablingCommunity(String badgeId) {
+        wsHelper.adminGet("/badges/${badgeId}/validateEnablingCommunity")
     }
 
     @Profile
@@ -264,7 +269,7 @@ class SkillsService {
 
     @Profile
     def changeGlobalBadgeDisplayOrder(Map props, Integer newDisplayOrderIndex){
-        wsHelper.supervisorPatch(getGlobalBadgeUrl(props.badgeId), [
+        wsHelper.globalBadgePatch(getGlobalBadgeUrl(props.badgeId), [
                 action: "NewDisplayOrderIndex",
                 newDisplayOrderIndex: newDisplayOrderIndex,
         ]);
@@ -454,11 +459,11 @@ class SkillsService {
     }
 
     def createGlobalBadge(Map props, String originalBadgeId = null) {
-        wsHelper.supervisorPut(getGlobalBadgeUrl(originalBadgeId ?: props.badgeId), props)
+        wsHelper.appPut(getGlobalBadgeUrl(originalBadgeId ?: props.badgeId), props)
     }
 
     def updateGlobalBadge(Map props, String originalBadgeId = null) {
-        wsHelper.supervisorPut(getGlobalBadgeUrl(originalBadgeId ?: props.badgeId), props)
+        wsHelper.globalBadgePut(getGlobalBadgeUrl(originalBadgeId ?: props.badgeId), props)
     }
 
     def updateBadge(Map props, String originalBadgeId = null) {
@@ -540,6 +545,10 @@ class SkillsService {
         wsHelper.adminGet("/projects/${props.projectId}/subjects/${props.subjectId}")
     }
 
+    def getSubjectForGroup(String projectId, String groupId) {
+        wsHelper.adminGet("/projects/${projectId}/groups/${groupId}/subject")
+    }
+
     def getBadge(String projectId, String badgeId) {
         this.getBadge([projectId: projectId, badgeId: badgeId])
     }
@@ -552,28 +561,31 @@ class SkillsService {
         wsHelper.adminGet("/projects/${props.projectId}/badges/${props.badgeId}")
     }
 
+    def getBadgeSkills(String projectId, String badgeId) {
+        wsHelper.adminGet("/projects/${projectId}/badge/${badgeId}/skills")
+    }
     def removeBadge(Map props) {
         wsHelper.adminDelete("/projects/${props.projectId}/badges/${props.badgeId}")
     }
 
     def getAvailableProjectsForGlobalBadge(String badgeId, String query="") {
-        wsHelper.supervisorGet("${getGlobalBadgeUrl(badgeId)}/projects/available?query=${query}")
+        wsHelper.globalBadgeGet("${getGlobalBadgeUrl(badgeId)}/projects/available?query=${query}")
     }
 
     def getAvailableSkillsForGlobalBadge(String badgeId, String query) {
-        wsHelper.supervisorGet("${getGlobalBadgeUrl(badgeId)}/skills/available?query=${query}")
+        wsHelper.globalBadgeGet("${getGlobalBadgeUrl(badgeId)}/skills/available?query=${query}")
     }
 
     def getGlobalBadge(String badgeId) {
-        wsHelper.supervisorGet(getGlobalBadgeUrl(badgeId))
+        wsHelper.globalBadgeGet(getGlobalBadgeUrl(badgeId))
     }
 
     def getGlobalBadgeSkills(String badgeId) {
-        wsHelper.supervisorGet("/badges/${badgeId}/skills")
+        wsHelper.globalBadgeGet("/badges/${badgeId}/skills")
     }
 
     def getLevelsForProject(String projectId) {
-        wsHelper.supervisorGet("/projects/${projectId}/levels")
+        wsHelper.globalBadgeGet("/projects/${projectId}/levels")
     }
 
     def getServiceStatus() {
@@ -585,29 +597,55 @@ class SkillsService {
     }
 
     def getAllGlobalBadges() {
-        wsHelper.supervisorGet("/badges")
+        wsHelper.appGet("/badges")
     }
 
     def doesGlobalBadgeNameExists(String name) {
-        wsHelper.supervisorPost("/badges/name/exists", [name:name])?.body
+        wsHelper.appPost("/badges/name/exists", [name:name])?.body
     }
     def doesGlobalBadgeIdExists(String id) {
-        wsHelper.supervisorGet("/badges/id/${id}/exists")
+        wsHelper.appGet("/badges/id/${id}/exists")
     }
 
     def deleteGlobalBadge(String badgeId) {
-        wsHelper.supervisorDelete(getGlobalBadgeUrl(badgeId))
+        wsHelper.globalBadgeDelete(getGlobalBadgeUrl(badgeId))
     }
 
     @Profile
-    def addSkill(Map props, String userId = null, Date date = new Date(), String approvalRequestedMsg = null) {
+    def addSkill(Map props, String userId = null, Date date = new Date(), String approvalRequestedMsg = null, Boolean doNotRequireApproval = null) {
+        Map params = [:]
+
         if (userId) {
             userId = getUserId(userId)
             assert date
-            return wsHelper.apiPost("/projects/${props.projectId}/skills/${props.skillId}", [ userId : userId, timestamp:date.time, approvalRequestedMsg: approvalRequestedMsg])
-        } else {
-            return wsHelper.apiPut("/projects/${props.projectId}/skills/${props.skillId}", null)
+
+            params.userId = userId
+            params.timestamp = date.time
+            params.approvalRequestedMsg = approvalRequestedMsg
         }
+        if (doNotRequireApproval) {
+            params.doNotRequireApproval = doNotRequireApproval
+        }
+
+        return wsHelper.apiPut("/projects/${props.projectId}/skills/${props.skillId}", params ?: null)
+    }
+
+    def reportCrossProjectSkill(String projId, String crossProjectId, String otherProjId, String optionalUserId = null, Date optionalDate = null, String optionalApprovalMsg = null) {
+        String url = "/projects/${projId}/crossProject/${crossProjectId}/skills/${otherProjId}"
+        Map params = [:]
+
+        if (optionalUserId) {
+            optionalUserId = getUserId(optionalUserId)
+            params.userId = optionalUserId
+        }
+        if (optionalDate) {
+            params.timestamp = optionalDate.time
+        }
+        if (optionalApprovalMsg) {
+            params.approvalRequestedMsg = optionalApprovalMsg
+        }
+
+        return wsHelper.apiPost(url, params ?: null)
     }
 
     @Profile
@@ -623,8 +661,8 @@ class SkillsService {
         return wsHelper.adminPost("/projects/${props.projectId}/skills/${props.skillId}", [ userIds : userIds, timestamp: timestamp])
     }
 
-    def getApprovals(String projectId, int limit, int page, String orderBy, Boolean ascending) {
-        return wsHelper.adminGet("/projects/${projectId}/approvals?limit=${limit}&page=${page}&orderBy=${orderBy}&ascending=${ascending}")
+    def getApprovals(String projectId, int limit, int page, String orderBy, Boolean ascending, String userFilter = '', String skillFilter = '') {
+        return wsHelper.adminGet("/projects/${projectId}/approvals?limit=${limit}&page=${page}&orderBy=${orderBy}&ascending=${ascending}&userFilter=${userFilter}&skillFilter=${skillFilter}")
     }
 
     def getApprovalsHistory(String projectId, int limit, int page, String orderBy, Boolean ascending,  String skillNameFilter = '', String userIdFilter ='', String approverUserIdFilter = '') {
@@ -734,7 +772,7 @@ class SkillsService {
         this.assignSkillToGlobalBadge(['badgeId': badgeId, 'projectId': projectId, 'skillId': skillId])
     }
     def assignSkillToGlobalBadge(Map props) {
-        wsHelper.supervisorPost(getAddSkillToGlobalBadgeUrl(props.badgeId, props.projectId, props.skillId), props)
+        wsHelper.globalBadgePost(getAddSkillToGlobalBadgeUrl(props.badgeId, props.projectId, props.skillId), props)
     }
 
     def removeSkillFromGlobalBadge(String projectId, String badgeId, String skillId) {
@@ -742,19 +780,19 @@ class SkillsService {
     }
 
     def removeSkillFromGlobalBadge(Map props) {
-        wsHelper.supervisorDelete(getAddSkillToGlobalBadgeUrl(props.badgeId, props.projectId, props.skillId), props)
+        wsHelper.globalBadgeDelete(getAddSkillToGlobalBadgeUrl(props.badgeId, props.projectId, props.skillId), props)
     }
 
     def assignProjectLevelToGlobalBadge(Map props) {
-        wsHelper.supervisorPost(getAddProjectLevelToGlobalBadgeUrl(props.badgeId, props.projectId, props.level), props)
+        wsHelper.globalBadgePost(getAddProjectLevelToGlobalBadgeUrl(props.badgeId, props.projectId, props.level), props)
     }
 
     def changeProjectLevelOnGlobalBadge(Map props) {
-        wsHelper.supervisorPost(getchangeProjectLevelOnGlobalBadgeUrl(props.badgeId, props.projectId, props.currentLevel, props.newLevel), [:])
+        wsHelper.globalBadgePost(getchangeProjectLevelOnGlobalBadgeUrl(props.badgeId, props.projectId, props.currentLevel, props.newLevel), [:])
     }
 
     def removeProjectLevelFromGlobalBadge(Map props) {
-        wsHelper.supervisorDelete(getAddProjectLevelToGlobalBadgeUrl(props.badgeId, props.projectId, props.level), props)
+        wsHelper.globalBadgeDelete(getAddProjectLevelToGlobalBadgeUrl(props.badgeId, props.projectId, props.level), props)
     }
 
     def suggestDashboardUsers(String query) {
@@ -787,8 +825,8 @@ class SkillsService {
         wsHelper.appGet(url)
     }
 
-    def getCustomClientDisplayCss(String projectId = null){
-        String url = projectId ? "/projects/${projectId}/customIconCss" : "/icons/customIconCss"
+    def getCustomIconCssForProject(String projectId){
+        String url = "/projects/${projectId}/customIconCss"
         wsHelper.get(url.toString(), "api", null, false)
     }
 
@@ -824,6 +862,11 @@ class SkillsService {
         wsHelper.apiGet(url)
     }
 
+    def getApiAllSubjectsBadgesAndSkills(String projectId) {
+        String url = "/projects/${projectId}/skillsSubjectsAndBadges"
+        wsHelper.apiGet(url)
+    }
+
     def documentVisitedSkillId(String projectId, String skillId) {
         String url = "/projects/${projectId}/skills/visited/${skillId}"
         wsHelper.apiPost(url, [])
@@ -831,6 +874,14 @@ class SkillsService {
 
     def getSkillsSummaryForCurrentUser(String projId, int version = -1) {
         String url = "/projects/${projId}/summary"
+        if (version >= 0) {
+            url += "&version=${version}"
+        }
+        wsHelper.apiGet(url)
+    }
+
+    def getSkillsSummaryForUser(String projId, String userId, int version = -1) {
+        String url = "/projects/${projId}/summary?userId=${userId}"
         if (version >= 0) {
             url += "&version=${version}"
         }
@@ -855,6 +906,11 @@ class SkillsService {
     def addMyProject(String projectId) {
         String url = "/myprojects/${projectId}"
         wsHelper.apiPost(url, null)
+    }
+
+    def addMyHiddenProject(String projectId) {
+        String url = "/myprojects/${projectId}"
+        wsHelper.apiPost(url, [isHiddenProject: true])
     }
 
     def moveMyProject(String projectId, Integer newSortIndex) {
@@ -972,15 +1028,15 @@ class SkillsService {
         return wsHelper.adminGet("/projects/${projId}/icons/${cssClass}/usage")
     }
 
-    def uploadIcon(Map props, File icon){
+    def uploadIcon(Map props, File icon, boolean throwException = false){
         Map body = [:]
         body.put("customIcon", icon)
-        wsHelper.adminUpload("/projects/${props.projectId}/icons/upload", body)
+        wsHelper.adminUpload("/projects/${props.projectId}/icons/upload", body, throwException)
     }
-    def uploadGlobalIcon(File icon){
+    def uploadGlobalIcon(Map props, File icon, boolean throwException = false){
         Map body = [:]
         body.put("customIcon", icon)
-        wsHelper.supervisorUpload("/icons/upload", body)
+        wsHelper.adminUpload("/badges/${props.badgeId}/icons/upload", body, throwException)
     }
     def uploadAttachment(String fileName, String fileContents, String projectId=null, String skillId=null, String quizId=null){
         Resource resource = GroovyToJavaByteUtils.toByteArrayResource(fileContents, fileName)
@@ -992,7 +1048,20 @@ class SkillsService {
         if (projectId) { body.put("projectId", projectId)}
         if (skillId) { body.put("skillId", skillId)}
         if (quizId) { body.put("quizId", quizId)}
-        wsHelper.apiUpload("/upload", body)
+
+        assert !(projectId && quizId)
+        assert projectId || skillId || quizId
+
+        String url
+        if (projectId) {
+            url = "/projects/${projectId}/upload"
+        } else if (quizId) {
+            url = "/quiz-definitions/${quizId}/upload"
+        } else {
+            // assume global badge if proj and skill ids are null
+            url = "/badges/${skillId}/upload"
+        }
+        wsHelper.adminUpload(url, body, true)
     }
     // note - not supported, used for testing purposes only
     def uploadAttachments(List<Resource> attachments, String projectId='TestProject1'){
@@ -1001,7 +1070,7 @@ class SkillsService {
             body.put("file", attachment)
             body.put("projectId", projectId)
         }
-        wsHelper.apiUpload("/upload", body)
+        wsHelper.adminUpload("/projects/${projectId}/upload", body)
     }
 
     static class FileAndHeaders {
@@ -1027,15 +1096,20 @@ class SkillsService {
     }
 
     def deleteGlobalIcon(Map props){
-        wsHelper.supervisorDelete("/icons/${props.filename}")
+        wsHelper.globalBadgeDelete("/badges/${props.badgeId}/icons/${props.filename}")
     }
 
     def getIconCssForProject(Map props){
         wsHelper.appGet("/projects/${props.projectId}/customIcons")
     }
 
-    def getIconCssForGlobalIcons(){
-        wsHelper.supervisorGet("/icons/customIcons")
+    def getCustomIconsForBadge(Map props){
+        wsHelper.globalBadgeGet("/badges/${props.badgeId}/icons/customIcons")
+    }
+
+    def getCustomIconCssForGlobalBadge(String globalBadgeId) {
+        String url = "/badges/${globalBadgeId}/customIconCss"
+        wsHelper.get(url.toString(), "api", null, false)
     }
 
     def getPerformedSkills(String userId, String project, String query = '', String orderBy = "performedOn") {
@@ -1083,7 +1157,7 @@ class SkillsService {
         return wsHelper.apiGet(endpoint)
     }
 
-    def getPointHistory(String userId, String projectId, String subjectId=null, Integer version = -1){
+    def getPointHistory(String userId, String projectId, String subjectId=null, Integer version = -1, Integer minNumOfDaysBeforeReturningHistory = null){
         userId = getUserId(userId)
         String endpointStart = subjectId ? getSubjectUrl(projectId, subjectId) : getProjectUrl(projectId)
         String url = "${endpointStart}/pointHistory"
@@ -1095,15 +1169,30 @@ class SkillsService {
         if (version >= 0) {
             url += "${paramAdded ? "&" : "?"}version=${version}"
         }
+        if (minNumOfDaysBeforeReturningHistory != null) {
+            url += "${paramAdded ? "&" : "?"}minNumOfDaysBeforeReturningHistory=${minNumOfDaysBeforeReturningHistory}"
+        }
         return wsHelper.apiGet(url.toString())
     }
 
-    def getProjectUsers(String projectId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = "", int minimumPoints = 0) {
-        return wsHelper.adminGet("${getProjectUrl(projectId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    def getProjectUsers(String projectId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = "", int minimumPoints = 0, int maximumPoints = 100, String userTagFilter = "") {
+        return wsHelper.adminGet("${getProjectUrl(projectId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}&maximumPoints=${maximumPoints}&userTagFilter=${userTagFilter}".toString())
     }
 
-    def getUserProgressExcelExport(String projectId, String orderBy = 'totalPoints', boolean ascending = true, String query = "", int minimumPoints = 0) {
-        return downloadAttachment("/admin${getProjectUrl(projectId)}/users/export/excel?&ascending=${ascending ? 1 : 0}&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    def getUserProgressExcelExport(String projectId, String orderBy = 'totalPoints', boolean ascending = true, String query = "", int minimumPoints = 0, int maximumPoints = 100, String userTagFilter = "") {
+        return downloadAttachment("/admin${getProjectUrl(projectId)}/users/export/excel?&ascending=${ascending ? 1 : 0}&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}&maximumPoints=${maximumPoints}&userTagFilter=${userTagFilter}".toString())
+    }
+
+    def getGlobalUserProgressExcelExport(String orderBy = 'userIdForDisplay', boolean ascending = true, String query = "", String userTagFilter = "") {
+        return downloadAttachment("/app/progress-metrics/export/excel?&ascending=${ascending}&orderBy=${orderBy}&userQuery=${query}&userTagFilter=${userTagFilter}".toString())
+    }
+
+    def getQuizRunsExcelExport(String quizId, String orderBy = 'started', boolean ascending = true, String userQuery = "", String nameQuery = "", String userIdFilter = "", String startDate = "", String endDate = "") {
+        return downloadAttachment("/admin${getQuizDefUrl(quizId)}/runs/export/excel?&ascending=${ascending ? 1 : 0}&orderBy=${orderBy}&userQuery=${userQuery}&nameQuery=${nameQuery}&userIdFilter=${userIdFilter}&startDate=${startDate}&endDate=${endDate}".toString())
+    }
+
+    def getGlobalQuizRunsExcelExport(String orderBy = 'started', boolean ascending = true, String userQuery = "", String nameQuery = "", String userIdFilter = "", String startDate = "", String endDate = "") {
+        return downloadAttachment("/app/quiz-runs/export/excel?&ascending=${ascending ? 1 : 0}&orderBy=${orderBy}&userQuery=${userQuery}&nameQuery=${nameQuery}&userIdFilter=${userIdFilter}&startDate=${startDate}&endDate=${endDate}".toString())
     }
 
     def getUserAchievementsExcelExport(String projectId, Map params=null) {
@@ -1116,8 +1205,8 @@ class SkillsService {
         return downloadAttachment("/admin${getSubjectUrl(projectId, subjectId)}/skills/export/excel".toString())
     }
 
-    def getSubjectUsers(String projectId, String subjectId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0) {
-        return wsHelper.adminGet("${getSubjectUrl(projectId, subjectId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    def getSubjectUsers(String projectId, String subjectId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0, int maximumPoints = 100, String userTagFilter = '') {
+        return wsHelper.adminGet("${getSubjectUrl(projectId, subjectId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}&maximumPoints=${maximumPoints}&userTagFilter=${userTagFilter}".toString())
     }
 
     def getUserStats(String projectId, String userId) {
@@ -1133,16 +1222,20 @@ class SkillsService {
         return wsHelper.adminGet("/projects/${projectId}/lastSkillEvent".toString())
     }
 
-    def getSkillUsers(String projectId, String skillId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0) {
-        return wsHelper.adminGet("${getSkillUrl(projectId, null, skillId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    def getSkillUsers(String projectId, String skillId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0, int maximumPoints = 100, userTagFilter = "") {
+        return wsHelper.adminGet("${getSkillUrl(projectId, null, skillId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}&maximumPoints=${maximumPoints}&userTagFilter=${userTagFilter}".toString())
     }
 
-    def getBadgeUsers(String projectId, String badgeId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0) {
-        return wsHelper.adminGet("${getBadgeUrl(projectId, badgeId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    def getBadgeUsers(String projectId, String badgeId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0, int maximumPoints = 100, String userTagFilter = '') {
+        return wsHelper.adminGet("${getBadgeUrl(projectId, badgeId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}&maximumPoints=${maximumPoints}&userTagFilter=${userTagFilter}".toString())
     }
 
-    def getUserTagUsers(String projectId, String tagKey, String tagValue, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0) {
-        return wsHelper.adminGet("${getProjectUrl(projectId)}/userTags/${tagKey}/${tagValue}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}".toString())
+    def getGlobalBadgeUsers(String badgeId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', String userTagFilter = '') {
+        return wsHelper.globalBadgeGet("${getGlobalBadgeUrl(badgeId)}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&userTagFilter=${userTagFilter}".toString())
+    }
+
+    def getUserTagUsers(String projectId, String tagKey, String tagValue, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = '', int minimumPoints = 0, int maximumPoints = 100) {
+        return wsHelper.adminGet("${getProjectUrl(projectId)}/userTags/${tagKey}/${tagValue}/users?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&minimumPoints=${minimumPoints}&maximumPoints=${maximumPoints}".toString())
     }
 
     def getLevels(String projectId, String subjectId = null) {
@@ -1186,28 +1279,55 @@ class SkillsService {
         wsHelper.adminGet(endpoint, props)
     }
 
-    def getGlobalMetricsData(String metricsId, Map props=null) {
-        String endpoint = "/metrics/${metricsId}"
-        wsHelper.supervisorGet(endpoint, props)
-    }
-
     def getApiGlobalMetricsData(String metricsId, Map props = null) {
         String endpoint = "/metrics/${metricsId}"
         wsHelper.apiGet(endpoint, props)
     }
 
-    def getAllMetricsChartsForSection(String projectId, String section, String sectionId, Map props=null) {
-        String endpoint = "/projects/${projectId}/${section}/${sectionId}/metrics"
-        wsHelper.adminGet(endpoint, props)
+    def getOverallMetricsSummary(Map props = null) {
+        String endpoint = "/overall-metrics"
+        wsHelper.appGet(endpoint, props)
     }
 
-    def getAllGlobalMetricsChartsForSection(String section, Map props=null) {
-        wsHelper.get("/${section}", "metrics", props)
+    def getOverallMetricsData(String metricsId, Map props = null) {
+        String endpoint = "/overall-metrics/${metricsId}"
+        wsHelper.appGet(endpoint, props)
     }
 
-    def getGlobalMetricsChart(String chartBuilderId, String section, String sectionId, Map props = null) {
-        wsHelper.get("/${section}/${sectionId}/metric/${chartBuilderId}", "metrics", props)
+    def getGlobalUserProgressMetrics(String userQuery = '', int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String userTagFilter = '') {
+        String endpoint = "/progress-metrics"
+        Map props = [
+                userQuery: userQuery,
+                userTagFilter: userTagFilter,
+                limit: limit,
+                page: page,
+                orderBy: orderBy,
+                ascending: ascending
+        ]
+        wsHelper.appGet(endpoint,props)
     }
+
+    def getGlobalSingleUserProgressMetrics(String userId) {
+        String endpoint = "/progress-metrics/${userId}"
+        wsHelper.appGet(endpoint)
+    }
+
+    def getGlobalQuizRuns(String userQuery = '', String nameQuery = '', int limit = 10, int page = 1, String orderBy = 'started', boolean ascending = true, String startDate = null, String endDate = null, String userIdFilter = null) {
+        String endpoint = "/quiz-runs"
+        Map props = [
+                query: userQuery,
+                nameQuery: nameQuery,
+                limit: limit,
+                page: page,
+                orderBy: orderBy,
+                ascending: ascending,
+                startDate: startDate,
+                endDate: endDate,
+                userIdFilter: userIdFilter
+        ]
+        wsHelper.appGet(endpoint,props)
+    }
+
 
     def getSetting(String projectId, String setting){
         return wsHelper.adminGet(getSettingUrl(projectId, setting))
@@ -1219,6 +1339,10 @@ class SkillsService {
 
     def getUserSettings(){
         return wsHelper.appGet(getUserSettingsUrl())
+    }
+
+    def getSingleUserSetting(String setting){
+        return wsHelper.appGet("${getUserSettingsUrl()}/${setting}")
     }
 
     def getPublicConfigs() {
@@ -1308,9 +1432,9 @@ class SkillsService {
         return wsHelper.grantRoot()
     }
 
-    def grantSupervisorRole(String userId) {
+    def grantGlobalBadgeAdminRole(String badgeId, String userId) {
         userId = getUserId(userId)
-        return wsHelper.rootPut("/users/${userId}/roles/${RoleName.ROLE_SUPERVISOR.toString()}")
+        return wsHelper.globalBadgePut("/badges/${badgeId}/users/${userId}/roles/${RoleName.ROLE_GLOBAL_BADGE_ADMIN.toString()}")
     }
 
     def grantRootRole(String userId) {
@@ -1323,8 +1447,12 @@ class SkillsService {
         return wsHelper.rootPut("/users/${userId}/roles/${RoleName.ROLE_DASHBOARD_ADMIN_ACCESS.toString()}")
     }
 
-    def removeSupervisorRole(String userId) {
-        return wsHelper.rootDelete("/users/${userId}/roles/${RoleName.ROLE_SUPERVISOR.toString()}")
+    def removeGlobalBadgeAdminRole(String badgeId, String userId) {
+        return wsHelper.globalBadgeDelete("/badges/${badgeId}/users/${userId}/roles/${RoleName.ROLE_GLOBAL_BADGE_ADMIN.toString()}")
+    }
+
+    def getUserRolesForGlobalBadge(String badgeId){
+        wsHelper.globalBadgeGet("${getGlobalBadgeUrl(badgeId)}/userRoles")
     }
 
     def revokeInviteOnlyProjectAccess(String projectId, String userId) {
@@ -1344,6 +1472,9 @@ class SkillsService {
                 projectId: projectId, setting: Settings.INVITE_ONLY_PROJECT.settingName,
                 value: Boolean.TRUE.toString().toLowerCase()
         ])
+    }
+    def requestNewProjectInvite(String projectId) {
+        return wsHelper.apiPost("/projects/${projectId}/newInviteRequest")
     }
 
     def changeSetting(String project, String setting, Map value){
@@ -1429,6 +1560,14 @@ class SkillsService {
         return wsHelper.post("/resetPassword", "", ["userId", userId])
     }
 
+    def saveAiPromptSettings(List<Map> settings) {
+        return wsHelper.rootPost("/saveAiPromptSettings", settings)
+    }
+
+    def getDefaultAiPromptSetting(String setting) {
+        return wsHelper.rootGet("/getAiPromptSettings/default/${setting}")
+    }
+
     def saveEmailSettings(String host, String protocol, Integer port, boolean tlsEnabled, boolean authEnabled, String username, String password) {
 //        username = getUserId(username)
         return wsHelper.rootPost("/saveEmailSettings", [
@@ -1479,6 +1618,25 @@ class SkillsService {
                 projectId: projectId,
         ]
         return wsHelper.adminPost("/projects/${projectId}/settings", [params])
+    }
+
+    /**
+     * @param projectId either projectId or quizId must be provided but never both
+     * @param quizId either projectId or quizId must be provided but never both
+     */
+    def addOrUpdateGlobalMetricsUserSettings(List settings) {
+        // example of a setting:
+        //       [
+        //                setting  : setting,
+        //                value    : value,
+        //                projectId: projectId,
+        //                quizId: quizId
+        //       ]
+        return wsHelper.appPost("/userGlobalMetricsInfo/settings", settings)
+    }
+
+    def getGlobalMetricsUserSettings(String setting) {
+        return wsHelper.appGet("/userGlobalMetricsInfo/settings/${setting}")
     }
 
     def getProjectSettings(String projectId) {
@@ -1933,8 +2091,8 @@ class SkillsService {
         return wsHelper.adminGet(url)
     }
 
-    def getQuizMetrics(String quizId) {
-        String url = "${getQuizDefUrl(quizId)}/metrics"
+    def getQuizMetrics(String quizId, String startDate = defaultStart, String endDate = defaultEnd) {
+        String url = "${getQuizDefUrl(quizId)}/metrics?startDate=${startDate}&endDate=${endDate}"
         return wsHelper.adminGet(url)
     }
 
@@ -1979,18 +2137,21 @@ class SkillsService {
         return wsHelper.adminGet(url)
     }
 
-    def getQuizRuns(String quizId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = "") {
+    String defaultStart = '1900-01-01 00:00:00'
+    String defaultEnd = '2100-12-31 23:59:59'
+
+    def getQuizRuns(String quizId, int limit = 10, int page = 1, String orderBy = 'userId', boolean ascending = true, String query = "", String startDate = defaultStart, String endDate = defaultEnd) {
         String url = "${getQuizDefUrl(quizId)}/runs"
-        return wsHelper.adminGet("${url}?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}".toString())
+        return wsHelper.adminGet("${url}?limit=${limit}&ascending=${ascending ? 1 : 0}&page=${page}&byColumn=0&orderBy=${orderBy}&query=${query}&startDate=${startDate}&endDate=${endDate}".toString())
     }
 
-    def getQuizUserTagCounts(String quizId, String userTagKey) {
-        String url = "${getQuizDefUrl(quizId)}/userTagCounts?userTagKey=${userTagKey}"
+    def getQuizUserTagCounts(String quizId, String userTagKey, String startDate = defaultStart, String endDate = defaultEnd) {
+        String url = "${getQuizDefUrl(quizId)}/userTagCounts?userTagKey=${userTagKey}&startDate=${startDate}&endDate=${endDate}"
         return wsHelper.adminGet(url.toString())
     }
 
-    def getQuizUsageOverTime(String quizId) {
-        String url = "${getQuizDefUrl(quizId)}/usageOverTime"
+    def getQuizUsageOverTime(String quizId, String startDate = defaultStart, String endDate = defaultEnd) {
+        String url = "${getQuizDefUrl(quizId)}/usageOverTime?startDate=${startDate}&endDate=${endDate}"
         return wsHelper.adminGet(url.toString())
     }
 
@@ -2032,9 +2193,17 @@ class SkillsService {
         return wsHelper.apiPost(url, userId ? [userId : userId] : null)
     }
 
-    def gradeAnswer( String userId, String quizId,Integer attemptId, Integer answerDefId, Boolean isCorrect, String feedback = null) {
+    def gradeAnswer( String userId, String quizId,Integer attemptId, Integer answerDefId, Boolean isCorrect, String feedback = null, Boolean changeExistingGrade = false, Boolean notifyUser = true) {
         String url = "/quiz-definitions/${quizId}/users/${userId}/attempt/${attemptId}/gradeAnswer/${answerDefId}"
-        return wsHelper.adminPost(url, [isCorrect: isCorrect, feedback: feedback])
+        Map params = [isCorrect: isCorrect, feedback: feedback]
+        if (changeExistingGrade) {
+            params['changeGrade'] = changeExistingGrade
+        }
+        // should default to notify users when not provided
+        if (!notifyUser) {
+            params['notifyUser'] = notifyUser
+        }
+        return wsHelper.adminPost(url, params)
     }
 
     def failQuizAttempt(String quizId, Integer attemptId, String userId = null) {
@@ -2059,7 +2228,7 @@ class SkillsService {
         return wsHelper.adminPost(url, [])
     }
 
-    def saveSkillVideoAttributes(String projectId, String skillId, Map videoAttrs) {
+    def saveSkillVideoAttributes(String quizOrProjectId, String questionOrSkillId, Map videoAttrs, Boolean isQuiz = false) {
         Map body = [:]
         if (videoAttrs.file) { body.put("file", videoAttrs.file) }
         if (videoAttrs.videoUrl) { body.put("videoUrl", videoAttrs.videoUrl)}
@@ -2069,24 +2238,77 @@ class SkillsService {
         if (videoAttrs.height) { body.put("height", videoAttrs.height)}
         if (videoAttrs.width) { body.put("width", videoAttrs.width)}
 
-        String url = "/projects/${projectId}/skills/${skillId}/video"
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/video"
         return wsHelper.adminUpload(url, body, true)
     }
-    def getSkillVideoAttributes(String projectId, String skillId) {
-        String url = "/projects/${projectId}/skills/${skillId}/video"
+
+    def saveQuizTextInputAiGraderConfigs(String quizId, Integer questionId, String correctAnswer, Integer minimumConfidenceLevel, Boolean enabled = true) {
+        String url = "/quiz-definitions/${quizId}/questions/${questionId}/textInputAiGradingConf"
+        return wsHelper.adminPost(url, [
+                enabled: enabled,
+                correctAnswer: correctAnswer,
+                minimumConfidenceLevel: minimumConfidenceLevel,
+        ])
+    }
+
+    def getQuizTextInputAiGraderConfigs(String quizId, Integer questionId) {
+        String url = "/quiz-definitions/${quizId}/questions/${questionId}/textInputAiGradingConf"
         return wsHelper.adminGet(url)
     }
-    def deleteSkillVideoAttributes(String projectId, String skillId) {
-        String url = "/projects/${projectId}/skills/${skillId}/video"
+
+    def getSkillVideoAttributes(String quizOrProjectId, String questionOrSkillId, Boolean isQuiz = false) {
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/video"
+        return wsHelper.adminGet(url)
+    }
+    def deleteSkillVideoAttributes(String quizOrProjectId, String questionOrSkillId, Boolean isQuiz = false) {
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/video"
         return wsHelper.adminDelete(url)
     }
-    def getVideoCaptions(String projectId, String skillId) {
-        String url = "/projects/${projectId}/skills/${skillId}/videoCaptions"
+    def getVideoCaptions(String quizOrProjectId, String questionOrSkillId, Boolean isQuiz = false) {
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/videoCaptions"
         return wsHelper.get(url, "api", null, false)
     }
-    def getVideoTranscript(String projectId, String skillId) {
-        String url = "/projects/${projectId}/skills/${skillId}/videoTranscript"
+    def getVideoTranscript(String quizOrProjectId, String questionOrSkillId, Boolean isQuiz = false) {
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/videoTranscript"
         return wsHelper.get(url, "api", null, false)
+    }
+
+    def saveSlidesAttributes(String quizOrProjectId, String questionOrSkillId, Map skillAttrs, Boolean isQuiz = false) {
+        Map body = [:]
+        if (skillAttrs.file) { body.put("file", skillAttrs.file) }
+        if (skillAttrs.url) { body.put("url", skillAttrs.url)}
+        if (skillAttrs.isAlreadyHosted != null) { body.put("isAlreadyHosted", skillAttrs.isAlreadyHosted)}
+        if (skillAttrs.width != null) { body.put("width", skillAttrs.width)}
+
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/slides"
+        return wsHelper.adminUpload(url, body, true)
+    }
+    def getSlidesAttributes(String quizOrProjectId, String questionOrSkillId, Boolean isQuiz = false) {
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/slides"
+        return wsHelper.adminGet(url)
+    }
+    def deleteSlidesAttributes(String quizOrProjectId, String questionOrSkillId, Boolean isQuiz = false) {
+        String url = (isQuiz ? "/quiz-definitions" : "/projects") + "/${quizOrProjectId}/" + (isQuiz ? "questions" : "skills") + "/${questionOrSkillId}/slides"
+        return wsHelper.adminDelete(url)
+    }
+
+    def saveQuizSlidesAttributes(String quizId, Map skillAttrs) {
+        Map body = [:]
+        if (skillAttrs.file) { body.put("file", skillAttrs.file) }
+        if (skillAttrs.url) { body.put("url", skillAttrs.url)}
+        if (skillAttrs.isAlreadyHosted != null) { body.put("isAlreadyHosted", skillAttrs.isAlreadyHosted)}
+        if (skillAttrs.width != null) { body.put("width", skillAttrs.width)}
+
+        String url = "/quiz-definitions/${quizId}/slides"
+        return wsHelper.adminUpload(url, body, true)
+    }
+    def getQuizSlidesAttributes(String quizId) {
+        String url = "/quiz-definitions/${quizId}/slides"
+        return wsHelper.adminGet(url)
+    }
+    def deleteQuizSlidesAttributes(String quizId) {
+        String url = "/quiz-definitions/${quizId}/slides"
+        return wsHelper.adminDelete(url)
     }
 
     def saveSkillExpirationAttributes(String projectId, String skillId, Map expirationAttrs) {
@@ -2140,6 +2362,15 @@ class SkillsService {
     def deleteQuizFromAdminGroup(String adminGroupId, String quizId) {
         return wsHelper.adminDelete("${getAdminGroupDefUrl(adminGroupId)}/quizzes/${quizId}")
     }
+    def getAdminGroupGlobalBadges(String adminGroupId) {
+        return wsHelper.adminGet("${getAdminGroupDefUrl(adminGroupId)}/badges")
+    }
+    def addGlobalBadgeToAdminGroup(String adminGroupId, String badgeId) {
+        return wsHelper.adminPut("${getAdminGroupDefUrl(adminGroupId)}/badges/${badgeId}")
+    }
+    def deleteGlobalBadgeFromAdminGroup(String adminGroupId, String badgeId) {
+        return wsHelper.adminDelete("${getAdminGroupDefUrl(adminGroupId)}/badges/${badgeId}")
+    }
     def getAdminGroupProjects(String adminGroupId) {
         return wsHelper.adminGet("${getAdminGroupDefUrl(adminGroupId)}/projects")
     }
@@ -2155,11 +2386,39 @@ class SkillsService {
     def getAdminGroupsForQuiz(String quizId) {
         return wsHelper.adminGet("${getQuizDefUrl(quizId)}/adminGroups".toString())
     }
+    def getAdminGroupsForGlobalBadge(String globalBadgeId) {
+        return wsHelper.adminGet("${getGlobalBadgeUrl(globalBadgeId)}/adminGroups".toString())
+    }
     def archiveUsers(List<String> userIds, String projectId) {
         return wsHelper.adminPost("/projects/${projectId}/users/archive", [userIds: userIds])
     }
     def restoreArchivedUser(String userId, String projectId) {
         return wsHelper.adminPost("/projects/${projectId}/users/${userId}/restore", [:])
+    }
+
+    def reportPageVisit(PageVisitRequest pageVisitRequest) {
+        return wsHelper.apiPost("/pageVisit", pageVisitRequest)
+    }
+
+    def getWebNotifications() {
+        return wsHelper.apiGet("/webNotifications")
+    }
+    def dismissWebNotification(Integer notificationId) {
+        return wsHelper.apiPost("/webNotifications/${notificationId}/dismiss".toString(), [])
+    }
+    def dismissAllWebNotifications() {
+        return wsHelper.apiPost("/webNotifications/dismissAll", [])
+    }
+    def createWebNotificationAsRoot(Map props) {
+        return wsHelper.rootPost("/webNotifications/create", props)
+    }
+
+    def getAiModels() {
+        return wsHelper.openaiGet("/models")
+    }
+
+    def getAiPromptSettings() {
+        return wsHelper.openaiGet("/getAiPromptSettings")
     }
 
     static private String getAdminGroupDefUrl(String adminGroupId) {

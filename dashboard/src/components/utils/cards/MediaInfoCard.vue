@@ -28,13 +28,17 @@ const props = defineProps({
   addBorder: {
     type: Boolean,
     default: false
+  },
+  headingTagToUse: {
+    type: String,
+    default: null
   }
 });
 
 const cardPt = computed(() => {
   const res = {content: {class: 'p-0'} };
   if (props.addBorder) {
-    res.root = {class: '!border'}
+    res.root = {class: 'border!'}
   }
   return res
 })
@@ -42,6 +46,8 @@ const cardPt = computed(() => {
 const styleObject = {
   color: props.iconColor,
 }
+
+const titleTag = computed(() => props.headingTagToUse || 'div')
 </script>
 
 <template>
@@ -51,8 +57,13 @@ const styleObject = {
         <div class="text-center sm:min-w-20">
           <i class="fa-3x" :class="iconClass" :style="styleObject" aria-hidden="true"/>
         </div>
-        <div>
-          <div class="text-2xl mb-2 uppercase" data-cy="mediaInfoCardTitle" style="overflow-wrap: break-word; text-wrap: wrap;">{{ title }}</div>
+        <div class="flex-1">
+          <div class="text-2xl mb-2 uppercase flex gap-2 min-h-[2.5rem]"
+               data-cy="mediaInfoCardTitle"
+               style="overflow-wrap: break-word; text-wrap: wrap;">
+            <component :is="titleTag" class="flex-1">{{ title }}</component>
+            <div><slot name="right-of-title"></slot></div>
+          </div>
           <div class="text-sm md:min-w-40" data-cy="mediaInfoCardSubTitle">
             <slot>
               {{ subTitle }}

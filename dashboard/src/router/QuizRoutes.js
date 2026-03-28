@@ -23,6 +23,9 @@ import QuizSingleRunPage from '@/components/quiz/runsHistory/QuizSingleRunPage.v
 import QuizAccessPage from '@/components/quiz/access/QuizAccessPage.vue';
 import UserActionsPage from "@/components/userActions/UserActionsPage.vue";
 import GradeQuizzesPage  from "@/components/quiz/grade/GradeQuizzesPage.vue";
+import VideoConfigPage from "@/components/video/VideoConfigPage.vue";
+import SlidesConfigPage from "@/components/slides/SlidesConfigPage.vue";
+import AiGraderConfigPage from "@/components/quiz/testCreation/AiGraderConfigPage.vue";
 
 const createQuizRoutes = () => {
   return {
@@ -45,6 +48,18 @@ const createQuizRoutes = () => {
           message: 'Quiz or Survey',
         },
       },
+      alias: 'questions'
+    }, {
+        name: 'QuizConfigureSlides',
+        path: 'config-slides',
+        component: SlidesConfigPage,
+        meta: {
+            requiresAuth: true,
+            announcer: {
+                message: 'Configure Slides',
+            },
+        },
+        props: true,
     }, {
       name: 'QuizMetrics',
       path: 'results',
@@ -125,7 +140,30 @@ const createQuizRoutes = () => {
           message: 'User Activity History',
         },
       },
-    }],
+    }, {
+      name: 'ConfigureQuizVideo',
+      path: 'questions/:questionId/config-video',
+      component: VideoConfigPage,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Configure Audio/Video',
+        },
+      },
+      props: true,
+      alias: 'questions/:questionId'
+    }, {
+      name: 'AiGraderConfigPage',
+      path: 'questions/:questionId/ai-grader',
+      component: AiGraderConfigPage,
+      meta: {
+        requiresAuth: true,
+        announcer: {
+          message: 'Configure AI Grader',
+        },
+      },
+      props: true,
+    },],
   }
 }
 

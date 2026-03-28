@@ -7,7 +7,7 @@
     <groupId>skill-tree</groupId>
     <artifactId>skills-service-parent</artifactId>
     <packaging>pom</packaging>
-    <version>3.6.0-SNAPSHOT</version>
+    <version>4.2.0-SNAPSHOT</version>
     <modules>
         <module>dashboard</module>
         <module>service</module>
@@ -22,7 +22,7 @@
 
         <flywaydb.version>6.5.5</flywaydb.version>
 
-        <commons.lang.version>3.14.0</commons.lang.version>
+        <commons.lang.version>3.18.0</commons.lang.version>
         <commons.collections.version>4.4</commons.collections.version>
         <commons.io.version>2.18.0</commons.io.version>
 
@@ -34,18 +34,20 @@
         <guava.version>33.4.6-jre</guava.version>
 
         <!-- !!!!!IMPORTANT!!!!!: when changing the springboot.version property, make sure you also change it in the spring-boot-starter-parent definition -->
-        <springboot.version>3.4.4</springboot.version>
-        <springcloud.version>3.1.1</springcloud.version>
+        <springboot.version>3.5.13</springboot.version>
 
-        <logback-access.version>2.0.6</logback-access.version>
+        <springcloud.version>3.4.0</springcloud.version>
+        <spring-ai.version>1.1.0</spring-ai.version>
 
-        <greenmail.version>2.0.0</greenmail.version>
-        <wiremock.version>2.27.2</wiremock.version>
+        <logback-access.version>2.0.12</logback-access.version>
+
+        <greenmail.version>2.1.3</greenmail.version>
+        <wiremock-standalone.version>3.13.0</wiremock-standalone.version>
         <owasp.encoder.version>1.2.3</owasp.encoder.version>
 
         <micrometer-registry.version>1.10.3</micrometer-registry.version>
 
-        <db-scheduler.version>11.6</db-scheduler.version>
+        <db-scheduler.version>15.5.0</db-scheduler.version>
 
         <caffeine.version>3.1.1</caffeine.version>
 
@@ -54,13 +56,15 @@
 
         <bouncycastle.version>1.80</bouncycastle.version>
         <velocity.version>2.4.1</velocity.version>
+
+        <commonmark.version>0.26.0</commonmark.version>
     </properties>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
         <!-- !!!!!IMPORTANT!!!!!: when changing this version make sure to also update springboot.version property -->
-        <version>3.4.4</version>
+        <version>3.5.13</version>
         <relativePath/>
     </parent>
     <repositories>

@@ -167,9 +167,17 @@ class InviteOnlyProjectService {
         SkillsValidator.isNotBlank(projectId, "projectId")
         SkillsValidator.isNotBlank(token, "inviteToken")
 
-        ProjectAccessToken projectAccessToken = projectAccessTokenRepo.findByTokenAndProjectId(token, projectId)
         InviteTokenValidationResponse response = new InviteTokenValidationResponse()
         response.projectId = projectId
+        if (userInfoService.isCurrentInviteOnlyPrivateProjUser()) {
+            log.debug("user already has permission to [{}] project", projectId)
+            response.valid = false
+            response.userAlreadyHasProjectAccess = true
+            response.message = "User already has permission to this project"
+            return response
+        }
+        ProjectAccessToken projectAccessToken = projectAccessTokenRepo.findByTokenAndProjectId(token, projectId)
+
         if (!projectAccessToken) {
             log.debug("requested token [{}] for projectId [{}] does not exist", token, projectId)
             response.valid = false
@@ -257,7 +265,7 @@ class InviteOnlyProjectService {
      * @return The list of emails that were successfully sent as well as those that could not be sent
      */
     @Transactional
-    InviteUsersResult inviteUsers(String projectId, List<String> emailAddresses, String duration=DEFAULT_DURATION) {
+    InviteUsersResult inviteUsers(String projectId, List<String> emailAddresses, List<String> ccRecipients, String duration=DEFAULT_DURATION) {
         SkillsValidator.isNotBlank(projectId, "projectId")
         SkillsValidator.isNotEmpty(emailAddresses, "emailAddresses")
         boolean enabled = featureService.isEmailServiceFeatureEnabled()
@@ -271,6 +279,17 @@ class InviteOnlyProjectService {
         final successfullySent = []
         final List<String> couldNotBeSent = []
         final List<String> couldNotBeSentErrors = []
+        final List<String> validCcRecipients = []
+
+        ccRecipients.each {String ccEmail ->
+            def isValid = PatternsUtil.isValidEmail(ccEmail)
+            if(!isValid) {
+                couldNotBeSent.add(ccEmail)
+                couldNotBeSentErrors.add("${ccEmail} is not a valid email".toString())
+            } else {
+                validCcRecipients.add(ccEmail)
+            }
+        }
 
         Date created = new Date()
         emailAddresses.each {String email ->
@@ -289,7 +308,8 @@ class InviteOnlyProjectService {
                                         publicUrl       : publicUrl,
                                         validTime       : invite.validFor,
                                         inviteCode      : invite.token,
-                                        communityHeaderDescriptor : uiConfigProperties.ui.defaultCommunityDescriptor
+                                        communityHeaderDescriptor : uiConfigProperties.ui.defaultCommunityDescriptor,
+                                        ccRecipients    : validCcRecipients.join(',')
                                 ],
                         )
                         notifier.sendNotification(request)
@@ -314,7 +334,8 @@ class InviteOnlyProjectService {
                 item: DashboardItem.ProjectInvite,
                 actionAttributes: [
                         emailAddresses: emailAddresses,
-                        duration      : duration
+                        duration      : duration,
+                        ccRecipients: ccRecipients
                 ],
                 itemId: projectId,
                 projectId: projectId,

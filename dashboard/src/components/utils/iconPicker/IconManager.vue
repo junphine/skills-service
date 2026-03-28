@@ -14,19 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { ref, onMounted, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import {computed, onMounted, ref} from 'vue';
+import {useRoute} from 'vue-router';
 import FileUpload from 'primevue/fileupload';
 import VirtualScroller from 'primevue/virtualscroller';
 import ScrollPanel from 'primevue/scrollpanel';
 import enquire from 'enquire.js';
 import FileUploadService from '@/common-components/utilities/FileUploadService';
-import fontAwesomeIconsCanonical from './font-awesome-index';
-import materialIconsCanonical from './material-index';
 import IconManagerService from './IconManagerService.js';
 import IconRow from './IconRow.vue';
 import TabMenu from "primevue/tabmenu";
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
+import SkillsSpinner from "@/components/utils/SkillsSpinner.vue";
 
 const route = useRoute();
 const emit = defineEmits(['selected-icon', 'set-dismissable']);
@@ -53,8 +52,21 @@ const props = defineProps(
           };
         },
       },
+      projectId: {
+        type: String,
+        default: null,
+      },
+      badgeId: {
+        type: String,
+        default: null,
+      },
     },
 )
+
+const isNew = computed(() => {
+  return !props.badgeId && !props.projectId
+});
+
 
 const minDimensionsString = computed(() => {
   return `${props.minCustomIconDimensions.width}px x ${props.minCustomIconDimensions.width}px`
@@ -64,37 +76,65 @@ const maxDimensionsString = computed(() => {
   return `${props.maxCustomIconDimensions.width}px x ${props.maxCustomIconDimensions.width}px`
 });
 
+const isLoading = ref(true)
 onMounted(() => {
-  IconManagerService.getIconIndex(route.params.projectId).then((response) => {
-    if (response) {
-      iconPacks.value[2].icons = response;
-      iconPacks.value[2].defaultIcons = response.slice();
-    }
-  });
+  IconManagerService.getIconSetIndexes().then((iconSets) => {
+    const fontAwesomeIcons = iconSets.fontAwesome
+    const materialIcons = iconSets.material
+    iconPacks.value = [
+      {
+        packName: fontAwesomeIcons.iconPack,
+        headerIcon: 'fab fa-font-awesome-flag',
+        icons: groupIntoRows(fontAwesomeIcons.icons, rowLength),
+        defaultIcons: fontAwesomeIcons.icons.slice(),
+      },
+      {
+        packName: materialIcons.iconPack,
+        headerIcon: 'fas fa-file-alt',
+        icons: groupIntoRows(materialIcons.icons, rowLength), //materialIcons.icons,
+        defaultIcons: materialIcons.icons.slice(),
+      },
+      {
+        packName: 'Custom',
+        headerIcon: 'fas fa-wrench',
+        icons: [],
+        defaultIcons: [],
+      }]
 
-  enquire.register(xsAndSmaller, () => {
-    rowLength = 1;
-    modalWidth.value = "25rem";
-  });
-  enquire.register(smAndUp, () => {
-    rowLength = 3;
-    modalWidth.value = "30rem";
-  });
-  enquire.register(mdAndUp, () => {
-    rowLength = 3;
-    modalWidth.value = "40rem";
-  });
-  enquire.register(lgAndUp, () => {
-    rowLength = 5;
-    modalWidth.value = "60rem";
-  });
-  enquire.register(xlAndUp, () => {
-    rowLength = 6;
-    modalWidth.value = "70rem";
-  });
+    enquire.register(xsAndSmaller, () => {
+      rowLength = 1;
+      modalWidth.value = "25rem";
+    });
+    enquire.register(smAndUp, () => {
+      rowLength = 3;
+      modalWidth.value = "30rem";
+    });
+    enquire.register(mdAndUp, () => {
+      rowLength = 3;
+      modalWidth.value = "40rem";
+    });
+    enquire.register(lgAndUp, () => {
+      rowLength = 5;
+      modalWidth.value = "60rem";
+    });
+    enquire.register(xlAndUp, () => {
+      rowLength = 6;
+      modalWidth.value = "70rem";
+    });
 
-  iconPacks.value[0].icons = groupIntoRows(fontAwesomeIconsCanonical.icons, rowLength);
-  iconPacks.value[1].icons = groupIntoRows(materialIconsCanonical.icons, rowLength);
+    iconPacks.value[0].icons = groupIntoRows(fontAwesomeIcons.icons, rowLength);
+    iconPacks.value[1].icons = groupIntoRows(materialIcons.icons, rowLength);
+
+    IconManagerService.getIconIndex(props.projectId, props.badgeId).then((response) => {
+      if (response) {
+        iconPacks.value[2].icons = response;
+        iconPacks.value[2].defaultIcons = response.slice();
+      }
+
+    }).finally(() => {
+      isLoading.value = false
+    });
+  })
 });
 
 const xsAndSmaller = '(max-width: 575.98px)';
@@ -109,36 +149,15 @@ let acceptType = 'image/.*';
 const mimeTester = new RegExp(acceptType);
 let selectedCss = '';
 let activePack = ref(0);
-let fontAwesomeIcons = fontAwesomeIconsCanonical;
-let materialIcons = materialIconsCanonical;
 let errorMessage = ref('');
 const fileInfo = ref(null);
 const loadingIcons = ref(false);
 
 let active = ref(0);
 
-const iconPacks = ref([
-  {
-    packName: fontAwesomeIcons.iconPack,
-    headerIcon: 'fab fa-font-awesome-flag',
-    icons: groupIntoRows(fontAwesomeIconsCanonical.icons, rowLength),
-    defaultIcons: fontAwesomeIconsCanonical.icons.slice(),
-  },
-  {
-    packName: materialIcons.iconPack,
-    headerIcon: 'fas fa-file-alt',
-    icons: groupIntoRows(materialIconsCanonical.icons, rowLength), //materialIcons.icons,
-    defaultIcons: materialIconsCanonical.icons.slice(),
-  },
-  {
-    packName: 'Custom',
-    headerIcon: 'fas fa-wrench',
-    icons: [],
-    defaultIcons: [],
-  }
-]);
+const iconPacks = ref([]);
 
-let filterCriteria = ref('');
+const filterCriteria = ref('');
 
 function groupIntoRows(array, rl) {
   const result = [];
@@ -186,9 +205,9 @@ const selectIcon = (icon, iconCss, iconPack) => {
 };
 
 const uploadUrl = computed(() => {
-  let uploadUrl = `/admin/projects/${encodeURIComponent(route.params.projectId)}/icons/upload`;
-  if (!route.params.projectId) {
-    uploadUrl = '/supervisor/icons/upload';
+  let uploadUrl = `/admin/projects/${encodeURIComponent(props.projectId)}/icons/upload`;
+  if (!props.projectId) {
+    uploadUrl = `/admin/badges/${encodeURIComponent(props.badgeId)}/icons/upload`;
   }
   return uploadUrl;
 });
@@ -205,7 +224,9 @@ const isValidCustomIconDimensions = (width, height) => {
 const filter = () => {
   const value = filterCriteria.value.trim();
   const regex = new RegExp(value, 'gi');
-  const filter = (icon) => icon.name.match(regex);
+  const filter = (icon) => {
+    return icon.name.match(regex) || (icon.searchTerms && icon.searchTerms.some(searchTerm => searchTerm.match(regex)))
+  }
 
   const currentPack = iconPacks.value[active.value];
   currentPack.icons = value?.length === 0 ? groupIntoRows(currentPack.defaultIcons, rowLength) : groupIntoRows(currentPack.defaultIcons.filter(filter), rowLength);
@@ -219,7 +240,7 @@ const handleUploadedIcon = (response) => {
   selectIcon(response.name, response.cssClassName, 'custom-icon');
 }
 
-const deleteIcon = (file, projectId) => {
+const deleteIcon = (file, projectId, badgeId) => {
   const className = file.cssClassname;
   const iconName = file.filename;
   emit('set-dismissable', false);
@@ -238,7 +259,7 @@ const deleteIcon = (file, projectId) => {
       acceptLabel: 'YES, Delete It!',
       rejectLabel: 'Cancel',
       accept: () => {
-        IconManagerService.deleteIcon(iconName, projectId).then(() => {
+        IconManagerService.deleteIcon(iconName, projectId, badgeId).then(() => {
           iconPacks.value[2].defaultIcons = iconPacks.value[2].defaultIcons.filter((element) => element.filename !== iconName);
           if (iconPacks.value[2].defaultIcons && iconPacks.value[2].defaultIcons.length > 0) {
             iconPacks.value[2].icons = [iconPacks.value[2].defaultIcons];
@@ -262,16 +283,8 @@ let uploader = ref();
 const isValidImageType = (type) => {
   return mimeTester.test(type);
 }
-const uploadFromInput = (event) => {
-  const target = event.target;
-  const files = target.files;
-  if( files[0] ) {
-    files[0].objectURL = URL.createObjectURL(files[0]);
-    beforeUpload({files: files});
-  }
-}
+
 const beforeUpload = (upload) => {
-  console.log(upload.files[0]?.type)
   const isImageTypeValid = isValidImageType(upload.files[0]?.type);
 
   if (!isImageTypeValid) {
@@ -321,7 +334,11 @@ const closeError = () => {
 </script>
 
 <template>
-    <div class="flex flex-col gap-2" :style="`width: ${modalWidth}`">
+  <div>
+    <div v-if="isLoading" class="w-[20rem]">
+      <skills-spinner :is-loading="true" class="my-8"/>
+    </div>
+    <div v-if="!isLoading" class="flex flex-col gap-2" :style="`width: ${modalWidth}`">
 
       <TabMenu :model="iconPacks" @tab-change="onChange" v-model:activeIndex="active">
         <template #item="{ item, props }">
@@ -344,13 +361,12 @@ const closeError = () => {
       </VirtualScroller>
       <FileUpload ref="uploader"
                   @select="beforeUpload"
-                  v-if="activePack === 'Custom'"
+                  v-if="activePack === 'Custom' && !isNew"
                   name="customIcon"
                   :accept="acceptType"
                   :maxFileSize="1000000"
                   customUpload
-                  :auto="true"
-                  @uploader="beforeUpload">
+                  :auto="true">
         <template #header="{ chooseCallback, uploadCallback, clearCallback, files }">
           <div class="flex flex-wrap justify-between items-center flex-1 gap-4 pb-2 border-b-2">
             <div class="">
@@ -386,7 +402,7 @@ const closeError = () => {
                   <SkillsButton
                       severity="warn"
                       rounded
-                      @click="deleteIcon(file, route.params.projectId)"
+                      @click="deleteIcon(file, props.projectId, props.badgeId)"
                       data-cy="deleteIconBtn"
                       :aria-label="`Delete icon ${file.filename}`">
                     <i class="fas fa-trash"></i>
@@ -399,14 +415,20 @@ const closeError = () => {
         </template>
         <template #empty v-if="iconPacks[2].icons.length === 0 && !loadingIcons">
           <div class="flex items-center justify-center flex-col py-4">
-            <i class="fas fa-cloud-upload-alt !border-2 !rounded-full !p-8 !text-4xl !text-muted-color" />
+            <i class="fas fa-cloud-upload-alt border-2! rounded-full! p-8! text-4xl! text-muted-color!" />
             <p class="mt-6 mb-0">Drag and drop files to here to upload.</p>
           </div>
         </template>
       </FileUpload>
+      <Card v-if="activePack === 'Custom' && isNew" data-cy="customIconDisabledOnCreation">
+        <template #content>
+          <Message :closable="false" severity="warn">Custom icons can be uploaded here after initially saving the badge</Message>
+        </template>
+      </Card>
 
       <span v-if="iconPacks[active]?.icons?.length === 0 && activePack === iconPacks[active]?.packName && filterCriteria?.length > 0">No icons matched your search</span>
     </div>
+  </div>
 </template>
 
 <style>

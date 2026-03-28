@@ -31,6 +31,8 @@ import InputGroupAddon from 'primevue/inputgroupaddon'
 import { useAdminGroupState } from '@/stores/UseAdminGroupState.js';
 import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js';
 import Avatar from 'primevue/avatar';
+import TableNoRes from "@/components/utils/table/TableNoRes.vue";
+import {useStorage} from "@vueuse/core";
 
 const announcer = useSkillsAnnouncer()
 const responsive = useResponsiveBreakpoints()
@@ -72,10 +74,10 @@ const options = ref({
     server: false,
     currentPage: 1,
     totalRows: 0,
-    pageSize: 5,
     possiblePageSizes: [5, 10, 15, 20],
   },
 });
+const pageSize = useStorage('adminGroupDefinitions-tablePageSize', 5)
 const deleteAdminGroupInfo = ref( {
   showDialog: false,
   adminGroupDef: {},
@@ -185,7 +187,7 @@ defineExpose({
         @filter="onFilter"
         v-model:sort-field="sortInfo.sortBy"
         v-model:sort-order="sortInfo.sortOrder"
-        paginator :rows="5" :rowsPerPageOptions="[5, 10, 15, 20]"
+        paginator :rows="pageSize" :rowsPerPageOptions="[5, 10, 15, 20]"
         show-gridlines
         striped-rows>
         <template #header>
@@ -217,18 +219,7 @@ defineExpose({
         </template>
 
         <template #empty>
-          <div class="flex justify-center flex-wrap">
-            <i class="flex items-center justify-center mr-1 fas fa-exclamation-circle" aria-hidden="true"></i>
-            <span class="flex items-center justify-center">No Admin Groups found.  Click
-            <SkillsButton class="flex flex items-center justify-center px-1"
-                          label="Reset"
-                          link
-                          size="small"
-                          @click="clearFilter"
-                          aria-label="Reset admin groups filter"
-                          data-cy="emptyResultsFilterResetBtn"/> to clear the existing filter.
-              </span>
-          </div>
+          <table-no-res noResMsg="No Admin Groups found." :showResetFilter="true" @resetFilter="clearFilter"/>
         </template>
         <Column v-for="col of options.fields" :key="col.key" :field="col.key" :sortable="col.sortable"
                 :class="{'flex': responsive.md.value }">

@@ -17,7 +17,7 @@ limitations under the License.
 import { computed, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import SkillsInputFormDialog from '@/components/utils/inputForm/SkillsInputFormDialog.vue'
-import { number, object, string } from 'yup'
+import { boolean, number, object, string } from 'yup'
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
 import SkillsNameAndIdInput from '@/components/utils/inputForm/SkillsNameAndIdInput.vue'
 import SkillsService from '@/components/skills/SkillsService.js'
@@ -28,8 +28,12 @@ import MarkdownEditor from '@/common-components/utilities/markdown/MarkdownEdito
 import HelpUrlInput from '@/components/utils/HelpUrlInput.vue'
 import InputSanitizer from '@/components/utils/InputSanitizer.js'
 import { useSkillYupValidators } from '@/components/skills/UseSkillYupValidators.js'
-import SettingsService from '@/components/settings/SettingsService.js';
-import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js';
+import SettingsService from '@/components/settings/SettingsService.js'
+import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js'
+import SkillsInputSwitch from '@/components/utils/inputForm/SkillsInputSwitch.vue'
+import InputGroup from 'primevue/inputgroup'
+import InputGroupAddon from 'primevue/inputgroupaddon'
+import IconPicker from "@/components/utils/iconPicker/IconPicker.vue";
 
 const show = defineModel()
 const route = useRoute()
@@ -37,10 +41,12 @@ const props = defineProps({
   skill: Object,
   isEdit: Boolean,
   isCopy: Boolean,
+  isSubjectEnabled: Boolean,
   groupId: {
     type: String,
     default: null,
   },
+  isGroupEnabled: Boolean,
   projectUserCommunity: String,
 })
 const emit = defineEmits(['skill-saved'])
@@ -65,6 +71,7 @@ const asyncLoadData = () => {
           }
           initialSkillData.value = { ...skillDetails };
           initialSkillData.value.hasVideoConfigured = resSkill.hasVideoConfigured;
+          skillEnabled.value = resSkill.enabled
           return skillDetails;
         })
     }
@@ -137,6 +144,19 @@ const isQuizAssignableToSkill = (selectedQuiz, context) => {
   }
   return true;
 }
+
+const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
+  return (selfReportingType.value === 'Quiz')
+})
+const skillEnabled = ref(props.isSubjectEnabled && (!props.groupId || props.isGroupEnabled) && !props.isEdit ? true : props.isSubjectEnabled && props.skill.enabled)
+const onEnabledChanged = (event) => {
+  skillEnabled.value = !skillEnabled.value
+}
+const showVisibilityControl = computed(() => {
+  // always show on create new skill (when subject is enabled), only show on edit if currently disabled
+  const isCreateNewSkill = !props.isEdit
+  return props.isSubjectEnabled && (!props.groupId || props.isGroupEnabled) && (isCreateNewSkill || !props.skill.enabled)
+})
 
 const schema = object({
   'skillName': string()
@@ -215,6 +235,7 @@ const schema = object({
       async (value) => props.isEdit || (latestSkillVersion.value + 1) >= value
     )
     .label('Version'),
+  'enabled': boolean(),
   'helpUrl': string()
     .urlValidator()
     .nullable()
@@ -231,6 +252,7 @@ const initialSkillData = ref({
   skillName: props.skill.name || '',
   originalSkillId: props.skill.skillId || '',
   version: props.skill.verison || 0,
+  enabled: skillEnabled.value,
   pointIncrement: props.skill.pointIncrement || 100,
   numPerformToCompletion: props.skill.numPerformToCompletion || 1,
   timeWindowEnabled: props.skill.timeWindowEnabled || false,
@@ -257,7 +279,9 @@ const saveSkill = (values) => {
     quizId: values.associatedQuiz ? values.associatedQuiz.quizId : null,
     pointIncrementInterval: values.timeWindowEnabled ? values.pointIncrementIntervalHrs * 60 + values.pointIncrementIntervalMins : 0,
     selfReportingType: values.selfReportingType && values.selfReportingType !== 'Disabled' ? values.selfReportingType : null,
+    iconClass: currentIcon.value,
   }
+
   return SkillsService.saveSkill(skilltoSave)
     .then((skillRes) => {
       return {
@@ -272,10 +296,10 @@ const onSkillSaved = (skill) => {
   emit('skill-saved', skill)
 }
 
-const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
-  return (selfReportingType.value === 'Quiz' || selfReportingType.value === 'Video')
-})
-
+const currentIcon = ref((props.skill.iconClass || 'fas fa-graduation-cap'));
+const onSelectedIcon = (selectedIcon) => {
+  currentIcon.value = selectedIcon.css
+}
 </script>
 
 <template>
@@ -293,25 +317,91 @@ const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
     :enable-return-focus="true"
     @saved="onSkillSaved"
   >
-    <div class="flex flex-wrap">
+    <div v-if="showVisibilityControl">
+      <div class="flex flex-wrap flex-col md:flex-row gap-2">
+        <div class="flex-1">
+          <SkillsNameAndIdInput
+            :name-label="`${isCopy ? 'New Skill Name' : 'Skill Name'}`"
+            name-field-name="skillName"
+            :id-label="`${props.isCopy ? 'New Skill ID' : 'Skill ID'}`"
+            id-field-name="skillId"
+            :is-inline="true"
+            id-suffix="Skill"
+            :name-to-id-sync-enabled="!props.isEdit">
+            <template #beforeName>
+              <icon-picker
+                  class="mb-4"
+                  :startIcon="currentIcon"
+                  :project-id="route.params.projectId"
+                  @selected-icon="onSelectedIcon"
+              />
+            </template>
+          </SkillsNameAndIdInput>
+        </div>
+      </div>
+
+      <div class="flex flex-col md:flex-row md:flex-1 gap-2 mt-2 pb-2">
+        <div data-cy="visibility" class="flex-1 min-w-[8rem]">
+          <div class="flex flex-col gap-2">
+            <label for="visibilitySwitch">
+              <span id="visibilityLabel">Initial Visibility:</span>
+            </label>
+            <InputGroup>
+              <InputGroupAddon>
+                <div style="width: 3.3rem !important;">
+                  <SkillsInputSwitch data-cy="visibilitySwitch"
+                                     aria-labelledby="visibilityLabel"
+                                     inputId="visibilitySwitch"
+                                     style="height:1rem !important;"
+                                     size="small"
+                                     name="enabled"
+                                     @change="onEnabledChanged" />
+                </div>
+              </InputGroupAddon>
+              <InputGroupAddon class="w-full">
+                <span class="ml-2 w-full text-gray-700 dark:text-white">{{ skillEnabled ? 'Visible' : 'Hidden'}}</span>
+              </InputGroupAddon>
+            </InputGroup>
+          </div>
+        </div>
+
+        <div class="flex-1">
+          <SkillsNumberInput
+              class="flex-1 min-w-[13rem] w-full"
+              :disabled="isEdit"
+              :min="latestSkillVersion"
+              label="Version"
+              name="version" />
+        </div>
+      </div>
+    </div>
+    <div v-else class="flex flex-wrap">
       <div class="flex-1">
         <SkillsNameAndIdInput
-          :name-label="`${isCopy ? 'New Skill Name' : 'Skill Name'}`"
-          name-field-name="skillName"
-          :id-label="`${props.isCopy ? 'New Skill ID' : 'Skill ID'}`"
-          id-field-name="skillId"
-          :is-inline="true"
-          id-suffix="Skill"
-          :name-to-id-sync-enabled="!props.isEdit" />
+            :name-label="`${isCopy ? 'New Skill Name' : 'Skill Name'}`"
+            name-field-name="skillName"
+            :id-label="`${props.isCopy ? 'New Skill ID' : 'Skill ID'}`"
+            id-field-name="skillId"
+            :is-inline="true"
+            id-suffix="Skill"
+            :name-to-id-sync-enabled="!props.isEdit">
+          <template #beforeName>
+            <icon-picker
+                class="mb-4"
+                :startIcon="currentIcon"
+                :project-id="route.params.projectId"
+                @selected-icon="onSelectedIcon"
+            />
+          </template>
+        </SkillsNameAndIdInput>
       </div>
 
       <div class="lg:max-w-40 lg:ml-4 w-full">
         <SkillsNumberInput
-          showButtons
-          :disabled="isEdit"
-          :min="latestSkillVersion"
-          label="Version"
-          name="version" />
+            :disabled="isEdit"
+            :min="latestSkillVersion"
+            label="Version"
+            name="version" />
       </div>
     </div>
 
@@ -325,7 +415,6 @@ const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
 
       <SkillsNumberInput
         class="flex-1 min-w-[15rem]"
-        showButtons
         :min="0"
         :is-required="true"
         :disabled="occurrencesToCompletionAndTimeWindowDisabled"
@@ -340,6 +429,8 @@ const occurrencesToCompletionAndTimeWindowDisabled = computed(() => {
     <self-reporting-type-input @self-reporting-type-changed="selfReportingType = $event" :initial-skill-data="initialSkillData" :is-edit="isEdit" class="mt-1"/>
 
     <markdown-editor
+      :upload-url="`/admin/projects/${route.params.projectId}/upload`"
+      :allow-community-elevation="true"
       class="mt-8"
       name="description" />
 

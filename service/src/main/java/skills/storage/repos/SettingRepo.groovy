@@ -21,6 +21,8 @@ import org.springframework.data.repository.CrudRepository
 import org.springframework.lang.Nullable
 import skills.storage.model.Setting
 
+import java.util.stream.Stream
+
 interface SettingRepo extends CrudRepository<Setting, Integer> {
 
     @Nullable
@@ -42,7 +44,25 @@ interface SettingRepo extends CrudRepository<Setting, Integer> {
     List<Setting> findAllByTypeAndSetting(Setting.SettingType type, String setting)
 
     @Nullable
+    List<Setting> findAllByTypeAndSettingAndUserRefId(Setting.SettingType type, String setting, Integer userRefId)
+
+    @Nullable
     Setting findAllByTypeAndSettingGroupAndSettingAndProjectId(Setting.SettingType type, String settingGroup, String setting, String projectId)
+
+    @Nullable
+    Setting findByTypeAndSkillRefIdAndSettingGroupAndSetting(Setting.SettingType type, Integer skillRefId, @Nullable String settingGroup, String setting)
+
+    @Nullable
+    @Query('''SELECT s 
+            FROM Setting s 
+            JOIN SkillDef sd ON s.skillRefId = sd.id
+            WHERE (sd.projectId = ?1 OR (?1 IS NULL AND sd.projectId IS NULL)) 
+              AND sd.skillId = ?2
+              AND (s.settingGroup = ?3 OR (?3 IS NULL AND s.settingGroup IS NULL))
+              AND s.setting = ?4
+              AND (s.projectId = ?1 OR (?1 IS NULL AND s.projectId IS NULL))
+              AND s.type = 'Skill' ''')
+    Setting findSkillSettingByProjectIdAndSkillId(@Nullable String projectId, String skillId, @Nullable String settingGroup, String setting)
 
     @Nullable
     @Query('''select s from Setting s 
@@ -102,4 +122,9 @@ interface SettingRepo extends CrudRepository<Setting, Integer> {
     @Modifying
     void deleteBySettingAndSettingGroupAndProjectIdAndTypeAndUserRefId(String setting, String settingGroup, String projectId, Setting.SettingType type, Integer userRefId)
 
+    @Modifying
+    void deleteBySettingAndProjectIdAndTypeAndUserRefId(String setting, String projectId, Setting.SettingType type, Integer userRefId)
+
+    @Query('''select s from Setting s where s.settingGroup=?1''')
+    Stream<Setting> scanSettingsByGroup(String settingsGroup)
 }

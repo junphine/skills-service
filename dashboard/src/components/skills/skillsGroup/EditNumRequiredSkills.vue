@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { ref, onMounted, toRaw } from 'vue'
+import { ref, onMounted, toRaw, computed } from 'vue'
 import SkillsInputFormDialog from '@/components/utils/inputForm/SkillsInputFormDialog.vue'
 import SkillsDropDown from '@/components/utils/inputForm/SkillsDropDown.vue'
 import ReminderMessage from '@/components/utils/misc/ReminderMessage.vue'
@@ -40,7 +40,7 @@ const save = (values) => {
 const afterSaved = (updatedGroup) => {
   emit('group-changed', updatedGroup);
 }
-const initialSkillData = { }
+const initialSkillData = ref({ })
 
 const options = ref([])
 const selected = ref({})
@@ -58,9 +58,17 @@ const updateNumSkillsRequired = () => {
   options.value = dropdownOptions
   selected.value = toRaw(dropdownOptions.find((item) => item.value == props.group.numSkillsRequired))
   originalSelection.value = selected.value
+
+  initialSkillData.value = { ...initialSkillData.value, numSkillsRequired: toRaw(originalSelection.value)}
 }
 onMounted(() => {
   updateNumSkillsRequired()
+})
+
+
+
+const saveDisabled = computed(() => {
+  return selected.value?.value === props.group.numSkillsRequired;
 })
 
 </script>
@@ -75,6 +83,7 @@ onMounted(() => {
     :initial-values="initialSkillData"
     :enable-return-focus="true"
     :enable-input-form-resiliency="false"
+    :ok-button-disabled="saveDisabled"
     :data-cy="`editRequiredModal-${group.skillId}`"
     dialog-class="w-11/12 sm:w-10/12 lg:w-9/12 xl:w-7/12"
     @saved="afterSaved">

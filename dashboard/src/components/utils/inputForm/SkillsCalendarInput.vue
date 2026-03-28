@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed, inject, useAttrs } from 'vue'
+import { inject } from 'vue'
 import { useField } from 'vee-validate'
-import Calendar from "primevue/calendar";
+import DatePicker from "primevue/datepicker";
 import {
   useSkillsInputFallthroughAttributes
 } from '@/components/utils/inputForm/UseSkillsInputFallthroughAttributes.js'
@@ -32,6 +32,15 @@ const props = defineProps({
   label: {
     type: String,
     required: false
+  },
+  labelIcon: {
+    type: String,
+    required: false
+  },
+  labelOnSameLine: {
+    type: Boolean,
+    required: false,
+    default: false
   },
   isRequired: {
     type: Boolean,
@@ -60,9 +69,9 @@ const handleOnInput = (event) => {
 </script>
 
 <template>
-  <div class="field" v-bind="fallthroughAttributes.rootAttrs.value">
-    <label v-if="label" :for="`input${name}`" class="block"><span v-if="isRequired">*</span> {{ label }} </label>
-    <Calendar v-model="value"
+  <div class="flex gap-1" v-bind="fallthroughAttributes.rootAttrs.value" :class="{ 'flex-col' : !labelOnSameLine, 'items-center': labelOnSameLine}">
+    <label v-if="label" :for="`input${name}`" class="block"><span v-if="isRequired">*</span><i v-if="labelIcon" :class="labelIcon" aria-hidden="true"/> {{ label }} </label>
+    <DatePicker v-model="value"
               v-bind="fallthroughAttributes.inputAttrs.value"
               @keydown.enter="onEnter"
               @input="handleOnInput"

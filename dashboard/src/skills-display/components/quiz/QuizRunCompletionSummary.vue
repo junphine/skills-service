@@ -18,6 +18,7 @@ import { computed } from 'vue'
 import { useTimeUtils } from '@/common-components/utilities/UseTimeUtils.js';
 import SkillsButton from '@/components/utils/inputForm/SkillsButton.vue';
 import QuizType from "@/skills-display/components/quiz/QuizType.js";
+import QuizCompletedMessage from "@/skills-display/components/quiz/QuizCompletedMessage.vue";
 
 const props = defineProps({
   quizResult: Object,
@@ -57,7 +58,7 @@ const runAgain = () => {
         <Message severity="error" v-if="quizResult.outOfTime" data-cy="outOfTimeMsg">You've run out of time!</Message>
       </div>
       <div class="mb-1 mt-6 text-3xl">
-        <span class="font-bold text-success mb-2 skills-page-title-text-color" role="heading" aria-level="1">{{ quizInfo.name }}</span>
+        <h2 class="font-bold text-success mb-2 skills-page-title-text-color inline">{{ quizInfo.name }}</h2>
         <div v-if="!needsGrading" class="text-3xl inline-block ml-2">
           <Tag v-if="!quizResult.gradedRes.passed" class="uppercase text-2xl" severity="warn" data-cy="quizFailed"><i class="far fa-times-circle mr-1" aria-hidden="true"></i>Failed</Tag>
           <Tag v-if="quizResult.gradedRes.passed" class="uppercase text-2xl" severity="success" data-cy="quizPassed"><i class="fas fa-check-double mr-1" aria-hidden="true"></i>Passed</Tag>
@@ -130,14 +131,7 @@ const runAgain = () => {
         </Card>
       </div>
 
-      <Message v-if="needsGrading" icon="fas fa-user-clock" :closable="false" data-cy="requiresManualGradingMsg">
-        <div>
-          This quiz contains questions that require manual grading and will be assessed by quiz administrators.
-        </div>
-        <div class="mt-1">
-          Let's sit tight and wait for the grades to roll in!
-        </div>
-      </Message>
+      <quiz-completed-message v-if="needsGrading" />
 
       <div v-if="!quizResult.gradedRes.passed && !needsGrading" class="mt-6">
         <div class="my-2" v-if="unlimitedAttempts || numAttemptsLeft > 0"><span class="text-primary">No worries!</span> Would you like to try again?</div>

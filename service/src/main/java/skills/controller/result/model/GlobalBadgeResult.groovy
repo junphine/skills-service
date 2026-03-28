@@ -23,4 +23,6 @@ class GlobalBadgeResult extends BadgeResult {
 
     List<GlobalBadgeLevelRes> requiredProjectLevels = []
     int uniqueProjectCount = 0
+
+    String userCommunity
 }

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import {computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref} from 'vue'
 import { object, string, number, array } from 'yup';
 import { useSkillsAnnouncer } from '@/common-components/utilities/UseSkillsAnnouncer.js'
 import { useTimeUtils } from '@/common-components/utilities/UseTimeUtils.js'
@@ -35,8 +35,12 @@ import QuizStatus from "@/components/quiz/runsHistory/QuizStatus.js";
 import {useAppConfig} from "@/common-components/stores/UseAppConfig.js";
 import {useNumberFormat} from "@/common-components/filter/UseNumberFormat.js";
 import MarkdownText from "@/common-components/utilities/markdown/MarkdownText.vue";
-import {useDebounceFn} from "@vueuse/core";
+import {useDebounceFn, useStorage} from "@vueuse/core";
 import {useDescriptionValidatorService} from "@/common-components/validators/UseDescriptionValidatorService.js";
+import {useElementSizeUtil} from "@/common-components/utilities/UseElementSizeUtil.js";
+const SlideDeck = defineAsyncComponent(() =>
+    import('@/components/slides/SlideDeck.vue')
+);
 
 const props = defineProps({
   quizId: String,
@@ -79,7 +83,10 @@ const dateTimer = ref(null);
 const scrollDistance = ref(0);
 const isAttemptAlreadyInProgress = ref(false);
 
-
+const allChoicesMatched = (value) => {
+  const unansweredQuestions = value.filter((q) => !q.currentAnswer)
+  return unansweredQuestions.length === 0;
+}
 const atLeastOneSelected = (value) => {
   return !isAttemptAlreadyInProgress.value || value && (value.findIndex((a) => a.selected) >= 0);
 }
@@ -91,27 +98,42 @@ const getQuestionNumFromPath = (path) => {
 }
 
 const validateFunCache = new Map()
+
+const getAnswerIdFromContext = (testContext) => {
+  const quizAnswers = testContext?.parent.quizAnswers
+  if (quizAnswers && quizAnswers.length === 1 && quizAnswers[0].id) {
+    return quizAnswers[0].id
+  }
+  return null
+}
 const createValidateAnswerFn = (valueOuter, contextOuter) => {
   if (!QuestionType.isTextInput(contextOuter.parent.questionType)) {
     return true
+  }
+  const getResponseBasedOnResult = (result, resContext) => {
+    if (result.valid) {
+      return true
+    }
+    if (result.msg) {
+      return resContext.createError({ message: `Answer to question #${getQuestionNumFromPath(resContext.path)} - ${result.msg}` })
+    }
+    return resContext.createError({ message: `'Field' is invalid` })
   }
   const doValidateAnswer = (value, context) => {
     if (!value || value.trim().length === 0 || !appConfig.paragraphValidationRegex) {
       return true
     }
     const forceAnswerValidation = isSubmitting.value
-    if (!forceAnswerValidation && !checkIfAnswerChangedForValidation.hasValueChanged(context.originalValue, context)) {
-      return true
+    if (!forceAnswerValidation) {
+      const existingResultIfValueTheSame = checkIfAnswerChangedForValidation.getStatusIfValueTheSame(getAnswerIdFromContext(context), context.originalValue)
+      if (existingResultIfValueTheSame !== null) {
+        return getResponseBasedOnResult(existingResultIfValueTheSame, context)
+      }
     }
+
     return descriptionValidatorService.validateDescription(value, false, null, true).then((result) => {
-      if (result.valid) {
-        return true
-      }
-      checkIfAnswerChangedForValidation.removeAnswer(context)
-      if (result.msg) {
-        return context.createError({ message: `Answer to question #${getQuestionNumFromPath(context.path)} - ${result.msg}` })
-      }
-      return context.createError({ message: `'Field' is invalid` })
+      checkIfAnswerChangedForValidation.setValueAndStatus(getAnswerIdFromContext(context), value, result)
+      return getResponseBasedOnResult(result, context)
     })
   }
 
@@ -133,6 +155,7 @@ const schema = object({
       .of(
           object({
             'questionType': string(),
+            // important: please note that this logic has to match what's performed by `validateTextAnswer` method beow
             'answerText': string()
                 .trim()
                 .max(appConfig.maxTakeQuizInputTextAnswerLength, (d) => `Answer to question #${getQuestionNumFromPath(d.path)} must not exceed ${numFormat.pretty(appConfig.maxTakeQuizInputTextAnswerLength)} characters`)
@@ -161,12 +184,46 @@ const schema = object({
                       .test('atLeastOneSelected', 'At least 1 choice must be selected', (value) => atLeastOneSelected(value))
                       .label('Answers'),
                 })
+                .when('questionType', {
+                  is: (questionType) => questionType === QuestionType.Matching,
+                  then: (sch) => sch
+                      .required()
+                      .test('mustBeCompleted', 'All choices must be matched', (value) => allChoicesMatched(value))
+                      .label('Answers')
+                })
           })
       ),
 })
 const { values, meta, handleSubmit, isSubmitting, resetForm, setFieldValue, validate, validateField, errors, errorBag, setErrors } = useForm({
   validationSchema: schema,
 })
+
+// important: please note that this logic has to match what's performed by `answerText` in the yup schema above
+const validateTextAnswer = (value) => {
+  validateField(value.fieldName)
+  const textAnswer = value.answerText?.trim()
+  if (textAnswer && textAnswer.length === 0) {
+    return Promise.resolve(false);
+  }
+  if (textAnswer && textAnswer.length > appConfig.maxTakeQuizInputTextAnswerLength) {
+    return Promise.resolve(false);
+  }
+
+  if (!appConfig.paragraphValidationRegex) {
+    return Promise.resolve(true)
+  }
+  const existingStatusIfValueTheSame = checkIfAnswerChangedForValidation.getStatusIfValueTheSame(value.answerId, value.answerText)
+  if (existingStatusIfValueTheSame !== null) {
+    return Promise.resolve(existingStatusIfValueTheSame.valid)
+  }
+  return descriptionValidatorService.validateDescription(value.answerText, false, null, true).then((result) => {
+    checkIfAnswerChangedForValidation.setValueAndStatus(value.answerId, value.answerText, result)
+    if (result.valid) {
+      return true
+    }
+    return false
+  })
+}
 
 onMounted(() => {
   if (props.quiz) {
@@ -292,6 +349,14 @@ const startQuizAttempt = () => {
               // eslint-disable-next-line no-param-reassign
               answerOptions[0].answerText = enteredTextObj.answerText;
             }
+          } else if (enteredText && q.questionType === QuestionType.Matching) {
+            enteredText.map((existingAnswer) => {
+              let selectedAnswer = answerOptions.find((it) => it.id === existingAnswer.answerId)
+              if(selectedAnswer) {
+                selectedAnswer.currentAnswer = existingAnswer.answerText
+              }
+            })
+
           }
           return ({ ...q, answerOptions });
         });
@@ -319,6 +384,12 @@ const updateSelectedAnswers = (questionSelectedAnswer) => {
   isAttemptAlreadyInProgress.value = true;
   if (questionSelectedAnswer.reportAnswerPromise) {
     reportAnswerPromises.value.push(questionSelectedAnswer.reportAnswerPromise);
+  }
+}
+const updateMatchedAnswer = (matchedAnswer) => {
+  isAttemptAlreadyInProgress.value = true;
+  if (matchedAnswer.reportAnswerPromise) {
+    reportAnswerPromises.value.push(matchedAnswer.reportAnswerPromise);
   }
 }
 const completeTestRun = () => {
@@ -404,6 +475,21 @@ const saveAndCloseThisRun = () => {
 const doneWithThisRun = () => {
   emit('testWasTaken', quizResult.value);
 }
+
+const slidesContainer = ref(null)
+const slidesContainerSize = useElementSizeUtil(slidesContainer)
+
+const url = computed(() => quizInfo.value.slidesSummary?.url)
+const hasSlides = computed(() => url.value != null)
+const slidesId = computed(() => `${props.quizId}-slides`)
+
+const widthInLocalStorageAsString = useStorage(`${slidesId.value}-slidesWidth`, null)
+const widthInLocalStorage = computed(() => widthInLocalStorageAsString.value ? parseInt(widthInLocalStorageAsString.value) : null)
+const defaultWidth = computed(() => widthInLocalStorage.value || quizInfo.value.slidesSummary?.width)
+const onResize = (newWidth) => {
+  widthInLocalStorageAsString.value = newWidth
+}
+
 </script>
 
 <template>
@@ -453,7 +539,7 @@ const doneWithThisRun = () => {
         <template #content>
           <div class="flex flex-wrap items-center justify-center border-b py-2 mb-4" data-cy="subPageHeader">
             <div class="flex">
-              <div class="text-2xl text-primary font-bold skills-page-title-text-color" data-cy="quizName" role="heading" aria-level="1">{{ quizInfo.name }}</div>
+              <h2 class="text-2xl text-primary font-bold skills-page-title-text-color" data-cy="quizName">{{ quizInfo.name }}</h2>
             </div>
             <div class="flex-1 text-right text-muted">
               <Tag severity="success" data-cy="numQuestions">{{quizInfo.quizLength}}</Tag> <span class="uppercase">questions</span>
@@ -461,7 +547,7 @@ const doneWithThisRun = () => {
             </div>
           </div>
 
-          <Card :pt="{ body: { class: '!p-1' }, content: { class: '!p-1' } }" class="mb-3" v-if="quizInfo.description && quizInfo.showDescriptionOnQuizPage">
+          <Card :pt="{ body: { class: 'p-1!' }, content: { class: 'p-1!' } }" class="mb-3" v-if="quizInfo.description && quizInfo.showDescriptionOnQuizPage">
             <template #content>
               <markdown-text
                   :text="quizInfo.description"
@@ -470,15 +556,28 @@ const doneWithThisRun = () => {
             </template>
           </Card>
 
+          <div ref="slidesContainer" v-if="hasSlides">
+            <slide-deck
+                :slides-id="slidesId"
+                :pdf-url="url"
+                :default-width="defaultWidth"
+                :max-width="slidesContainerSize.width.value"
+                @on-resize="onResize"
+            />
+          </div>
+
           <SkillsOverlay :show="isCompleting" opacity="0.2">
             <div v-for="(q, index) in quizInfo.questions" :key="q.id">
               <QuizRunQuestion
                   :q="q"
                   :quiz-id="quizId"
                   :quiz-attempt-id="quizAttemptId"
+                  :user-community="quizInfo.userCommunity"
                   :num="index+1"
-                  :validate="validateField"
+                  :validate="validateTextAnswer"
                   @selected-answer="updateSelectedAnswers"
+                  @answer-matched="updateMatchedAnswer"
+                  :quizComplete="!!quizResult"
                   @answer-text-changed="updateSelectedAnswers"/>
             </div>
           </SkillsOverlay>

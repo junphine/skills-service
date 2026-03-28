@@ -17,6 +17,7 @@ package skills.intTests
 
 import groovy.json.JsonOutput
 import skills.intTests.utils.DefaultIntSpec
+import skills.intTests.utils.SkillsClientException
 import skills.intTests.utils.SkillsFactory
 
 import static skills.intTests.utils.SkillsFactory.createProject
@@ -530,5 +531,96 @@ class AdminBadgesSpecs extends DefaultIntSpec {
         def ex = thrown(Exception)
         ex.message.contains("numMinutes must be <= 525600")
 
+    }
+
+    void "can not remove last skill from an active badge"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(4)
+        def badge = SkillsFactory.createBadge()
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        skillsService.createBadge(badge)
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills.get(0).skillId])
+        badge.enabled = true
+        skillsService.createBadge(badge)
+
+        when:
+        skillsService.removeSkillFromBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills.get(0).skillId])
+
+        then:
+        SkillsClientException e = thrown()
+        e.message.contains("Can not remove skill from badge [badge1] as it is live with only a single skill")
+    }
+
+    void "can remove last skill from an inactive badge"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(4)
+        def badge = SkillsFactory.createBadge()
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSkills(skills)
+
+        skillsService.createBadge(badge)
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills.get(0).skillId])
+        badge.enabled = false
+        skillsService.createBadge(badge)
+
+        when:
+        def res = skillsService.getBadge(badge)
+        skillsService.removeSkillFromBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills.get(0).skillId])
+        def resAfterRemoval = skillsService.getBadge(badge)
+
+        then:
+        res.numSkills == 1
+        resAfterRemoval.numSkills == 0
+    }
+
+    void "get skills for badge"() {
+        def proj = SkillsFactory.createProject()
+        def subj = SkillsFactory.createSubject()
+        def skills = SkillsFactory.createSkills(2)
+        def subj2 = SkillsFactory.createSubject(1, 2)
+        def skillsInSubj2 = SkillsFactory.createSkills(2, 1, 2)
+        def skillGroup = SkillsFactory.createSkillsGroup(1, 1, 5)
+        def skillInGroup = SkillsFactory.createSkill(1, 1, 6)
+        def badge = SkillsFactory.createBadge()
+
+        skillsService.createProject(proj)
+        skillsService.createSubject(subj)
+        skillsService.createSubject(subj2)
+        skillsService.createSkills(skills)
+        skillsService.createSkills(skillsInSubj2)
+        skillsService.createSkill(skillGroup)
+        skillsService.assignSkillToSkillsGroup(skillGroup.skillId, skillInGroup)
+
+        skillsService.createBadge(badge)
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills.get(0).skillId])
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skills.get(1).skillId])
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skillInGroup.skillId])
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skillsInSubj2.get(0).skillId])
+        skillsService.assignSkillToBadge([projectId: proj.projectId, badgeId: badge.badgeId, skillId: skillsInSubj2.get(1).skillId])
+
+        def collectedSkills = [skills.get(0), skills.get(1), skillInGroup, skillsInSubj2.get(0), skillsInSubj2.get(1)]
+
+        when:
+        def badgeSkills = skillsService.getBadgeSkills(proj.projectId, badge.badgeId)
+
+        then:
+        badgeSkills
+        badgeSkills.size() == 5
+        badgeSkills.forEach{skill ->
+            def foundSkill = collectedSkills.find({it -> skill.skillId == it.skillId})
+            foundSkill.skillId == skill.skillId
+            foundSkill.subjectId == skill.subjectId
+            foundSkill.subjectName == skill.name
+            foundSkill.groupName == skill.groupName
+            foundSkill.groupId == skill.groupId
+        }
     }
 }

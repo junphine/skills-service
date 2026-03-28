@@ -29,7 +29,9 @@ class UserProgressExportResult extends AbstractXlsxStreamingView {
     static final String PROJECT_ID = "projectId"
     static final String QUERY = "query"
     static final String MINIMUM_POINTS = "minimumPoints"
+    static final String MAXIMUM_POINTS = "maximumPoints"
     static final String PAGE_REQUEST = "pageRequest"
+    static final String USER_TAG_FILTER = "userTagFilter"
 
     @Autowired
     private ExcelExportService excelExportService
@@ -37,12 +39,14 @@ class UserProgressExportResult extends AbstractXlsxStreamingView {
     @Override
     protected void buildExcelDocument(Map<String, Object> model, Workbook workbook, HttpServletRequest request, HttpServletResponse response) throws Exception {
         String projectId = model.get(PROJECT_ID) as String
-        String query = model.get(QUERY) as String
+        String userQuery = model.get(QUERY) as String
+        String userTagFilter = model.get(USER_TAG_FILTER) as String
         Integer minimumPoints = model.get(MINIMUM_POINTS) as Integer
+        Integer maximumPoints = model.get(MAXIMUM_POINTS) as Integer
         PageRequest pageRequest = model.get(PAGE_REQUEST) as PageRequest
 
         // define excel file name to be exported
         response.addHeader("Content-Disposition", "attachment;fileName=${projectId}-users-${new Date().format("yyyy-MM-dd")}.xlsx")
-        excelExportService.exportUsersProgress(workbook, projectId, query, pageRequest, minimumPoints)
+        excelExportService.exportUsersProgress(workbook, projectId, userQuery, pageRequest, minimumPoints, maximumPoints, userTagFilter)
     }
 }

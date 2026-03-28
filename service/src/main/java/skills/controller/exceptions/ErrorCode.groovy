@@ -56,4 +56,7 @@ enum ErrorCode {
     SurveyCanOnlyBeTakenOnce,
     SkillEventForQuizSkillIsNotAllowed,
     LearningPathViolation,
+    LearningContentGeneratorNotAvailable,
+    ParagraphValidationFailed,
+    QuizAlreadyCompleted
 }

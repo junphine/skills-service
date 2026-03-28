@@ -100,8 +100,7 @@ const openFileDialog = (event) => {
     <!-- file chosen or already uploaded and internally hosted via SkillTree -->
     <div v-if="isInternallyHosted" class="flex items-start">
       <InputGroup>
-        <SkillsTextInput id="videoFileInput"
-                         class="flex-1 rounded-none"
+        <SkillsTextInput class="flex-1 rounded-none"
                          v-model="props.hostedFileName"
                          data-cy="videoFileInput"
                          name="videoFileInput"
@@ -109,7 +108,7 @@ const openFileDialog = (event) => {
           <template #addOnBefore><label class="text-surface-600 dark:text-surface-200" for="videoFileInput"><i class="fas fa-server mr-1"></i>SkillTree Hosted</label></template>
           <template #addOnAfter><SkillsButton
               data-cy="resetBtn"
-              aria-label="Reset Video Upload input option"
+              aria-label="Reset Upload input option"
               @click="emit('reset')"
               icon="fa fa-broom"
               :outlined="false"

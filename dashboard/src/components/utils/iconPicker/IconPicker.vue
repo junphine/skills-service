@@ -36,7 +36,15 @@ const props = defineProps({
   disabled: {
     type: Boolean,
     default: false
-  }
+  },
+  projectId: {
+    type: String,
+    default: null,
+  },
+  badgeId: {
+    type: String,
+    default: null,
+  },
 })
 
 const iconManagerOverlayPanel = ref()
@@ -76,12 +84,12 @@ const themeHelper = useThemesHelper()
       :disabled="disabled"
       data-cy="iconPicker">
       <div class="text-primary text-5xl w-24 h-20 flex items-center justify-center m-0">
-        <i :class="[startIcon]" />
+        <i class="text-5xl!" :class="[startIcon]" />
       </div>
     </SkillsButton>
 
     <Popover ref="iconManagerOverlayPanel"
-             :pt="{ content : { class: '!p-0' } }"
+             :pt="{ content : { class: 'p-0!' } }"
                   :show-close-icon="true"
                   :dismissable="dismissable"
                   @hide="panelHidden"
@@ -98,6 +106,8 @@ const themeHelper = useThemesHelper()
           class="pb-2 px-2"
           @selected-icon="onSelectedIcon"
           name="iconClass"
+          :projectId="projectId"
+          :badgeId="badgeId"
           @set-dismissable="setDismissable"></icon-manager>
     </Popover>
   </div>

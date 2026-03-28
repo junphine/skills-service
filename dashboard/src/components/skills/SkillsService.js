@@ -49,7 +49,6 @@ export default {
       isSkillType: skill.type === 'Skill',
       created: dayjs(skill.created),
       selfReportingType: (skill.type === 'Skill' && !skill.selfReportingType) ? 'Disabled' : skill.selfReportingType,
-      subjectId: this.subjectId,
       isCatalogSkill,
       isCatalogImportedSkills,
       catalogType,
@@ -166,7 +165,7 @@ export default {
       subjectId: newSubjectId,
       groupId: newGroupId,
       skillIds
-    })
+    }, { handleError: false })
   },
   moveSkills(projectId, skillIds, newSubjectId, newGroupId = null, handleError = true) {
     const url = `/admin/projects/${encodeURIComponent(projectId)}/skills/move`
@@ -289,12 +288,12 @@ export default {
       .get(`/admin/projects/${encodeURIComponent(projectId)}/latestVersion`)
       .then((remoteRes) => remoteRes.data)
   },
-  saveSkillEvent(projectId, skillId, user, timestamp) {
+  saveSkillEvent(projectId, skillId, user, timestamp, doNotRequireApproval) {
     const userId = user.dn ? user.dn : user.userId
     return axios
       .put(
         `/api/projects/${encodeURIComponent(projectId)}/skills/${encodeURIComponent(skillId)}`,
-        { userId, timestamp },
+        { userId, timestamp, doNotRequireApproval },
         { handleError: false }
       )
       .then((remoteRes) => remoteRes.data)

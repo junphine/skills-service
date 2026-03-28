@@ -82,6 +82,12 @@ class SkillsDepsService {
     @Autowired
     SkillsAdminService skillsAdminService
 
+
+    @Transactional(readOnly = true)
+    boolean checkIfSkillInAnotherProjectPartOfLearningPath(String projId, String otherProj, String otherProjSkillId) {
+        return skillRelDefRepo.checkIfSkillInAnotherProjectPartOfLearningPath(projId, otherProj, otherProjSkillId)
+    }
+
     @Transactional(readOnly = true)
     List<SkillDepResult> checkIfSkillsHaveDeps(String projectId, List<String> skillIds) {
         List<SkillRelDefRepo.SkillIdAndCount> skillIdsAndCounts = skillRelDefRepo.countChildrenForMultipleSkillIds(projectId, skillIds, [SkillRelDef.RelationshipType.Dependence])
@@ -97,9 +103,20 @@ class SkillsDepsService {
     }
 
     @Transactional()
-    void addLearningPathItem(String projectId, String id, String prereqFromId, String prereqFromProjectId = null) {
+    void addLearningPathItem(String projectId, String id, String prereqFromId, String prereqFromProjectId = null, boolean isProjCopy = false) {
         SkillDef skillDef = loadSkillDefForLearningPath(projectId, id)
         SkillDef prereqSkillDef = loadSkillDefForLearningPath(prereqFromProjectId ?: projectId, prereqFromId)
+
+        if (isProjCopy) {
+            // handle a special case where copied project has a badge with no skills and that badge is part of a learning path
+            // if all the skills are removed from one of those live badges then it will be copied as disabled and cannot be
+            // added to the learning path
+            boolean isToBadgeDisabled = skillDef.type == SkillDef.ContainerType.Badge && (!skillDef.enabled || !Boolean.parseBoolean(skillDef.enabled))
+            boolean isFromBadgeDisabled = prereqSkillDef.type == SkillDef.ContainerType.Badge && (!prereqSkillDef.enabled || !Boolean.parseBoolean(prereqSkillDef.enabled))
+            if (isToBadgeDisabled || isFromBadgeDisabled) {
+                return
+            }
+        }
 
         validateLearningPathItemAndThrowException(skillDef, prereqSkillDef)
         skillRelDefRepo.save(new SkillRelDef(parent: skillDef, child: prereqSkillDef, type: SkillRelDef.RelationshipType.Dependence))
@@ -354,6 +371,18 @@ class SkillsDepsService {
 
         SkillsGraphRes existingGraph = getDependentSkillsGraph(skillDef.projectId)
         List<CircularLearningPathChecker.BadgeAndSkills> loadedBadges = loadBadgeSkills(skillDef.projectId)
+
+        if (skillDef.type == SkillDef.ContainerType.Badge || prereqSkillDef.type == SkillDef.ContainerType.Badge) {
+            SkillDef badge = skillDef.type == SkillDef.ContainerType.Badge ? skillDef : prereqSkillDef
+            SkillDef skill = skillDef.type == SkillDef.ContainerType.Skill ? skillDef : prereqSkillDef
+            String msg = "A badge cannot have a dependency with a skill it contains. " +
+                    "Badge [ID:${badge.skillId}] can not have a dependency with [ID:${skill.skillId}]".toString()
+            CircularLearningPathChecker.BadgeAndSkills badgeToCheck = loadedBadges.find({it.badgeGraphNode.skillId == badge.skillId})
+            if(badgeToCheck?.skills?.find({ it.skillId == skill.skillId})) {
+                return new DependencyCheckResult(possible: false, failureType: DependencyCheckResult.FailureType.SkillExistsInBadge, reason: msg, violatingSkillId: skill.skillId, violatingSkillInBadgeId: badge.skillId)
+            }
+        }
+
         CircularLearningPathChecker circularLearningPathChecker = new CircularLearningPathChecker(
                 circularLearningPathCheckerMaxIterations: circularLearningPathCheckerMaxIterations,
                 skillDef: skillDef,

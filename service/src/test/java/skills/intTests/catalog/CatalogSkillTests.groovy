@@ -335,6 +335,7 @@ class CatalogSkillTests extends CatalogIntSpec {
         skill.helpUrl = "http://newHelpUrl"
         skill.description = "updated description"
         skill.selfReportingType = SkillDef.SelfReportingType.Approval.toString()
+        skill.iconClass = 'fa fa-icon-test'
 
         skillsService.updateSkill(skill, skill.skillId)
         def postEdit = skillsService.getCatalogSkills(project3.projectId, 10, 1, "name")
@@ -345,6 +346,7 @@ class CatalogSkillTests extends CatalogIntSpec {
         preEdit.data[0].numPerformToCompletion == 1
         preEdit.data[0].description == skillDescriptionPreEdit
         preEdit.data[0].helpUrl == skillHelpUrlPreEdit
+        !preEdit.data[0].iconClass
         !preEdit.data[0].selfReportingType
         postEdit.data[0].name == skill.name
         postEdit.data[0].totalPoints == 12500
@@ -352,6 +354,7 @@ class CatalogSkillTests extends CatalogIntSpec {
         postEdit.data[0].description == skill.description
         postEdit.data[0].helpUrl == skill.helpUrl
         postEdit.data[0].selfReportingType == SkillDef.SelfReportingType.Approval.toString()
+        postEdit.data[0].iconClass == 'fa fa-icon-test'
     }
 
     def "update skill that has been exported to catalog, edits should be reflected on imported copies"() {
@@ -387,6 +390,7 @@ class CatalogSkillTests extends CatalogIntSpec {
         skill.helpUrl = "http://newHelpUrl"
         skill.description = "updated description"
         skill.selfReportingType = SkillDef.SelfReportingType.Approval.toString()
+        skill.iconClass = 'fa fa-icon-test'
 
         skillsService.updateSkill(skill, skill.skillId)
         waitForAsyncTasksCompletion.waitForAllScheduleTasks()
@@ -400,12 +404,14 @@ class CatalogSkillTests extends CatalogIntSpec {
         preEdit.description == skillDescriptionPreEdit
         preEdit.helpUrl == skillHelpUrlPreEdit
         !preEdit.selfReportingType
+        !preEdit.iconClass
         postEdit.name == skill.name
         postEdit.totalPoints == 12500
         postEdit.numPerformToCompletion == 50
         postEdit.description == skill.description
         postEdit.helpUrl == skill.helpUrl
         postEdit.selfReportingType == SkillDef.SelfReportingType.Approval.toString()
+        postEdit.iconClass == 'fa fa-icon-test'
     }
 
     def "update skill imported from catalog"() {
@@ -441,7 +447,7 @@ class CatalogSkillTests extends CatalogIntSpec {
         e.getMessage().contains("errorCode:ReadOnlySkill")
     }
 
-    def "description, helpUrl, selfReportingType fields present on skill imported from catalog"() {
+    def "description, helpUrl, selfReportingType, iconClass fields present on skill imported from catalog"() {
         def project1 = createProject(1)
         def project2 = createProject(2)
         def project3 = createProject(3)
@@ -454,6 +460,7 @@ class CatalogSkillTests extends CatalogIntSpec {
         skill.numPerformToCompletion = 50
         skill.helpUrl = "http://newHelpUrl"
         skill.description = "updated description"
+        skill.iconClass = 'fa fa-icon-test'
         skill.selfReportingType = SkillDef.SelfReportingType.Approval.toString()
 
         skillsService.createProject(project1)
@@ -477,6 +484,7 @@ class CatalogSkillTests extends CatalogIntSpec {
         importedSkill.helpUrl == skill.helpUrl
         importedSkill.description == skill.description
         importedSkill.selfReportingType == skill.selfReportingType
+        importedSkill.iconClass == skill.iconClass
     }
 
     def "remove skill from catalog"() {
@@ -1815,6 +1823,37 @@ class CatalogSkillTests extends CatalogIntSpec {
         e.getMessage().contains("Skill [skill2] has dependencies. Skills with dependencies may not be exported to the catalog, errorCode:ExportToCatalogNotAllowed")
     }
 
+    def "cannot export a disabled skill"() {
+        // create skills, add dependencies, try to export top of chain
+        def project1 = createProject(1)
+        def project2 = createProject(2)
+
+        def p1subj1 = createSubject(1, 1)
+        def p2subj1 = createSubject(2, 2)
+
+        def skill = createSkill(1, 1, 1, 0, 1, 0, 100)
+        def skill2 = createSkill(1, 1, 2, 0, 1, 0, 100)
+        skill2.enabled = false
+        def skill3 = createSkill(1, 1, 3, 0, 1, 0, 100)
+
+        skillsService.createProject(project1)
+        skillsService.createProject(project2)
+        skillsService.createSubject(p1subj1)
+        skillsService.createSubject(p2subj1)
+
+        skillsService.createSkill(skill)
+        skillsService.createSkill(skill2)
+        skillsService.createSkill(skill3)
+
+        when:
+
+        skillsService.exportSkillToCatalog(project1.projectId, skill2.skillId)
+
+        then:
+        def e = thrown(Exception)
+        e.getMessage().contains("Skill [skill2] is disabled. Disabled skills may not be exported to the catalog, errorCode:ExportToCatalogNotAllowed")
+    }
+
     def "export skill that other skills depend on"() {
         def project1 = createProject(1)
         def project2 = createProject(2)
@@ -2418,14 +2457,12 @@ class CatalogSkillTests extends CatalogIntSpec {
         skillsService.importSkillFromCatalogAndFinalize(project2.projectId, p2subj1.subjectId, project1.projectId, skill.skillId)
         skillsService.importSkillFromCatalogAndFinalize(project3.projectId, p3subj1.subjectId, project1.projectId, skill.skillId)
 
-        def supervisorService = createSupervisor()
-
         def badge = SkillsFactory.createBadge()
         badge.enabled = true
-        supervisorService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
         when:
-        def res = supervisorService.getAvailableSkillsForGlobalBadge(badge.badgeId, "Sample")
+        def res = skillsService.getAvailableSkillsForGlobalBadge(badge.badgeId, "Sample")
 
         then:
         res.totalAvailable == 1
@@ -2473,14 +2510,12 @@ class CatalogSkillTests extends CatalogIntSpec {
         skillsService.importSkillFromCatalogAndFinalize(project2.projectId, p2subj1.subjectId, project1.projectId, skill.skillId)
         skillsService.importSkillFromCatalogAndFinalize(project3.projectId, p3subj1.subjectId, project1.projectId, skill.skillId)
 
-        def supervisorService = createSupervisor()
-
         def badge = SkillsFactory.createBadge()
         badge.enabled = true
-        supervisorService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
         when:
-        supervisorService.assignSkillToGlobalBadge([badgeId: badge.badgeId, projectId: project3.projectId, skillId: skill.skillId])
+        skillsService.assignSkillToGlobalBadge([badgeId: badge.badgeId, projectId: project3.projectId, skillId: skill.skillId])
 
         then:
         def e = thrown(SkillsClientException)

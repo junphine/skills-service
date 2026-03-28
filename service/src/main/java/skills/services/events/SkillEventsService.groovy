@@ -18,10 +18,10 @@ package skills.services.events
 import callStack.profiler.Profile
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
-import org.apache.commons.lang3.StringUtils
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
+import skills.utils.MatomoReporter
 import skills.utils.MetricsLogger
 
 @Service
@@ -36,6 +36,9 @@ class SkillEventsService {
     MetricsLogger metricsLogger;
 
     @Autowired
+    MatomoReporter matomoReporter;
+
+    @Autowired
     SkillEventsTransactionalService skillEventsTransactionalService
 
     static class AppliedCheckRes {
@@ -48,6 +51,7 @@ class SkillEventsService {
         boolean isFromPassingQuiz = false
         String approvalRequestedMsg
         boolean forAnotherUser = false
+        boolean doNotRequireApproval = false
 
         SkillApprovalParams(){}
 
@@ -56,6 +60,9 @@ class SkillEventsService {
         }
         void setForAnotherUser(boolean forAnotherUser) {
             this.forAnotherUser = forAnotherUser
+        }
+        void setDoNotRequireApproval(boolean doNotRequireApproval) {
+            this.doNotRequireApproval = doNotRequireApproval
         }
     }
     static SkillApprovalParams defaultSkillApprovalParams = new SkillApprovalParams()
@@ -67,6 +74,7 @@ class SkillEventsService {
             skillEventPublisher.publishSkillUpdate(result, userId)
         }
         metricsLogger.logSkillReported(userId, result)
+        matomoReporter.reportSkill(userId, result.projectId, result.skillId)
         return result
     }
 

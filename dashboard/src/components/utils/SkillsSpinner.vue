@@ -22,12 +22,20 @@ defineProps({
   sizeInRem: {
     type: Number,
     default: 3
+  },
+  isCentered: {
+    type: Boolean,
+    default: true
+  },
+  isInline: {
+    type: Boolean,
+    default: false
   }
 });
 </script>
 
 <template>
-  <div v-if="isLoading" class="d-flex justify-center text-center">
+  <div v-if="isLoading" :class="{ 'd-flex justify-center text-center' : isCentered, 'inline-block': isInline }">
     <ProgressSpinner aria-label="Loading" :style="`width: ${sizeInRem}rem; height: ${sizeInRem}rem;`" />
   </div>
 </template>

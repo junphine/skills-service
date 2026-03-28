@@ -33,6 +33,8 @@ import skills.services.settings.SettingsDataAccessor
 import skills.storage.model.AdminGroupDef
 import skills.storage.model.ProjDef
 import skills.storage.model.QuizDef
+import skills.storage.model.SkillDef
+import skills.storage.model.SkillDefWithExtra
 import skills.storage.model.UserTag
 import skills.storage.model.auth.UserRole
 import skills.storage.repos.*
@@ -85,6 +87,9 @@ class UserCommunityService {
     @Autowired
     AccessSettingsStorageService accessSettingsStorageService
 
+    @Autowired
+    SkillDefWithExtraRepo skillDefWithExtraRepo
+
     String userCommunityUserTagKey
     String userCommunityUserTagValue
     String defaultUserCommunityName
@@ -107,7 +112,7 @@ class UserCommunityService {
     }
 
     @Transactional(readOnly = true)
-    Boolean isUserCommunityMember(String userId) {
+    boolean isUserCommunityMember(String userId) {
         Boolean belongsToUserCommunity = false
         if (isUserCommunityConfigured() && StringUtils.isNotBlank(userId)) {
             List<UserTag> userTags = userTagRepo.findAllByUserIdAndKey(userId, userCommunityUserTagKey)
@@ -124,6 +129,9 @@ class UserCommunityService {
         }
         userRoleRepo.findQuizIdsByAdminGroupId(adminGroupId).each { quizId ->
             res = validateQuizForCommunity(quizId, res, true)
+        }
+        userRoleRepo.findGlobalBadgeIdsByAdminGroupId(adminGroupId).each { badgeId ->
+            res = validateGlobalBadgeForCommunity(badgeId, res, true)
         }
         List<UserRoleRes> allAdminGroupMembers = accessSettingsStorageService.findAllAdminGroupMembers(adminGroupId)
         if (allAdminGroupMembers) {
@@ -164,9 +172,9 @@ class UserCommunityService {
                 res.unmetRequirements.add("Has skill(s) that have been shared for cross-project dependencies")
             }
 
-            if (skillRelDefRepo.belongsToGlobalBadge(projDef.projectId)) {
+            if (skillRelDefRepo.getNonCommunityGlobalBadgesThatThisProjectIsLinkedTo(projDef.projectId)) {
                 res.isAllowed = false
-                res.unmetRequirements.add("This project is part of one or more Global Badges")
+                res.unmetRequirements.add("This project is part of one or more Global Badges that has not enabled user community protection")
             }
 
             if(adminGroupDefRepo.doesAdminGroupContainNonUserCommunityProject(projDef.projectId)) {
@@ -205,6 +213,34 @@ class UserCommunityService {
             if (nonCommunityProjects) {
                 res.isAllowed = false
                 res.unmetRequirements.add("This quiz is linked to the following project(s) that do not have ${getCommunityNameBasedOnConfAndItemStatus(true)} permission: ${nonCommunityProjects.join(", ")}".toString())
+            }
+        }
+        return res;
+    }
+
+    @Transactional(readOnly = true)
+    EnableUserCommunityValidationRes validateGlobalBadgeForCommunity(String badgeId, EnableUserCommunityValidationRes existingValidationRes = null, adminGroupView = false) {
+        EnableUserCommunityValidationRes res = existingValidationRes ? existingValidationRes : new EnableUserCommunityValidationRes(isAllowed: true, unmetRequirements: [])
+
+        // only applicable if the global badge already exists; also normalizes badge ids case
+        SkillDefWithExtra skillDef = skillDefWithExtraRepo.findByProjectIdAndSkillIdIgnoreCaseAndType(null, badgeId, SkillDef.ContainerType.GlobalBadge)
+        if (skillDef) {
+            List<UserRole> allRoles = userRoleRepo.findAllByGlobalBadgeIdIgnoreCase(skillDef.skillId)
+            checkAllUsersAreUCMembers(allRoles, res, "global badge")
+            if(adminGroupDefRepo.doesAdminGroupContainNonUserCommunityGlobalBadge(skillDef.skillId)) {
+                res.isAllowed = false
+                if(!adminGroupView) {
+                    res.unmetRequirements.add("This global badge is part of one or more Admin Groups that do no have ${getCommunityNameBasedOnConfAndItemStatus(true)} permission".toString())
+                }
+                else {
+                    res.unmetRequirements.add("This Admin Group is connected to a global badge that is not compatible with user community protection")
+                }
+            }
+
+            List<String> nonCommunityProjects = skillRelDefRepo.getNonCommunityProjectsThatThisGlobalBadgeIsLinkedTo(skillDef.id)?.sort()
+            if (nonCommunityProjects) {
+                res.isAllowed = false
+                res.unmetRequirements.add("This global badge is linked to the following project(s) that do not have ${getCommunityNameBasedOnConfAndItemStatus(true)} permission: ${nonCommunityProjects.join(", ")}".toString())
             }
         }
         return res;
@@ -249,14 +285,43 @@ class UserCommunityService {
     }
 
     /**
-     * Checks if the specified projectId is configured as a user community only project
-     * @param projectId - not null
+     * Checks if the specified quizId is configured as a user community only quiz
+     * @param quizId - not null
      * @return true if the quiz exists and has been configured as a user community only project
      */
     @Transactional(readOnly = true)
     boolean isUserCommunityOnlyQuiz(String quizId) {
         QuizValidator.isNotBlank(quizId, "quizId")
         return quizSettingsRepo.findBySettingAndQuizId(QuizSettings.UserCommunityOnlyQuiz.setting, quizId)?.isEnabled()
+    }
+
+    /**
+     * Checks if any of the specified projectIds or quizIds are configured as user community only
+     * @param projectIds - list of project IDs, can be null or empty
+     * @param quizIds - list of quiz IDs, can be null or empty
+     * @return true if any project or quiz has been configured as user community only
+     */
+    @Transactional(readOnly = true)
+    boolean hasAnyUserCommunityOnlyProjectsOrQuizzes(List<String> projectIds, List<String> quizIds) {
+        // Check projects
+        if (projectIds) {
+            for (String projectId : projectIds) {
+                if (isUserCommunityOnlyProject(projectId)) {
+                    return true
+                }
+            }
+        }
+        
+        // Check quizzes
+        if (quizIds) {
+            for (String quizId : quizIds) {
+                if (isUserCommunityOnlyQuiz(quizId)) {
+                    return true
+                }
+            }
+        }
+        
+        return false
     }
 
     /**
@@ -271,6 +336,18 @@ class UserCommunityService {
     }
 
     @Transactional(readOnly = true)
+    boolean isUserCommunityOnlyGlobalBadge(Integer skillRefId) {
+        SkillsValidator.isNotNull(skillRefId, "skillRefId")
+        return settingsDataAccessor.getSkillSetting(skillRefId, Settings.USER_COMMUNITY_ONLY_PROJECT.settingName, null)?.isEnabled()
+    }
+
+    @Transactional(readOnly = true)
+    boolean isUserCommunityOnlyGlobalBadge(String skillId) {
+        SkillsValidator.isNotBlank(skillId, "skillId")
+        return settingsDataAccessor.getSkillSetting(null, skillId, Settings.USER_COMMUNITY_ONLY_PROJECT.settingName, null)?.isEnabled()
+    }
+
+    @Transactional(readOnly = true)
     String getProjectUserCommunity(String projectId) {
        return getCommunityNameBasedOnConfAndItemStatus(isUserCommunityOnlyProject(projectId))
     }
@@ -279,6 +356,12 @@ class UserCommunityService {
     String getQuizUserCommunity(String quizId) {
         return getCommunityNameBasedOnConfAndItemStatus(isUserCommunityOnlyQuiz(quizId))
     }
+
+    @Transactional(readOnly = true)
+    String getGlobalBadgeUserCommunity(Integer skillRefId) {
+        return getCommunityNameBasedOnConfAndItemStatus(isUserCommunityOnlyGlobalBadge(skillRefId))
+    }
+
 
     String getCommunityNameBasedOnConfAndItemStatus(Boolean isUserCommunityOnlyItem) {
         if (!restrictedUserCommunityName || isUserCommunityOnlyItem == null) {

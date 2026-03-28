@@ -14,17 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { useUserProgressSummaryState } from '@/skills-display/stores/UseUserProgressSummaryState.js'
+import {useUserProgressSummaryState} from '@/skills-display/stores/UseUserProgressSummaryState.js'
 import CircleProgress from '@/skills-display/components/progress/CircleProgress.vue'
-import { useSkillsDisplayThemeState } from '@/skills-display/stores/UseSkillsDisplayThemeState.js'
-import { computed } from 'vue'
-import { useNumberFormat } from '@/common-components/filter/UseNumberFormat.js'
-import { useLanguagePluralSupport } from '@/components/utils/misc/UseLanguagePluralSupport.js'
+import {useSkillsDisplayThemeState} from '@/skills-display/stores/UseSkillsDisplayThemeState.js'
+import {computed} from 'vue'
+import {useNumberFormat} from '@/common-components/filter/UseNumberFormat.js'
 import SkillLevel from '@/skills-display/components/progress/MySkillLevel.vue'
-import { useSkillsDisplaySubjectState } from '@/skills-display/stores/UseSkillsDisplaySubjectState.js'
-import { useSkillsDisplayAttributesState } from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
+import {useSkillsDisplaySubjectState} from '@/skills-display/stores/UseSkillsDisplaySubjectState.js'
+import {useSkillsDisplayAttributesState} from '@/skills-display/stores/UseSkillsDisplayAttributesState.js'
 import VerticalProgressBar from '@/skills-display/components/progress/VerticalProgressBar.vue'
 import AchievementCelebration from "@/skills-display/components/progress/celebration/AchievementCelebration.vue";
+import {usePluralize} from "@/components/utils/misc/UsePluralize.js";
 
 const props = defineProps({
   isSubject: {
@@ -40,17 +40,13 @@ const userProgress = computed(() => {
 })
 const themeState = useSkillsDisplayThemeState()
 const attributes = useSkillsDisplayAttributesState()
+const pluralize = usePluralize()
 const numFormat = useNumberFormat()
-const pluralSupport = useLanguagePluralSupport()
 
 const totalSkills = computed(() => userProgress.value?.totalSkills || 0)
 const skillsAchieved = computed(() => userProgress.value?.skillsAchieved || 0)
 const skillsPercentAchieved = computed(() => totalSkills.value > 0 ? Math.round((skillsAchieved.value / totalSkills.value) * 100) : 0)
 
-const beforeTodayColor = computed(() => themeState.theme.progressIndicators?.beforeTodayColor || '#14a3d2')
-const earnedTodayColor = computed(() => themeState.theme.progressIndicators?.earnedTodayColor || '#7ed6f3')
-const completeColor = computed(() => themeState.theme.progressIndicators?.completeColor || '#59ad52')
-const incompleteColor = computed(() => themeState.theme.progressIndicators?.incompleteColor || '#cdcdcd')
 const isLevelComplete = computed(() => userProgress.value.levelTotalPoints === -1)
 const levelStats = computed(() => {
   return {
@@ -71,13 +67,8 @@ const levelStats = computed(() => {
           <div>
             <circle-progress
               :total-completed-points="userProgress.points"
-              :points-completed-today="userProgress.todaysPoints"
               :total-possible-points="userProgress.totalPoints"
-              :completed-before-today-color="beforeTodayColor"
-              :incomplete-color="incompleteColor"
-              :total-completed-color="userProgress.points === userProgress.totalPoints ? completeColor : earnedTodayColor"
               data-cy="overallPoints"
-              :custom-label="attributes.pointDisplayName"
               :title="`Overall ${ attributes.pointDisplayName }s`">
               <template #footer>
                 <p v-if="userProgress.points > 0 && userProgress.points === userProgress.totalPoints">All {{ attributes.pointDisplayName }}s earned</p>
@@ -98,13 +89,8 @@ const levelStats = computed(() => {
         <div class="flex-1">
           <circle-progress
             :total-completed-points="userProgress.levelPoints"
-            :points-completed-today="userProgress.todaysPoints"
             :total-possible-points="userProgress.levelTotalPoints"
-            :completed-before-today-color="beforeTodayColor"
-            :incomplete-color="incompleteColor"
-            :total-completed-color="isLevelComplete ? completeColor : earnedTodayColor"
             :title="levelStats.title"
-            :custom-label="attributes.pointDisplayName"
             data-cy="levelProgress">
             <template #footer>
               <p v-if="isLevelComplete">All {{ attributes.levelDisplayName.toLowerCase() }}s complete</p>
@@ -112,7 +98,7 @@ const levelStats = computed(() => {
               <div v-if="!isLevelComplete">
                 <div data-cy="pointsTillNextLevelSubtitle">
                   <Tag data-cy="pointsTillNextLevel">{{ numFormat.pretty(levelStats.pointsTillNextLevel) }}</Tag>
-                  {{ attributes.pointDisplayName }}{{ pluralSupport.plural(levelStats.pointsTillNextLevel) }} to {{ attributes.levelDisplayName }} {{levelStats.nextLevel }}
+                  {{ pluralize.plural(attributes.pointDisplayName, levelStats.pointsTillNextLevel) }} to {{ attributes.levelDisplayName }} {{levelStats.nextLevel }}
                 </div>
                 <div class="mt-1">
                   You can do it!
@@ -125,7 +111,7 @@ const levelStats = computed(() => {
       <div class="mt-9 mx-8 mb-4 flex justify-center sd-theme-achieved-skills-progress" data-cy="achievedSkillsProgress">
         <div class="w-11/12">
         <div class="flex mb-1" :aria-label="`Achieved ${skillsAchieved} out of ${totalSkills} skills`">
-          <div class="flex-1 text-lg font-medium">Achieved Skills</div>
+          <div class="flex-1 text-lg font-medium">Achieved {{ attributes.skillDisplayNamePlural }}</div>
           <div><span class="text-orange-700 dark:text-orange-400 font-medium sd-theme-primary-color" data-cy="numAchievedSkills">{{skillsAchieved}}</span> / <span data-cy="numTotalSkills">{{totalSkills}}</span></div>
         </div>
         <vertical-progress-bar

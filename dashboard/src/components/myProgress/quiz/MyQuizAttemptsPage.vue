@@ -32,13 +32,14 @@ import {FilterMatchMode} from '@primevue/core/api';
 import HighlightedValue from "@/components/utils/table/HighlightedValue.vue";
 import NoContent2 from "@/components/utils/NoContent2.vue";
 import BackToMyProgressBtn from "@/components/myProgress/BackToMyProgressBtn.vue";
+import {useStorage} from "@vueuse/core";
 
 const responsive = useResponsiveBreakpoints()
 const colors = useColors()
 const timeUtils = useTimeUtils()
 const numberFormat = useNumberFormat()
 
-const pageSize = ref(10)
+const pageSize = useStorage('myQuizAttempts-pageSize', 10)
 const currentPage = ref(1)
 const sortInfo = ref({sortOrder: -1, sortBy: 'started'})
 const attemptHistory = ref([])
@@ -102,7 +103,7 @@ const hasAttempts = computed(() => attemptHistory.value.length > 0)
         <back-to-my-progress-btn />
       </template>
     </my-progress-title>
-    <Card class="my-6" :pt="{ body: { class: '!p-0' } }">
+    <Card class="my-6" :pt="{ body: { class: 'p-0!' } }">
       <template #content>
         <SkillsSpinner v-if="loadingQuizAttemptsInitially" :is-loading="true" class="my-20"/>
         <div v-else>

@@ -14,13 +14,20 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import Badge from 'primevue/badge'
 import { useProjConfig } from '@/stores/UseProjConfig.js'
 import CardWithVericalSections from '@/components/utils/cards/CardWithVericalSections.vue'
 
 const projConfig = useProjConfig();
-const props = defineProps(['options', 'disableSortControl']);
+const props = defineProps({
+  options: Object,
+  disableSortControl: Boolean,
+  titleTag: {
+    type: String,
+    default: 'h3'
+  }
+});
 const emit = defineEmits(['sort-changed-requested']);
 
 const isReadOnlyProj = computed(() => projConfig.isReadOnlyProj);
@@ -43,6 +50,28 @@ const focusSortControl = () => {
   sortControl.value.focus();
 };
 
+const titleContainer = ref(null);
+const isWrapping = ref(false);
+const checkFlexWrap = () => {
+  if (titleContainer.value) {
+    const containerWidth = titleContainer.value.clientWidth;
+    const totalChildrenWidth = Array.from(titleContainer.value.children).reduce(
+        (total, child) => total + child.offsetWidth, 0
+    );
+    isWrapping.value = totalChildrenWidth > containerWidth;
+  }
+};
+
+onMounted(() => {
+  checkFlexWrap();
+  const resizeObserver = new ResizeObserver(checkFlexWrap);
+  resizeObserver.observe(titleContainer.value);
+
+  // Cleanup observer on component unmount
+  onBeforeUnmount(() => {
+    resizeObserver.disconnect()
+  })
+});
 defineExpose({
   focusSortControl
 })
@@ -52,23 +81,31 @@ defineExpose({
   <CardWithVericalSections class="h-full">
     <template #content>
       <div class="flex mb-2">
-        <div class="flex flex-1 pt-6 pl-6">
+        <div class="flex flex-1 pt-6 pl-6 gap-2">
           <router-link v-if="options.icon"
                        :to="options.navTo" aria-label="Navigate to Skills" data-cy="iconLink" aria-hidden="true"
                        tabindex="-1" class="">
-            <div class="d-inline-block mr-2 border text-center rounded-border w-16 subject-icon-container text-primary"
+            <div class="d-inline-flex! items-center! justify-center! border rounded-border w-15 h-15 p-1 text-primary"
                  aria-hidden="true">
-              <i :class="[`${options.icon} subject-icon`]" aria-hidden="true" />
+              <i :class="[`${options.icon}`]"
+                 class="text-[2.7rem]! flex! items-center! justify-center! w-full! h-full!"
+                 aria-hidden="true" />
             </div>
           </router-link>
           <div class="media-body">
-            <div
-              class="text-xl font-semibold no-underline overflow-hidden text-ellipsis whitespace-nowrap"
-              style="max-width:17rem">
-              <router-link v-if="options.icon" :to="options.navTo" data-cy="titleLink" class="no-underline"
-                           :aria-label="`${isReadOnlyProj ? 'View' : 'Manage'} ${options.controls.type} ${options.controls.name}`">
-                {{ options.title }}
-              </router-link>
+            <div ref="titleContainer" class="flex flex-wrap">
+              <component :is="titleTag"
+                  class="text-xl font-semibold no-underline overflow-hidden text-ellipsis whitespace-nowrap"
+                  style="max-width:17rem">
+                <router-link v-if="options.icon" :to="options.navTo" data-cy="titleLink" class="no-underline"
+                             :aria-label="`${isReadOnlyProj ? 'View' : 'Manage'} ${options.controls.type} ${options.controls.name}`">
+                  {{ options.title }}
+                </router-link>
+              </component>
+              <Tag v-if="options.disabled"
+                   severity="secondary"
+                   :class="{ 'ml-2': !isWrapping }" data-cy="disabledSubjectBadge"><i
+                  class="fas fa-eye-slash mr-1" aria-hidden="true"></i> DISABLED</Tag>
             </div>
             <div class="text-secondary text-xs overflow-hidden text-ellipsis whitespace-nowrap"
                  style="max-width:15rem"
@@ -93,7 +130,7 @@ defineExpose({
         </div>
       </div>
 
-      <div class="mt-6 px-6">
+      <div class="mt-3 px-6">
         <slot name="underTitle"></slot>
       </div>
 
@@ -138,21 +175,5 @@ defineExpose({
 
 .sort-control {
   cursor: grab;
-}
-
-.subject-icon {
-  height: 100%;
-  width: 100%;
-  background-size: cover;
-  background-position: center;
-  font-size: 42px !important;
-  line-height: 58px;
-}
-
-.subject-icon-container {
-  max-width:100px;
-  max-height:100px;
-  height:60px;
-  width: 60px;
 }
 </style>

@@ -15,6 +15,12 @@
  */
 @import './base.css';
 
+/* a workaround for @tsparticles/confetti library blocking all click events, can be removed once
+  https://github.com/tsparticles/tsparticles/issues/5465 ticket is resolved */
+#confetti canvas {
+    pointer-events:none;
+}
+
 .w-min-1rem {
     min-width: 1rem
 }
@@ -82,15 +88,4 @@
 .skills-break-word {
     overflow-wrap: break-word !important;
     word-break: break-all;
-}
-
-.st-dark-theme .apexcharts-menu-item {
-    color: #1f2937 !important;
-}
-
-.st-dark-theme .apexcharts-legend-text,
-.st-dark-theme .apexcharts-text.apexcharts-xaxis-label,
-.st-dark-theme .apexcharts-text.apexcharts-yaxis-title-text{
-    color: #f5f9ff !important;
-    fill: #f5f9ff !important;
 }

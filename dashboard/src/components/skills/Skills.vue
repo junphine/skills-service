@@ -28,12 +28,14 @@ import EditSkill from '@/components/skills/EditSkill.vue'
 import { SkillsReporter } from '@skilltree/skills-client-js'
 import EditSkillGroup from '@/components/skills/skillsGroup/EditSkillGroup.vue'
 import ImportFromCatalogDialog from '@/components/skills/catalog/ImportFromCatalogDialog.vue'
+import { useFinalizeInfoState } from '@/stores/UseFinalizeInfoState.js'
 
 const appConfig = useAppConfig()
 const projConfig = useProjConfig()
 const route = useRoute()
 const skillsState = useSubjectSkillsState()
 const subjectState = useSubjectsState()
+const finalizeInfoState = useFinalizeInfoState()
 const announcer = useSkillsAnnouncer()
 const isLoading = computed(() => {
   // return this.loadingSubjectSkills || this.isLoadingProjConfig;
@@ -41,7 +43,7 @@ const isLoading = computed(() => {
 })
 
 const addSkillDisabled = computed(() => {
-  return subjectState.subject.numSkills >= appConfig.maxSkillsPerSubject;
+  return (subjectState.subject?.numSkills || 0) + (subjectState.subject?.numSkillsReused || 0) >= appConfig.maxSkillsPerSubject;
 })
 
 const addSkillsDisabledMsg = computed(() => {
@@ -81,9 +83,10 @@ const newSkillInfo = ref({
   isEdit: false,
   isCopy: false,
   groupId: null,
+  isGroupEnabled: true,
   version: 1
 })
-const createOrUpdateSkill = (skill = {}, isEdit = false, isCopy = false, groupId = null) => {
+const createOrUpdateSkill = (skill = {}, isEdit = false, isCopy = false, groupId = null, isGroupEnabled = true) => {
   if (skill.isGroupType) {
     createOrUpdateGroup(skill, isEdit)
   } else {
@@ -92,13 +95,14 @@ const createOrUpdateSkill = (skill = {}, isEdit = false, isCopy = false, groupId
       isEdit,
       show: true,
       isCopy,
-      groupId
+      groupId,
+      isGroupEnabled
     }
   }
 }
 provide('createOrUpdateSkill', createOrUpdateSkill)
 
-const reportSkills = (createdSkill) => {
+const reportSkills = (origExistingSkill, createdSkill) => {
   if (createdSkill.pointIncrementInterval <= 0) {
     SkillsReporter.reportSkill('CreateSkillDisabledTimeWindow')
   }
@@ -111,26 +115,47 @@ const reportSkills = (createdSkill) => {
   if (createdSkill.groupId) {
     SkillsReporter.reportSkill('CreateSkillGroup')
   }
+  if (
+      (!origExistingSkill && !createdSkill?.iconClass?.toLowerCase()?.includes('fa-graduation-cap')) ||
+      (origExistingSkill && createdSkill?.iconClass?.toLowerCase() !== origExistingSkill?.iconClass?.toLowerCase())
+  ) {
+    SkillsReporter.reportSkill('ConfigureSkillIcon')
+  }
+  if (createdSkill.quizId && (!origExistingSkill?.quizId || origExistingSkill?.quizId !== createdSkill.quizId)) {
+    SkillsReporter.reportSkill('SkillQuizOrSurvey')
+  }
+
 }
 
 const skillCreatedOrUpdated = (skill) => {
+  let origExistingSkill = null
   const skills = skill.groupId ? skillsState.getGroupSkills(skill.groupId) : skillsState.subjectSkills
-  const item1Index = skills.findIndex((item) => item.skillId === skill.originalSkillId)
+  const existingIndex = skills.findIndex((item) => item.skillId === skill.originalSkillId)
   const createdSkill = ({
     ...skill,
     subjectId: route.params.subjectId
   })
-  if (item1Index >= 0) {
-    skills.splice(item1Index, 1, createdSkill)
+  if (existingIndex >= 0) {
+    const existingSkill = skills[existingIndex]
+    origExistingSkill = ({...existingSkill})
+    if (skill.isGroupType && skill.enabled !== existingSkill.enabled) {
+      skillsState.loadGroupSkills(skill.projectId, skill.skillId)
+      finalizeInfoState.loadInfo()
+    }
+    skills.splice(existingIndex, 1, createdSkill)
   } else {
     skills.push(createdSkill)
     SkillsReporter.reportSkill('CreateSkill')
+    if (!skill.enabled) {
+      SkillsReporter.reportSkill('CreateSkillInitiallyHidden')
+    }
   }
   if (skill.groupId) {
     skillsState.setGroupSkills(skill.groupId, skills)
     const parentGroup = skillsState.subjectSkills.find((item) => item.skillId === skill.groupId)
     const groupSkills = skillsState.getGroupSkills(skill.groupId)
     parentGroup.totalPoints = groupSkills
+      .filter((item) => item.enabled === true)
       .map((item) => item.totalPoints)
       .reduce((accumulator, currentValue) => {
         return accumulator + currentValue
@@ -139,7 +164,7 @@ const skillCreatedOrUpdated = (skill) => {
     parentGroup.numSkillsInGroup = groupSkills.length
   }
   // attribute based skills should report on new or update operation
-  reportSkills(createdSkill)
+  reportSkills(origExistingSkill, createdSkill)
 
   subjectState.loadSubjectDetailsState()
 
@@ -214,7 +239,7 @@ const skillCreatedOrUpdated = (skill) => {
     </sub-page-header>
 
 
-    <Card :pt="{ body: { class: '!p-0' } }">
+    <Card :pt="{ body: { class: 'p-0!' } }">
       <template #content>
         <skills-spinner
           v-if="skillsState.loadingSubjectSkills && !skillsState.hasSkills "
@@ -233,6 +258,8 @@ const skillCreatedOrUpdated = (skill) => {
       v-if="newSkillInfo.show"
       v-model="newSkillInfo.show"
       :skill="newSkillInfo.skill"
+      :is-subject-enabled="subjectState.subject.enabled"
+      :is-group-enabled="newSkillInfo.isGroupEnabled"
       :is-edit="newSkillInfo.isEdit"
       :is-copy="newSkillInfo.isCopy"
       :group-id="newSkillInfo.groupId"
@@ -244,6 +271,7 @@ const skillCreatedOrUpdated = (skill) => {
       v-if="editGroup.show"
       v-model="editGroup.show"
       :skill="editGroup.skill"
+      :is-subject-enabled="subjectState.subject.enabled"
       :is-edit="editGroup.isEdit"
       @skill-saved="skillCreatedOrUpdated"
       />

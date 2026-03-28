@@ -31,7 +31,7 @@ const skillsState = useSkillsState();
     <loading-container :is-loading="skillsState.loadingSkill">
       <Card>
         <template #content>
-          <child-row-skills-display 
+          <child-row-skills-display
             v-if="skillsState.skill && skillsState.skill.skillId" 
             :skill="skillsState.skill" />
         </template>

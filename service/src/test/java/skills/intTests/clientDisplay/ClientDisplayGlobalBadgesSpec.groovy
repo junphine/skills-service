@@ -17,11 +17,11 @@ package skills.intTests.clientDisplay
 
 import groovy.json.JsonOutput
 import groovy.util.logging.Slf4j
+import org.springframework.http.HttpStatus
 import skills.intTests.utils.DefaultIntSpec
 import skills.intTests.utils.QuizDefFactory
 import skills.intTests.utils.SkillsClientException
 import skills.intTests.utils.SkillsFactory
-import skills.intTests.utils.SkillsService
 import skills.storage.model.QuizDefParent
 import skills.storage.model.SkillDef
 
@@ -29,27 +29,6 @@ import skills.storage.model.SkillDef
 class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
     String projId = SkillsFactory.defaultProjId
     String globalBadgeId = 'GlobalBadge1'
-
-    String ultimateRoot = 'jh@dojo.com'
-    SkillsService rootSkillsService
-    String supervisorUserId = 'foo@bar.com'
-    SkillsService supervisorSkillsService
-
-    def setup(){
-        skillsService.deleteProjectIfExist(projId)
-        rootSkillsService = createService(ultimateRoot, 'aaaaaaaa')
-        supervisorSkillsService = createService(supervisorUserId)
-
-        if (!rootSkillsService.isRoot()) {
-            rootSkillsService.grantRoot()
-        }
-        rootSkillsService.grantSupervisorRole(supervisorUserId)
-    }
-
-    def cleanup() {
-        deleteGlobalBadgeIfExists(globalBadgeId)
-        rootSkillsService?.removeSupervisorRole(supervisorUserId)
-    }
 
     def "badges summary for a project - one badge"() {
         String userId = "user1"
@@ -64,11 +43,11 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon"]
         badge.helpUrl = "http://foo.org"
-        supervisorSkillsService.createGlobalBadge(badge)
-        supervisorSkillsService.assignProjectLevelToGlobalBadge(projectId: projId, badgeId: badge.badgeId, level: "3")
-        supervisorSkillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
+        skillsService.createGlobalBadge(badge)
+        skillsService.assignProjectLevelToGlobalBadge(projectId: projId, badgeId: badge.badgeId, level: "3")
+        skillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
         badge.enabled  = 'true'
-        supervisorSkillsService.updateGlobalBadge(badge, badge.badgeId)
+        skillsService.updateGlobalBadge(badge, badge.badgeId)
 
         when:
         def summaries = skillsService.getBadgesSummary(userId, projId)
@@ -102,10 +81,10 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj1_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
-        supervisorSkillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
+        skillsService.createGlobalBadge(badge)
+        skillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
         badge.enabled  = 'true'
-        supervisorSkillsService.updateGlobalBadge(badge, badge.badgeId)
+        skillsService.updateGlobalBadge(badge, badge.badgeId)
 
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
 
@@ -140,12 +119,12 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj1_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
-//        supervisorSkillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
+        skillsService.createGlobalBadge(badge)
+//        skillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
 
-        supervisorSkillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: badge.badgeId, level: "1")
+        skillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: badge.badgeId, level: "1")
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
 
@@ -185,25 +164,25 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         List badges = []
         badgeIds.each {
             Map badge = [badgeId: it, name: it, description: "This is ${it}".toString(), iconClass: "fa fa-${it}".toString(),]
-            supervisorSkillsService.createGlobalBadge(badge)
+            skillsService.createGlobalBadge(badge)
             badges.add(badge)
         }
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(1).skillId])
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
 
-        supervisorSkillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: badgeIds.get(1), level: "3")
+        skillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: badgeIds.get(1), level: "3")
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(1).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(2).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(3).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(4).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(2).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(3).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(4).skillId])
 
         badges.each {
             it.enabled = "true"
-            supervisorSkillsService.createGlobalBadge(it)
+            skillsService.updateGlobalBadge(it)
         }
 
 
@@ -247,10 +226,10 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj1_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
-        supervisorSkillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
+        skillsService.createGlobalBadge(badge)
+        skillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         when:
         def summary = skillsService.getBadgeSummary(userId, proj1.projectId, globalBadgeId, -1, true)
@@ -292,13 +271,13 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj1_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(2).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(2).skillId])
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
 
@@ -351,12 +330,12 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
 
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         skillsService.addLearningPathPrerequisite(proj1.projectId, proj1_skills.get(1).skillId, proj1_skills.get(2).skillId)
         skillsService.addLearningPathPrerequisite(proj1.projectId, proj1_skills.get(1).skillId, proj1_skills.get(3).skillId)
@@ -458,11 +437,11 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj2_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
-        supervisorSkillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: globalBadgeId, level: "2")
-        supervisorSkillsService.assignProjectLevelToGlobalBadge(projectId: proj2.projectId, badgeId: globalBadgeId, level: "2")
+        skillsService.createGlobalBadge(badge)
+        skillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: globalBadgeId, level: "2")
+        skillsService.assignProjectLevelToGlobalBadge(projectId: proj2.projectId, badgeId: globalBadgeId, level: "2")
         badge.enabled = true
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         String user = getRandomUsers(1)[0]
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], user, new Date())
@@ -497,13 +476,13 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj1_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
 
         badge.enabled  = 'true'
-        supervisorSkillsService.updateGlobalBadge(badge, badge.badgeId)
+        skillsService.updateGlobalBadge(badge, badge.badgeId)
 
         when:
         def summary = skillsService.getSkillSummary(userId, proj1.projectId)
@@ -527,12 +506,12 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj1_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: globalBadgeId, skillId: proj1_skills.get(1).skillId])
         badge.enabled  = 'true'
-        supervisorSkillsService.updateGlobalBadge(badge, badge.badgeId)
+        skillsService.updateGlobalBadge(badge, badge.badgeId)
 
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
         def res = skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(1).skillId], userId, new Date())
@@ -559,29 +538,29 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         List badges = []
         badgeIds.each {
             Map badge = [badgeId: it, name: it, description: "This is ${it}".toString(), iconClass: "fa fa-${it}".toString(),]
-            supervisorSkillsService.createGlobalBadge(badge)
+            skillsService.createGlobalBadge(badge)
             badges.add(badge)
         }
 
-        supervisorSkillsService.changeGlobalBadgeDisplayOrder([badgeId: badgeIds[0]], 1)
-        supervisorSkillsService.changeGlobalBadgeDisplayOrder([badgeId: badgeIds[0]], 2)
-        supervisorSkillsService.changeGlobalBadgeDisplayOrder([badgeId: badgeIds[2]], 0)
+        skillsService.changeGlobalBadgeDisplayOrder([badgeId: badgeIds[0]], 1)
+        skillsService.changeGlobalBadgeDisplayOrder([badgeId: badgeIds[0]], 2)
+        skillsService.changeGlobalBadgeDisplayOrder([badgeId: badgeIds[2]], 0)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(0), skillId: proj1_skills.get(1).skillId])
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
 
-        supervisorSkillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: badgeIds.get(1), level: "3")
+        skillsService.assignProjectLevelToGlobalBadge(projectId: proj1.projectId, badgeId: badgeIds.get(1), level: "3")
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(1).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(2).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(3).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(4).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(1).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(2).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(3).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badgeIds.get(2), skillId: proj1_skills.get(4).skillId])
 
         badges.each {
             it.enabled = "true"
-            supervisorSkillsService.createGlobalBadge(it)
+            skillsService.updateGlobalBadge(it)
         }
 
         when:
@@ -631,13 +610,64 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj2_skills)
 
         Map badge = [badgeId: "bid1", name: "global badge", description: "gbadge".toString(), iconClass: "fa fa-foo".toString(),]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid1", skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: "bid1", skillId: proj2_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid1", skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: "bid1", skillId: proj2_skills.get(0).skillId])
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
+
+        when:
+        def summaries = skillsService.getBadgesSummary(userId, proj1.projectId)
+        def skillSummary = skillsService.getCrossProjectSkillSummary(userId, proj1.projectId, proj2.projectId, proj2_skills.get(0).skillId)
+        def globalBadge = skillsService.getBadgeSummary(userId, proj1.projectId, badge.badgeId, -1, true)
+
+        then:
+        summaries
+        skillSummary
+        List proj1Skills = globalBadge.skills.findAll { it.projectId == proj1.projectId }
+        proj1Skills.size() == 1
+        !proj1Skills.get(0).crossProject
+
+        List proj2Skills = globalBadge.skills.findAll { it.projectId == proj2.projectId }
+        proj2Skills.size() == 1
+        proj2Skills.get(0).crossProject
+    }
+
+    def "badge skill summaries from within a different project, skill in multiple global badges"() {
+
+        String userId = "user1"
+
+        def proj1 = SkillsFactory.createProject(1)
+        def proj2 = SkillsFactory.createProject(2)
+        def proj1_subj = SkillsFactory.createSubject(1, 1)
+        def proj2_subj = SkillsFactory.createSubject(2, 2)
+        List<Map> proj1_skills = SkillsFactory.createSkills(2, 1, 1, 50)
+        List<Map> proj2_skills = SkillsFactory.createSkills(2, 2, 2, 50)
+
+        skillsService.createProject(proj1)
+        skillsService.createProject(proj2)
+        skillsService.createSubject(proj1_subj)
+        skillsService.createSubject(proj2_subj)
+        skillsService.createSkills(proj1_skills)
+        skillsService.createSkills(proj2_skills)
+
+        Map badge = [badgeId: "bid1", name: "global badge", description: "gbadge".toString(), iconClass: "fa fa-foo".toString(),]
+        skillsService.createGlobalBadge(badge)
+
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid1", skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: "bid1", skillId: proj2_skills.get(0).skillId])
+        skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
+        badge.enabled = "true"
+        skillsService.updateGlobalBadge(badge)
+
+        Map badge2 = [badgeId: "bid2", name: "global badge 2", description: "gbadge".toString(), iconClass: "fa fa-foo".toString(),]
+        skillsService.createGlobalBadge(badge2)
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid2", skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: "bid2", skillId: proj2_skills.get(0).skillId])
+        badge.enabled = "true"
+        skillsService.updateGlobalBadge(badge)
 
         when:
         def summaries = skillsService.getBadgesSummary(userId, proj1.projectId)
@@ -688,12 +718,12 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createProjectAndSubjectAndSkills(proj2, proj2_subj, proj2_skills)
 
         Map badge = [badgeId: "bid1", name: "global badge", description: "gbadge".toString(), iconClass: "fa fa-foo".toString(),]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: badge.badgeId, skillId: proj2_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: badge.badgeId, skillId: proj2_skills.get(0).skillId])
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         when:
         def globalBadge = skillsService.getBadgeSummary(userId, proj1.projectId, badge.badgeId, -1, true)
@@ -734,12 +764,12 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj1_skills)
 
         Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon",]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
         proj1_skills.each {
-            supervisorSkillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: it.skillId)
+            skillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: it.skillId)
         }
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         when:
         def summary = skillsService.getBadgeSummary(userId, proj1.projectId, globalBadgeId, -1, true)
@@ -766,10 +796,10 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(proj2_skills)
 
         Map badge = [badgeId: "bid1", name: "global badge", description: "gbadge".toString(), iconClass: "fa fa-foo".toString(),]
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.createGlobalBadge(badge)
 
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid1", skillId: proj1_skills.get(0).skillId])
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: "bid1", skillId: proj2_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid1", skillId: proj1_skills.get(0).skillId])
+        skillsService.assignSkillToGlobalBadge([projectId: proj2.projectId, badgeId: "bid1", skillId: proj2_skills.get(0).skillId])
 
         when:
         def summaries = skillsService.getBadgesSummary(userId, proj1.projectId)
@@ -777,7 +807,7 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
 
         skillsService.addSkill([projectId: proj1.projectId, skillId: proj1_skills.get(0).skillId], userId, new Date())
         badge.enabled = "true"
-        supervisorSkillsService.createGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         def summariesAfterEnable = skillsService.getBadgesSummary(userId, proj1.projectId)
 
@@ -788,8 +818,8 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
 
     private deleteGlobalBadgeIfExists(String badgeId) {
         try {
-            if (supervisorSkillsService?.getGlobalBadge(badgeId)) {
-                supervisorSkillsService.deleteGlobalBadge(badgeId)
+            if (skillsService?.getGlobalBadge(badgeId)) {
+                skillsService.deleteGlobalBadge(badgeId)
             }
         } catch (SkillsClientException e) {
             log.error("Unabled to delete global badge with id [$badgeId]: ${e.message}")
@@ -809,10 +839,10 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         skillsService.createSkills(allSkills)
 
         Map badge = [badgeId: "bid1", name: "global badge", description: "gbadge".toString(), iconClass: "fa fa-foo".toString(),]
-        supervisorSkillsService.createGlobalBadge(badge)
-        supervisorSkillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid1", skillId: allSkills.get(0).skillId])
+        skillsService.createGlobalBadge(badge)
+        skillsService.assignSkillToGlobalBadge([projectId: proj1.projectId, badgeId: "bid1", skillId: allSkills.get(0).skillId])
         badge.enabled  = 'true'
-        supervisorSkillsService.updateGlobalBadge(badge)
+        skillsService.updateGlobalBadge(badge)
 
         List<String> users = getRandomUsers(1)
         def requestedDate = new Date()
@@ -823,5 +853,57 @@ class ClientDisplayGlobalBadgesSpec extends DefaultIntSpec {
         then:
         summary.skills.size() == 1
         summary.skills[0].selfReporting.requestedOn == requestedDate.time
+    }
+
+    def "cannot load global badge summary for non participating or otherwise bogus project id"() {
+        def proj1 = SkillsFactory.createProject(1)
+        def proj1_subj = SkillsFactory.createSubject(1, 1)
+        List<Map> proj1_skills = SkillsFactory.createSkills(3, 1, 1)
+
+        skillsService.createProject(proj1)
+        skillsService.createSubject(proj1_subj)
+        skillsService.createSkills(proj1_skills)
+
+        Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon"]
+        badge.helpUrl = "http://foo.org"
+        skillsService.createGlobalBadge(badge)
+        skillsService.assignProjectLevelToGlobalBadge(projectId: projId, badgeId: badge.badgeId, level: "3")
+        skillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
+        badge.enabled  = 'true'
+        skillsService.updateGlobalBadge(badge, badge.badgeId)
+
+        when:
+        skillsService.getBadgeSummary(null, "InvalidProjectId",  badge.badgeId,-1, true)
+
+        then:
+        SkillsClientException e = thrown(SkillsClientException)
+        e.httpStatus == HttpStatus.BAD_REQUEST
+        e.resBody.contains("Project ID [InvalidProjectId] does not participate in this global badge [${badge.badgeId}]")
+    }
+
+    def "cannot load global badge descriptions for non participating or otherwise bogus project id"() {
+        def proj1 = SkillsFactory.createProject(1)
+        def proj1_subj = SkillsFactory.createSubject(1, 1)
+        List<Map> proj1_skills = SkillsFactory.createSkills(3, 1, 1)
+
+        skillsService.createProject(proj1)
+        skillsService.createSubject(proj1_subj)
+        skillsService.createSkills(proj1_skills)
+
+        Map badge = [badgeId: globalBadgeId, name: 'Badge 1', description: 'This is a first badge', iconClass: "fa fa-seleted-icon"]
+        badge.helpUrl = "http://foo.org"
+        skillsService.createGlobalBadge(badge)
+        skillsService.assignProjectLevelToGlobalBadge(projectId: projId, badgeId: badge.badgeId, level: "3")
+        skillsService.assignSkillToGlobalBadge(projectId: projId, badgeId: badge.badgeId, skillId: proj1_skills.get(0).skillId)
+        badge.enabled  = 'true'
+        skillsService.updateGlobalBadge(badge, badge.badgeId)
+
+        when:
+        skillsService.getBadgeDescriptions("InvalidProjectId", badge.badgeId, true)
+
+        then:
+        SkillsClientException e = thrown(SkillsClientException)
+        e.httpStatus == HttpStatus.BAD_REQUEST
+        e.resBody.contains("Project ID [InvalidProjectId] does not participate in this global badge [${badge.badgeId}]")
     }
 }

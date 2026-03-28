@@ -39,13 +39,17 @@ const loadBadges = () => {
     const filterWithCustomIcons = (badge) => badge.iconClass &&
       (
         (badge.projectId && badge.iconClass.startsWith(`${badge.projectId}-`)) ||
-        (!badge.projectId && badge.iconClass.startsWith(`GLOBAL-`))
+        (!badge.projectId && badge.iconClass.startsWith(`${badge.badgeId}-`))
       )
-    const projectIds = res.filter(filterWithCustomIcons).map((badge) => badge.projectId)
-    const refreshIcons = [...new Set(projectIds)].map((projId) => {
-      return IconManagerService.refreshCustomIconCss(projId, !projId)
+    const projectIds = res.filter(filterWithCustomIcons).filter(badge => badge.projectId).map((badge) => badge.projectId)
+    const globalBadgeIds = res.filter(filterWithCustomIcons).filter(badge => !badge.projectId).map((badge) => badge.badgeId)
+    const refreshProjectIcons = [...new Set(projectIds)].map((projId) => {
+      return IconManagerService.refreshCustomIconCss(projId, null)
     })
-    return Promise.all(refreshIcons)
+    const refreshGlobalBadgeIcons = [...new Set(globalBadgeIds)].map((badgeId) => {
+      return IconManagerService.refreshCustomIconCss(null, badgeId)
+    })
+    return Promise.all([...refreshProjectIcons, ...refreshGlobalBadgeIcons])
   }).finally(() => {
     loading.value = false
   })
@@ -56,16 +60,19 @@ const loadBadges = () => {
 <div>
   <my-progress-title title="My Badges" />
 
-  <my-badges-details
-    data-cy="achievedBadges"
-    :badges="achievedBadges"
-    class="mt-4"
-  />
+  <skills-spinner v-if="loading" :is-loading="loading" class="mt-20" />
+  <div v-else>
+    <my-badges-details
+      data-cy="achievedBadges"
+      :badges="achievedBadges"
+      class="mt-4"
+    />
 
-  <badges-catalog class="mt-4"
-                  :badges="unachievedBadges"
-                  data-cy="availableBadges">
-  </badges-catalog>
+    <badges-catalog class="mt-4"
+                    :badges="unachievedBadges"
+                    data-cy="availableBadges">
+    </badges-catalog>
+  </div>
 </div>
 </template>
 

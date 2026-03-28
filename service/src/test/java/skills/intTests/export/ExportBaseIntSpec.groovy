@@ -16,28 +16,22 @@
 package skills.intTests.export
 
 import groovy.time.TimeCategory
-import org.apache.poi.ss.usermodel.Cell
-import org.apache.poi.ss.usermodel.Row
-import org.apache.poi.ss.usermodel.Sheet
-import org.apache.poi.ss.usermodel.Workbook
-import org.apache.poi.ss.usermodel.WorkbookFactory
+import org.apache.poi.ss.usermodel.*
 import skills.intTests.utils.DefaultIntSpec
-import skills.intTests.utils.MockUserInfoService
 import skills.intTests.utils.SkillsService
-import skills.metrics.builders.MetricsPagingParamsHelper
 import skills.metrics.builders.MetricsParams
 import skills.storage.model.SkillDef
 import spock.lang.Shared
 
-import static skills.intTests.utils.SkillsFactory.*
-
 class ExportBaseIntSpec extends DefaultIntSpec {
     String ultimateRoot = 'jh@dojo.com'
     SkillsService rootSkillsService
-    Boolean isPkiMode = false;
 
     Date today = new Date()
     Date oneDayAgo = new Date()-1
+    Date twoDayAgo = new Date()-2
+    Date threeDayAgo = new Date()-3
+    Date fourDayAgo = new Date()-4
     Date fiveDaysAgo = new Date()-5
     Date tenDaysAgo = new Date()-10
 
@@ -58,7 +52,6 @@ class ExportBaseIntSpec extends DefaultIntSpec {
         if (!rootSkillsService.isRoot()) {
             rootSkillsService.grantRoot()
         }
-        isPkiMode = mockUserInfoService != null
         users = new ArrayList<>(getRandomUsers(4))
 
         TimeZone.setDefault(TimeZone.getTimeZone("UTC"));
@@ -81,12 +74,17 @@ class ExportBaseIntSpec extends DefaultIntSpec {
         printSheet(sheet)
         assert sheet.getPhysicalNumberOfRows() == data.size()
 
-        data.eachWithIndex { dataRow, rowIndex ->
+        data.eachWithIndex { expectedDataRow, rowIndex ->
             Row row = sheet.getRow(rowIndex)
-            for (int i = 0; i < dataRow.size(); i++) {
-                assert row.getCell(i).toString() == dataRow.get(i), "row: ${rowIndex} col: ${i} expected: ${dataRow.get(i)} actual: ${row.getCell(i).toString()}"
+            List<String> actualDataRow = getDataRow(row)
+            for (int i = 0; i < expectedDataRow.size(); i++) {
+                assert normalize(actualDataRow.get(i)) == normalize(expectedDataRow.get(i)), "row: ${rowIndex} col: ${i} expected: ${expectedDataRow.get(i)} actual: ${actualDataRow.get(i)}"
             }
         }
+    }
+
+    List<String> getDataRow(Row row) {
+        return row.collect { it.toString() }
     }
 
     void printSheet(Sheet sheet) {
@@ -107,7 +105,7 @@ class ExportBaseIntSpec extends DefaultIntSpec {
 
         data.eachWithIndex { expectedValue, rowIndex ->
             Row row = sheet.getRow(rowIndex + 2)
-            assert row.getCell(cellIndex).toString() == expectedValue, "row: ${rowIndex} col: ${cellIndex} expected: ${expectedValue} actual: ${row.getCell(cellIndex).toString()}"
+            assert normalize(row.getCell(cellIndex).toString()) == normalize(expectedValue), "row: ${rowIndex} col: ${cellIndex} expected: ${expectedValue} actual: ${row.getCell(cellIndex).toString()}"
         }
     }
 
@@ -136,16 +134,11 @@ class ExportBaseIntSpec extends DefaultIntSpec {
     }
 
     protected String getUserIdForDisplay(String userId) {
-        return isPkiMode ? "${mockUserInfoService.getUserIdWithCase(userId)} for display" : userId
+        userAttrsRepo.findByUserIdIgnoreCase(userId).userIdForDisplay
     }
 
     protected String getName(String userId, firstName = true) {
-        if (!isPkiMode) {
-            return firstName ? "${userId.toUpperCase()}_first" : "${userId.toUpperCase()}_last"
-        } else {
-            MockUserInfoService.FirstnameLastname firstnameLastname = mockUserInfoService.getFirstNameLastnameForUserId(userId)
-            return firstnameLastname ? (firstName ? firstnameLastname.firstname : firstnameLastname.lastname) : 'Fake'
-        }
+        return firstName ? userAttrsRepo.findByUserIdIgnoreCase(userId).firstName : userAttrsRepo.findByUserIdIgnoreCase(userId).lastName
 
     }
     protected void achieveLevelForUsers(List<String> users, List<Map> skills, int numUsers, int level, String type = "Overall") {
@@ -177,5 +170,10 @@ class ExportBaseIntSpec extends DefaultIntSpec {
         use(TimeCategory) {
             return (date + extraHours.hour).format("M/d/yy H:mm")
         }
+    }
+
+    static String normalize(String inputString) {
+        // strip out time value, eg "5/1/25 14:30" => "5/1/25"
+        return inputString.replaceAll(/(\d{1,2}\/\d{1,2}\/\d{2})\s+\d{1,2}:\d{2}/, '$1')
     }
 }

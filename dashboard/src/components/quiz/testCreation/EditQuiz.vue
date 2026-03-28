@@ -16,7 +16,7 @@ limitations under the License.
 <script setup>
 import { ref, computed } from 'vue'
 import { boolean, object, string, ValidationError } from 'yup'
-import { useDebounceFn } from '@vueuse/core'
+import {useDebounceFn, useStorage} from '@vueuse/core'
 import InputSanitizer from '@/components/utils/InputSanitizer.js'
 import QuizService from '@/components/quiz/QuizService.js';
 import { useAppConfig } from '@/common-components/stores/UseAppConfig.js'
@@ -27,6 +27,9 @@ import SkillsDropDown from '@/components/utils/inputForm/SkillsDropDown.vue';
 import { useCommunityLabels } from '@/components/utils/UseCommunityLabels.js';
 import { useDescriptionValidatorService } from '@/common-components/validators/UseDescriptionValidatorService.js';
 import CommunityProtectionControls from '@/components/projects/CommunityProtectionControls.vue';
+import {useRouter} from "vue-router";
+import GenerateDescriptionType from "@/common-components/utilities/learning-conent-gen/GenerateDescriptionType.js";
+import QuizType from "@/skills-display/components/quiz/QuizType.js";
 
 const model = defineModel()
 const props = defineProps({
@@ -53,11 +56,21 @@ if(props.isEdit) {
   modalId.value = `copyQuizDialog${props.quiz.quizId}`
 }
 
+const router = useRouter()
 const appConfig = useAppConfig()
 
 const communityLabels = useCommunityLabels()
 const initialValueForEnableProtectedUserCommunity = communityLabels.isRestrictedUserCommunity(props.quiz.userCommunity)
 const enableProtectedUserCommunity = ref(initialValueForEnableProtectedUserCommunity)
+const userCommunityDescriptor = computed(() => {
+  return enableProtectedUserCommunity.value ? appConfig.userCommunityRestrictedDescriptor : appConfig.defaultCommunityDescriptor
+})
+const userCommunityVal = computed(() => {
+  if (props.isEdit) {
+    return enableProtectedUserCommunity.value ? userCommunityDescriptor.value : props.quiz.userCommunity
+  }
+  return userCommunityDescriptor.value
+})
 
 const checkQuizNameUnique = useDebounceFn((value) => {
   if (!value || value.length === 0) {
@@ -185,10 +198,33 @@ const saveQuiz = (values) => {
         ...newQuizDef,
         originalQuizId: newQuizDef.quizId
       }
+    }).catch((err) => {
+      const isParagraphValidationFailed = err && err.response && err.response.data && err.response.data.errorCode === 'ParagraphValidationFailed'
+      if (isParagraphValidationFailed) {
+        const explanation = err.response.data.explanation
+        const isVideoTranscript = explanation.includes('Video transcript validation failed')
+        const quizId = err.response.data.quizId
+        const questionId = err.response.data.questionId
+        return QuizService.getQuizQuestionDef(quizId, questionId).then((questionDef) => {
+          return {
+            failed: true,
+            quizId,
+            questionId,
+            isVideoTranscript,
+            questionNum: questionDef.displayOrder + 1
+          }
+        })
+      } else {
+        router.push({ name: 'ErrorPage', query: { err } });
+      }
     })
   }
   return QuizService.updateQuizDef(quizToSave)
     .then((updatedQuizDef) => {
+      if(!props.isEdit) {
+        const newQuizState = useStorage(`questionStates-${updatedQuizDef.quizId}`, {})
+        newQuizState.value = {};
+      }
       return {
         ...updatedQuizDef,
         originalQuizId: props.quiz.quizId,
@@ -200,6 +236,8 @@ const onSavedQuiz = (savedQuiz) => {
   close()
 }
 
+const quizType = ref(props.quiz?.type || QuizType.Quiz)
+const genDescriptionType = computed(() => QuizType.isQuiz(quizType.value) ? GenerateDescriptionType.Quiz : GenerateDescriptionType.Survey)
 </script>
 
 <template>
@@ -237,6 +275,7 @@ const onSavedQuiz = (savedQuiz) => {
         <SkillsDropDown
             label="Type"
             name="type"
+            v-model="quizType"
             data-cy="quizTypeSelector"
             :isRequired="true"
             :disabled="isEdit || isCopy"
@@ -247,11 +286,32 @@ const onSavedQuiz = (savedQuiz) => {
       <markdown-editor
           id="quizDescription"
           :quiz-id="isEdit ? quiz.quizId : null"
-          :allow-attachments="isEdit || !communityLabels.showManageUserCommunity.value"
+          :upload-url="isEdit   ? `/admin/quiz-definitions/${props.quiz.quizId}/upload` : null"
+          :user-community="userCommunityVal"
+          :request-community-elevation="enableProtectedUserCommunity"
+          :allow-community-elevation="true"
+          :allow-attachments="isEdit"
+          :ai-prompt-type="genDescriptionType"
           data-cy="quizDescription"
           class="mt-8"
           name="description" />
 
+    </template>
+    <template #failed="{ failedInfo }">
+      <Message severity="error" :closable="false">
+        <div class="flex flex-col gap-1 text-left" data-cy="copyFailedMsg">
+          <div class="text-xl">Failed to copy the quiz.</div>
+          <div v-if="!failedInfo.isVideoTranscript">
+            Question #{{ failedInfo.questionNum }} doesn't meet the validation requirements.
+          </div>
+          <div v-if="failedInfo.isVideoTranscript">
+            Video transcript for Question #{{ failedInfo.questionNum }} doesn't meet validation requirements.
+          </div>
+          <div>
+            Please update<span v-if="failedInfo.isVideoTranscript"> the video transcript for</span> Question #{{ failedInfo.questionNum }} to resolve the issue, then try copying the quiz again.
+          </div>
+        </div>
+      </Message>
     </template>
   </SkillsInputFormDialog>
 </template>

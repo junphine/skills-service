@@ -33,11 +33,15 @@ const props = defineProps({
   storeAndRecoverSizeFromStorage: {
     type: Boolean,
     default: false
+  },
+  alignCenter: {
+    type: Boolean,
+    default: true
   }
 })
 const announcer = useSkillsAnnouncer()
 const vidPlayerId = props.videoPlayerId
-const emit = defineEmits(['player-destroyed', 'watched-progress', 'on-resize'])
+const emit = defineEmits(['player-destroyed', 'watched-progress', 'on-resize', 'reset-video-progress', 'video-ended'])
 const watchProgress = ref({
   watchSegments: [],
   currentStart: null,
@@ -62,6 +66,25 @@ const resolution = computed(() => {
 const isResizing = ref(false);
 
 const isPlaying = ref(false)
+
+const getVideoDuration = (player) => {
+  try {
+    const duration = player.duration();
+    return (duration && !isNaN(duration) && duration > 0) ? duration : -1;
+  } catch (e) {
+    console.error('Error getting video duration:', e);
+    return -1;
+  }
+}
+const getVideoCurrentTime = (player) => {
+  try {
+    const currentTime = player.currentTime();
+    return (currentTime && !isNaN(currentTime) && currentTime >= 0) ? currentTime : -1;
+  } catch (e) {
+    console.error('Error getting video current time:', e);
+    return -1;
+  }
+}
 onMounted(() => {
   if (props.options.width && props.options.height) {
     playerWidth.value = props.options.width;
@@ -78,17 +101,30 @@ onMounted(() => {
     audioOnlyMode: props.options.isAudio,
   }, () => {
     player.on('durationchange', () => {
-      watchProgress.value.videoDuration = player.duration();
-      updateProgress(player.currentTime());
+      const videoDuration = getVideoDuration(player)
+      const videoCurrentTime = getVideoCurrentTime(player)
+      if (videoDuration > 0 && videoCurrentTime > 0) {
+        watchProgress.value.videoDuration = videoDuration
+        updateProgress(videoCurrentTime);
+      }
     });
     player.on('loadedmetadata', () => {
-      watchProgress.value.videoDuration = player.duration();
-      emit('watched-progress', watchProgress.value);
+      const videoDuration = getVideoDuration(player)
+      if (videoDuration > 0) {
+        watchProgress.value.videoDuration = videoDuration;
+        emit('watched-progress', watchProgress.value);
+      }
     });
     player.on('timeupdate', () => {
-      updateProgress(player.currentTime());
+      const videoCurrentTime = getVideoCurrentTime(player)
+      if (videoCurrentTime > 0) {
+        updateProgress(videoCurrentTime);
+      }
     });
     player.on('play', () => {
+      if(watchProgress.value.percentWatched === 100) {
+        resetProgress()
+      }
       isPlaying.value = true
     });
     player.on('pause', () => {
@@ -97,6 +133,10 @@ onMounted(() => {
         createResizeSupport()
       })
     });
+    player.on('ended', () => {
+      isPlaying.value = false;
+      emit('video-ended', watchProgress.value);
+    })
     playerContainer.player = player
   });
 
@@ -113,6 +153,18 @@ onUnmounted(() => {
 const updateProgress = (currentTime) => {
   WatchedSegmentsUtil.updateProgress(watchProgress.value, currentTime)
   emit('watched-progress', watchProgress.value)
+}
+
+const resetProgress = () => {
+  watchProgress.value.watchSegments = []
+  watchProgress.value.currentStart = null
+  watchProgress.value.percentWatched = 0
+  watchProgress.value.currentPosition = 0
+  watchProgress.value.lastKnownStopPosition = null
+  watchProgress.value.totalWatchTime = 0
+
+  WatchedSegmentsUtil.updateProgress(watchProgress.value, 0)
+  emit('reset-video-progress', watchProgress.value)
 }
 
 const getResizableElement = () => {
@@ -184,42 +236,41 @@ const createResizeSupport = () => {
 </script>
 
 <template>
-  <div class="flex justify-center mt-2">
+  <div :class="`flex ${ alignCenter ? 'justify-center' : ''} mt-2`">
     <div :class="{ 'flex-1' : !isConfiguredVideoSize }">
-  <div :id="`${vidPlayerId}Container`" data-cy="videoPlayer"  :style="playerWidth ? `width: ${playerWidth}px;` : ''"
-       class="videoPlayerContainer p-0 border rounded border-surface-200 dark:border-surface-600">
-      <i v-if="!isPlaying && !options.isAudio"
-         class="fas fa-expand-alt fa-rotate-90 handle border border-surface-500 dark:border-surface-300 p-1 text-primary bg-primary-contrast rounded-border"
-         :id="`${vidPlayerId}ResizeHandle`"
-         data-cy="videoResizeHandle"
-         role="button"
-         aria-label="Resize video dimensions control. Press right or left to resize the video player."
-         @keyup.right="resizePlayerBigger"
-         @keyup.left="resizePlayerSmaller"
-         tabindex="0"></i>
-    <div v-if="isResizing" class="text-center flex items-center justify-center ">
-      <div class="absolute z-40 top-0 left-0 right-0 bottom-0 bg-gray-600 opacity-50 text-center flex items-center justify-center " >
+      <div :id="`${vidPlayerId}Container`" data-cy="videoPlayer"  :style="playerWidth ? `width: ${playerWidth}px;` : ''"
+           class="videoPlayerContainer p-0 border rounded-sm border-surface-200 dark:border-surface-600">
+          <i v-if="!isPlaying && !options.isAudio"
+             class="fas fa-expand-alt fa-rotate-90 handle border border-surface-500 dark:border-surface-300 p-1 text-primary bg-primary-contrast rounded-border"
+             :id="`${vidPlayerId}ResizeHandle`"
+             data-cy="videoResizeHandle"
+             role="button"
+             aria-label="Resize video dimensions control. Press right or left to resize the video player."
+             @keyup.right="resizePlayerBigger"
+             @keyup.left="resizePlayerSmaller"
+             tabindex="0"></i>
+        <div v-if="isResizing" class="text-center flex items-center justify-center ">
+          <div class="absolute z-40 top-0 left-0 right-0 bottom-0 bg-gray-600 opacity-50 text-center flex items-center justify-center " >
+          </div>
+          <div class="absolute top-0 z-50 text-center text-primary bg-primary-contrast mt-8 border rounded-border" style="width: 100px;">
+            {{ resolution }}
+          </div>
+        </div>
+        <video :id="vidPlayerId"
+               class="video-js vjs-fluid"
+               data-setup='{}'
+               responsive
+               controls>
+          <source :src="options.url" :type="options.videoType">
+          <track v-if="props.options.captionsUrl" :src="props.options.captionsUrl" kind="captions" srclang="en" label="English">
+        </video>
       </div>
-      <div class="absolute top-0 z-50 text-center text-primary bg-primary-contrast mt-8 border rounded-border" style="width: 100px;">
-        {{ resolution }}
-      </div>
-    </div>
-    <video :id="vidPlayerId"
-           class="video-js vjs-fluid"
-           data-setup='{}'
-           responsive
-           controls>
-      <source :src="options.url" :type="options.videoType">
-      <track v-if="props.options.captionsUrl" :src="props.options.captionsUrl" kind="captions" srclang="en" label="English">
-    </video>
-  </div>
     </div>
   </div>
 </template>
 
 <style scoped>
 .videoPlayerContainer {
-  //resize: horizontal;
   overflow: hidden;
   max-width: 100%;
   min-width: 222px;

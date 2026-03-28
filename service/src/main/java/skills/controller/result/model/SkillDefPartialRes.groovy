@@ -18,6 +18,7 @@ package skills.controller.result.model
 import jakarta.persistence.Convert
 import skills.storage.converters.BooleanConverter
 import skills.storage.model.QuizDefParent
+import skills.storage.model.SimpleBadgeRes
 import skills.storage.model.SkillDef
 
 class SkillDefPartialRes extends SkillDefSkinnyRes{
@@ -49,6 +50,7 @@ class SkillDefPartialRes extends SkillDefSkinnyRes{
     boolean justificationRequired
     String groupId
     String groupName
+    boolean groupEnabled
     @Convert(converter=BooleanConverter)
     Boolean readOnly
     String copiedFromProjectId
@@ -68,4 +70,8 @@ class SkillDefPartialRes extends SkillDefSkinnyRes{
     Integer every
     String monthlyDay
     Date nextExpirationDate
+
+    String iconClass
+
+    List<SimpleBadgeRes> badges
 }

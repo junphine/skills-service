@@ -24,6 +24,7 @@ import skills.services.LevelDefinitionStorageService
 import skills.services.LockingService
 import skills.storage.repos.AdminGroupDefRepo
 import skills.storage.repos.ClientPrefRepo
+import skills.storage.repos.CustomIconRepo
 import skills.storage.repos.NotificationsRepo
 import skills.storage.repos.ProjDefRepo
 import skills.storage.repos.QuizDefRepo
@@ -71,6 +72,9 @@ class DataResetHelper {
     AdminGroupDefRepo adminGroupDefRepo
 
     @Autowired
+    CustomIconRepo customIconRepo
+
+    @Autowired
     WaitForAsyncTasksCompletion waitForAsyncTasksCompletion
 
     void resetData() {
@@ -80,7 +84,8 @@ class DataResetHelper {
         projDefRepo.deleteAll()
         quizDefRepo.deleteAll()
         adminGroupDefRepo.deleteAll()
-        userAttrsRepo.deleteAll()
+        List<Integer> userAttrIdsToRemove = userAttrsRepo.findAll().findAll( {it.userId != "ai-grader"}).collect { it.id }
+        userAttrsRepo.deleteAllById(userAttrIdsToRemove)
         // global badges don't have references to a project so must delete those manually
         skillDefRepo.deleteAll()
         // notificationsRepo no longer has a fk to users so must delete explicitly
@@ -95,6 +100,7 @@ class DataResetHelper {
         }
 
         deleteAllAttachments()
+        customIconRepo.deleteAll()
 
         userActionsHistoryRepo.deleteAll()
 

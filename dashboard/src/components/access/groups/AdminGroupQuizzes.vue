@@ -130,7 +130,7 @@ const clearErrorMessage = () => {
 <template>
   <sub-page-header title="Group Quizzes and Surveys" />
 
-  <Card :pt="{ body: { class: '!p-0' } }">
+  <Card :pt="{ body: { class: 'p-0!' } }">
     <template #content>
       <loading-container :is-loading="isLoading" class="">
         <div class="w-full px-4 py-6">
@@ -204,7 +204,7 @@ const clearErrorMessage = () => {
               Please use the drop-down above to start adding quizzes and surveys to this admin group!
             </p>
             <p>
-              When a quiz or survey is assigned to a group, group's members automatically gain administrative privileges of that project, streamlining management.
+              When a quiz or survey is assigned to a group, group's members automatically gain administrative privileges of that quiz or survey, streamlining management.
             </p>
           </div>
         </no-content2>

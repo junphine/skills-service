@@ -15,6 +15,9 @@
  */
 package skills.quizLoading.model
 
+import skills.services.attributes.QuestionAttrs
+import skills.utils.InputSanitizer
+
 class QuizQuestionInfo {
     Integer id
     String question
@@ -22,5 +25,12 @@ class QuizQuestionInfo {
     List<QuizAnswerOptionsInfo> answerOptions
     String questionType
     String answerHint
+
+    String getAnswerHint() {
+        return InputSanitizer.unsanitizeEscapedHtml(answerHint)
+    }
+
     Integer displayOrder
+    QuestionAttrs mediaAttributes
+    List<String> matchingTerms
 }

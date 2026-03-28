@@ -60,6 +60,28 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
     @Query('''select ua from UserAchievement ua where ua.userId= ?1 and ua.level is not null''')
     List<UserAchievement> findAllLevelsByUserId(String userId)
 
+    @Query(value = '''
+            WITH userLevelAchievements as (
+                select project_id, max(level) level
+                from user_achievement
+                where user_id = :userId
+                 AND skill_id is null
+                 AND project_id in (select distinct project_id
+                                    from global_badge_level_definition
+                                    where skill_id = :globalBadgeId)
+                group by project_id
+            )
+            SELECT NOT EXISTS (
+               select 1
+               from global_badge_level_definition badgeDef
+                        left join userLevelAchievements on badgeDef.project_id = userLevelAchievements.project_id
+               where badgeDef.skill_id = :globalBadgeId
+                 and (userLevelAchievements.level is null OR userLevelAchievements.level < badgeDef.level)
+            )''', nativeQuery = true)
+    boolean didUserAchieveAllGlobalBadgeLevels(@Param("globalBadgeId") String globalBadgeId, @Param("userId") String userId)
+
+    boolean existsByUserIdAndSkillIdAndProjectIdIsNull(String userId, String skillId)
+
     @Query('''select ua from UserAchievement ua where ua.userId= ?1 and ua.level is not null and ua.skillId is null''')
     List<UserAchievement> findAllProjectLevelsByUserId(String userId)
 
@@ -144,6 +166,7 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
         String getChildProjectId()
         String getChildSkillId()
 
+        @Nullable
         String getChildAchievedSkillId()
     }
 
@@ -217,23 +240,32 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
         skillDef.type in ?3''')
     List<AchievementInfo> getUserAchievementsAfterDate(String userId, String projectId, List<SkillDef.ContainerType> containerTypes, Date mustBeAfterThisDate)
 
-    @Query('''select badgeDef.name as name, 
-        badgeDef.skillId as id, 
-        ua.achievedOn as achievedOn,
+    @Query(value = '''
+select badgeDef.name as name, 
+        badgeDef.skill_id as id, 
+        ua.achieved_on as achievedOn,
         badgeDef.type as type
-      from SkillDef badgeDef, SkillDef skillDef, SkillRelDef rel, UserAchievement ua
+      from user_achievement ua
+        join skill_definition badgeDef on ua.skill_ref_id = badgeDef.id
       where 
-        ua.level is null and 
-        ua.userId=?1 and
-        ua.achievedOn > ?3 and 
-        badgeDef = rel.parent and
-        skillDef = rel.child and 
-        rel.type = 'BadgeRequirement' and
-        ua.projectId is null and
-        ua.skillRefId = badgeDef.id and 
-        skillDef.projectId=?2 and 
-        badgeDef.type = 'GlobalBadge' ''')
-    List<AchievementInfo> getUserGlobalBadgeAchievementsAfterDate(String userId, String projectId, Date mustBeAfterThisDate)
+        ua.skill_ref_id in (SELECT DISTINCT gbld.skill_ref_id as global_badge_id
+                                    FROM global_badge_level_definition gbld
+                                    WHERE gbld.project_id = :projectId
+
+                                    UNION
+
+                                    SELECT DISTINCT globalBadge.id as global_badge_id
+                                    FROM skill_relationship_definition srd
+                                             JOIN skill_definition globalBadge ON (srd.parent_ref_id = globalBadge.id and srd.type = 'BadgeRequirement' and globalBadge.type = 'GlobalBadge')
+                                             JOIN skill_definition skill ON (srd.child_ref_id = skill.id and srd.type = 'BadgeRequirement' and skill.type = 'Skill')
+                                    WHERE skill.project_id = :projectId)  
+        AND ua.user_id=:userId 
+        AND ua.achieved_on > :mustBeAfterThisDate
+    ''', nativeQuery = true)
+    List<AchievementInfo> getUserGlobalBadgeAchievementsAfterDate(
+            @Param("userId") String userId,
+            @Param("projectId") String projectId,
+            @Param("mustBeAfterThisDate") Date mustBeAfterThisDate)
 
     @Query('''select count(ua)
       from SkillDef skillDef, UserAchievement ua 
@@ -339,13 +371,10 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
 
     @Query(value = '''WITH mp AS (
             SELECT s.project_id AS project_id
-            FROM settings s, users uu, settings s1
+            FROM settings s, users uu
             WHERE s.setting = 'my_project'
               AND uu.user_id=?1
               AND uu.id = s.user_ref_id
-              AND s.project_id = s1.project_id
-              AND s1.setting = 'production.mode.enabled'
-              AND s1.value = 'true'
         )
         SELECT COUNT(ua.id) AS totalCount,
                COALESCE(SUM(CASE WHEN skillDef.start_date IS NOT null and skillDef.end_date IS NOT null THEN 1 END), 0) AS gemCount,
@@ -687,21 +716,23 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
             @Param('fromPoints') Integer fromPointsExclusive)
 
     @Modifying
-    int deleteAllBySkillRefId(Integer skillRefId)
+    Integer deleteAllBySkillRefId(Integer skillRefId)
 
     @Modifying
-    int deleteAllBySkillRefIdAndUserId(Integer skillRefId, String userId)
+    Integer deleteAllBySkillRefIdAndUserId(Integer skillRefId, String userId)
 
     @Modifying
-    int deleteAllBySkillRefIdInAndUserId(List<Integer> skillRefId, String userId)
+    Integer deleteAllBySkillRefIdInAndUserId(List<Integer> skillRefId, String userId)
 
     static interface AchievementItem {
         Date getAchievedOn()
 
         String getUserId()
 
+        @Nullable
         Integer getLevel()
 
+        @Nullable
         String getSkillId()
 
         String getName()
@@ -710,10 +741,13 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
 
         String getUserIdForDisplay()
 
+        @Nullable
         String getFirstName()
 
+        @Nullable
         String getLastName()
 
+        @Nullable
         String getUserTag()
     }
 
@@ -869,9 +903,13 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
         String getSkillId()
         String getSubjectId()
         String getSkillName()
+        @Nullable
         Integer getNumUserAchieved()
+        @Nullable
         Integer getNumUsersInProgress()
+        @Nullable
         Date getLastReported()
+        @Nullable
         Date getLastAchieved()
     }
 
@@ -917,6 +955,7 @@ interface UserAchievedLevelRepo extends CrudRepository<UserAchievement, Integer>
 
     static interface SkillStatsItem {
         Integer getNumUsersAchieved()
+        @Nullable
         Date getLastAchieved()
     }
 
@@ -958,16 +997,10 @@ select count(distinct ua) from UserAchievement ua where ua.projectId = :projectI
             skillDef.project_id IN 
             (
                 select s.project_id
-                from settings s
-                where s.project_id = skillDef.project_id
-                  and s.setting = 'production.mode.enabled'
-                  and s.value = 'true'
-            ) and 
-            skillDef.project_id IN (
-                select s.project_id
                 from settings s, users uu
-                where (s.setting = 'my_project' and uu.user_id=:userId and uu.id = s.user_ref_id and s.project_id = skillDef.project_id)
-            ) 
+                where s.project_id = skillDef.project_id
+                      and (s.setting = 'my_project' and uu.user_id=:userId and uu.id = s.user_ref_id and s.project_id = skillDef.project_id)
+            )
     ''', nativeQuery = true)
     AchievedSkillsCount countAchievedProductionSkillsForUserByDayWeekMonth(@Param('userId') String userId)
 
@@ -1020,4 +1053,10 @@ select count(distinct ua) from UserAchievement ua where ua.projectId = :projectI
     @Modifying
     @Query('''delete from UserAchievement ua where not exists (select 1 from UserPoints up where up.userId = ua.userId and up.projectId = ua.projectId) and ua.projectId = :projectId''')
     void deleteAchievementsWithNoPoints(@Param("projectId") String projectId)
+
+
+
+    @Modifying
+    @Query('''update UserAchievement set skillId = :newSkillId where skillRefId = :skillRefId''')
+    void updateSkillIdForSkillRefId(@Param("newSkillId") String newSkillId, @Param("skillRefId") Integer skillRefId)
 }

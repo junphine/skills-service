@@ -2827,4 +2827,249 @@
         </addColumn>
     </changeSet>
 
+    <changeSet id="51" author="skills team">
+        <addColumn tableName="quiz_question_definition">
+            <column name="attributes" type="jsonb" />
+        </addColumn>
+    </changeSet>
+
+    <changeSet id="52" author="skills team">
+        <createTable tableName="web_notifications">
+            <column name="id" type="int" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <!-- optional lookup id that can be used for in-code notification creation on app startup to make sure we don't duplicate -->
+            <column name="lookup_id" type="varchar(255)" />
+
+            <!--  will be null for any global notification -->
+            <column name="user_id" type="varchar(255)" />
+
+            <column name="title" type="varchar(255)" />
+            <column name="notification" type="text" />
+            <column name="notified_on" type="datetime">
+                <constraints nullable="false"/>
+            </column>
+            <column name="show_until" type="datetime"/>
+            <column name="created" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="index_lookup_id_user_id"
+                     tableName="web_notifications">
+            <column name="lookup_id" type="varchar(255)"/>
+        </createIndex>
+        <createIndex indexName="index_web_notifications_user_id"
+                     tableName="web_notifications">
+            <column name="user_id" type="varchar(255)"/>
+        </createIndex>
+        <createIndex indexName="index_web_notifications_notified_on"
+                     tableName="web_notifications">
+            <column name="notified_on" type="datetime"/>
+        </createIndex>
+        <createIndex indexName="index_web_notifications_show_until"
+                     tableName="web_notifications">
+            <column name="show_until" type="datetime"/>
+        </createIndex>
+        <addForeignKeyConstraint baseColumnNames="user_id"
+                                 baseTableName="web_notifications"
+                                 constraintName="fk_web_notifications_user_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="user_id"
+                                 referencedTableName="user_attrs"/>
+
+        <createTable tableName="web_notifications_ack">
+            <column name="id" type="int" autoIncrement="true">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="web_notifications_ref_id" type="int">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated" type="DATETIME" defaultValueComputed="CURRENT_TIMESTAMP">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <createIndex indexName="index_web_notifications_ack_user_id"
+                     tableName="web_notifications_ack">
+            <column name="user_id" type="varchar(255)"/>
+        </createIndex>
+        <addForeignKeyConstraint baseColumnNames="user_id"
+                                 baseTableName="web_notifications_ack"
+                                 constraintName="fk_web_notifications_ack_user_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="user_id"
+                                 referencedTableName="user_attrs"/>
+
+        <createIndex indexName="index_web_notifications_ack_notification_ref_id"
+                     tableName="web_notifications_ack">
+            <column name="web_notifications_ref_id" type="datetime"/>
+        </createIndex>
+        <addForeignKeyConstraint baseColumnNames="web_notifications_ref_id"
+                                 baseTableName="web_notifications_ack"
+                                 constraintName="fk_web_notifications_ack_notification_ref_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="id"
+                                 referencedTableName="web_notifications"/>
+
+    </changeSet>
+
+    <changeSet id="53" author="skills team">
+        <addColumn tableName="user_roles">
+            <!-- optional -->
+            <column name="global_badge_id" type="varchar(255)"/>
+        </addColumn>
+
+        <dropIndex tableName="user_roles" indexName="index_user_roles_user_id_role_name_project_id_quiz_id_admin_group_id" />
+        <createIndex indexName="index_user_roles_user_id_role_name_project_id_quiz_id_admin_group_id_global_badge_id"
+                     tableName="user_roles" unique="true">
+            <column name="user_id" type="varchar(255)"/>
+            <column name="role_name" type="varchar(255)"/>
+            <column name="project_id" type="varchar(255)"/>
+            <column name="quiz_id" type="varchar(255)"/>
+            <column name="admin_group_id" type="varchar(255)"/>
+            <column name="global_badge_id" type="varchar(255)"/>
+        </createIndex>
+
+        <addColumn tableName="custom_icons">
+            <!-- optional -->
+            <column name="global_badge_id" type="varchar(255)"/>
+        </addColumn>
+
+        <createIndex indexName="index_custom_icons_global_badge_id"
+                     tableName="custom_icons">
+            <column name="global_badge_id" type="varchar(255)"/>
+        </createIndex>
+        <createIndex indexName="index_custom_icons_global_badge_id_filename"
+                     tableName="custom_icons" unique="true">
+            <column name="global_badge_id" type="varchar(255)"/>
+            <column name="filename" type="varchar(255)"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="54" author="skills team">
+        <!-- convert supervisors to global badge admins -->
+        <sql>
+            WITH supervisor_users AS (
+                SELECT DISTINCT user_id, user_ref_id
+                FROM user_roles
+                WHERE role_name = 'ROLE_SUPERVISOR'
+                  AND project_id IS NULL
+                  AND quiz_id IS NULL
+                  AND admin_group_id IS NULL
+            ),
+                 global_badges AS (
+                     SELECT skill_id
+                     FROM skill_definition
+                     WHERE type = 'GlobalBadge'
+                 )
+            INSERT INTO user_roles (user_id, user_ref_id, role_name, global_badge_id)
+            SELECT su.user_id, su.user_ref_id, 'ROLE_GLOBAL_BADGE_ADMIN' as role_name, gb.skill_id
+            FROM
+                supervisor_users su
+                    CROSS JOIN
+                global_badges gb
+        </sql>
+        <sql>DELETE FROM user_roles WHERE role_name = 'ROLE_SUPERVISOR' AND project_id IS NULL AND quiz_id IS NULL AND admin_group_id IS NULL AND global_badge_id IS NULL</sql>
+
+        <!-- convert global custom icons to global badges -->
+        <sql>
+            WITH global_custom_icons AS (
+                SELECT filename, max(content_type) as content_type, max(data_uri) as data_uri, max(width) as width, max(height) as height
+                FROM custom_icons
+                WHERE project_id IS NULL
+                AND global_badge_id IS NULL
+                group by filename
+            ),
+                 global_badges AS (
+                     SELECT skill_id
+                     FROM skill_definition
+                     WHERE type = 'GlobalBadge'
+                 )
+            INSERT INTO custom_icons (filename, content_type, data_uri, width, height, global_badge_id)
+            SELECT gci.filename, gci.content_type, gci.data_uri, gci.width, gci.height, gb.skill_id
+            FROM
+                global_custom_icons gci
+                    CROSS JOIN
+                global_badges gb
+        </sql>
+        <sql>
+            UPDATE skill_definition
+            SET icon_class = CONCAT(skill_id, SUBSTRING(icon_class, 7))
+            WHERE type = 'GlobalBadge'
+              AND icon_class LIKE 'GLOBAL-%';
+        </sql>
+        <sql>DELETE FROM custom_icons WHERE project_id IS NULL AND global_badge_id IS NULL</sql>
+    </changeSet>
+
+    <changeSet id="55" author="skills team">
+        <addColumn tableName="quiz_definition">
+            <column name="attributes" type="jsonb" />
+        </addColumn>
+    </changeSet>
+
+
+    <changeSet id="56" author="skills team">
+        <addColumn tableName="settings">
+            <!-- optional -->
+            <column name="skill_ref_id" type="int"/>
+        </addColumn>
+
+        <createIndex indexName="index_settings_skill_ref_id"
+                     tableName="settings">
+            <column name="skill_ref_id" type="int"/>
+        </createIndex>
+
+        <addForeignKeyConstraint baseColumnNames="skill_ref_id"
+                                 baseTableName="settings"
+                                 constraintName="fk_settings_skill_ref_id"
+                                 onDelete="CASCADE"
+                                 onUpdate="CASCADE"
+                                 referencedColumnNames="id"
+                                 referencedTableName="skill_definition"/>
+    </changeSet>
+
+    <changeSet id="57" author="skills team">
+        <addColumn tableName="quiz_answer_definition">
+            <column name="multi_part_answer" type="jsonb">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
+
+    <!-- 4.1 Release -->
+    <changeSet id="58" author="skills team">
+        <sql>
+            UPDATE quiz_question_definition
+            SET attributes = jsonb_build_object('videoConf', attributes)
+            WHERE attributes IS NOT NULL
+              AND attributes ->>'videoConf' IS NULL;
+        </sql>
+        <sql>
+            INSERT INTO user_attrs (user_id, user_id_for_display, first_name, last_name, created, updated)
+            VALUES ('ai-grader', 'AI Assistant', 'AI', 'Grader', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+        </sql>
+        <addColumn tableName="user_quiz_answer_graded">
+            <column name="ai_confidence_level" type="int">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+        <addColumn tableName="user_quiz_answer_attempt">
+            <column name="ai_grading_attempt_count" type="int" defaultValue="0">
+                <constraints nullable="true"/>
+            </column>
+        </addColumn>
+    </changeSet>
 </databaseChangeLog>

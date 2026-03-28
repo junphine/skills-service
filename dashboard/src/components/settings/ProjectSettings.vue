@@ -31,6 +31,7 @@ import { useProjConfig } from '@/stores/UseProjConfig.js'
 import SkillsSettingTextInput from '@/components/settings/SkillsSettingTextInput.vue'
 import {useDialogMessages} from "@/components/utils/modal/UseDialogMessages.js";
 import SettingsItem from "@/components/settings/SettingsItem.vue";
+import ProjectService from '@/components/projects/ProjectService.js'
 
 const dialogMessages = useDialogMessages()
 const announcer = useSkillsAnnouncer();
@@ -368,12 +369,26 @@ const projectVisibilityChanged = ((value) => {
       settings.value.inviteOnlyProject.value = 'false';
       settings.value.productionModeEnabled.value = 'false';
     } else if (value.value === privateInviteOnly) {
-      settings.value.inviteOnlyProject.value = 'true';
-      settings.value.productionModeEnabled.value = 'false';
-      dialogMessages.msgOk({
-        message: 'Changing this Project to Invite Only will restrict access to the training profile and skill reporting to only invited users.',
-        header: 'Changing to Invite Only',
-      })
+      ProjectService.checkIfProjectBelongsToGlobalBadge(route.params.projectId)
+          .then((belongsToGlobal) => {
+            if (belongsToGlobal) {
+              settings.value.projectVisibility.value = settings.value.projectVisibility.lastLoadedValue
+              settings.value.projectVisibility.dirty = false;
+              dialogMessages.msgOk({
+                message: 'This project participates in one or more global badges.  All project levels and skills must be removed from all global badges before this project can be made invite only.',
+                header: 'Unable to change to Invite Only',
+              });
+            } else {
+              settings.value.inviteOnlyProject.value = 'true';
+              settings.value.productionModeEnabled.value = 'false';
+              dialogMessages.msgOk({
+                message: 'Changing this Project to Invite Only will restrict access to the training profile and skill reporting to only invited users.',
+                header: 'Changing to Invite Only',
+              })
+              inviteOnlyProjectChanged(settings.value.inviteOnlyProject.value);
+              productionModeEnabledChanged(settings.value.productionModeEnabled.value);
+            }
+          });
     } else if (value.value === discoverableProgressAndRanking) {
       settings.value.inviteOnlyProject.value = 'false';
       settings.value.productionModeEnabled.value = 'true';
@@ -522,7 +537,7 @@ const toggleCustomLabelConfig = () => {
                       data-cy="showProjectDescriptionSelector" />
           </settings-item>
 
-          <settings-item label="Use Points For Levels" input-id="levelPointsEnabled">
+          <settings-item label="Point-Based Level Management" input-id="levelPointsEnabled">
             <ToggleSwitch v-model="settings.levelPointsEnabled.value"
                          inputId="levelPointsEnabled"
                          v-on:update:modelValue="levelPointsEnabledChanged"
@@ -531,6 +546,13 @@ const toggleCustomLabelConfig = () => {
                          data-cy="usePointsForLevelsSwitch" />
             <span class="ml-1">{{ usePointsForLevelsLabel }}</span>
           </settings-item>
+          <Message v-if="settings.levelPointsEnabled.value === 'true' || settings.levelPointsEnabled.value === true"
+                   class="ml-3"
+                   severity="error"
+                   data-cy="pointBasedLevelManagementWarning"
+                   :closable="false">
+            <div>You are responsible for defining point ranges for each level. As new skills increase the total available points, update <router-link class="underline" :to="{ name:'ProjectLevels', params: { quizId: route.params.projectId }}" data-cy="levelsPageLink">level thresholds</router-link> to prevent users from reaching max level prematurely.</div>
+          </Message>
 
           <SkillsSettingTextInput name="helpUrlHost"
                                   label="Root Help Url"

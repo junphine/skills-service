@@ -33,6 +33,8 @@ import GradeQuizAttempt from "@/components/quiz/grade/GradeQuizAttempt.vue";
 import {useAppInfoState} from "@/stores/UseAppInfoState.js";
 import SelfReportService from "@/components/skills/selfReport/SelfReportService.js";
 import {useSkillsAnnouncer} from "@/common-components/utilities/UseSkillsAnnouncer.js";
+import {useStorage} from "@vueuse/core";
+import {useAppConfig} from "@/common-components/stores/UseAppConfig.js";
 
 const route = useRoute()
 const numberFormat = useNumberFormat()
@@ -41,6 +43,7 @@ const colors = useColors()
 const userInfo = useUserInfo()
 const appInfo = useAppInfoState()
 const announcer = useSkillsAnnouncer()
+const appConfig = useAppConfig()
 
 const hasGradableQuestionsDefined = ref(false)
 const runningQuizDefinitionCheck = ref(true)
@@ -57,7 +60,7 @@ const checkIfQuizHasInputTextQuestions = () => {
 }
 
 const sortInfo = ref({ sortOrder: -1, sortBy: 'started' })
-const pagination = ref({
+const pagination = useStorage('gradedQuizzes-tablePageSize', {
   currentPage: 1,
   totalRows: 0,
   pageSize: 10,
@@ -148,12 +151,31 @@ const loadEmailSubscriptionPreference = () => {
     loadingNotificationPreference.value = false
   })
 }
+
+const hasAiGrading = (aiGradingStatus) => {
+  return appConfig.enableOpenAIIntegration && aiGradingStatus && aiGradingStatus.length > 0
+
+}
+const isAiGradingPending = (quizInfo) => {
+  const aiGradingStatus = quizInfo.aiGradingStatus
+  if (hasAiGrading(aiGradingStatus)) {
+    return aiGradingStatus.findIndex((it) => !it.failed) > -1
+  }
+  return false
+}
+const isAiGradingFailed = (quizInfo) => {
+  const aiGradingStatus = quizInfo.aiGradingStatus
+  if (hasAiGrading(aiGradingStatus)) {
+    return aiGradingStatus.every((it) => it.failed)
+  }
+  return false
+}
 </script>
 
 <template>
   <div>
     <SubPageHeader title="Grading"/>
-    <Card :pt="{ body: { class: '!p-0' } }">
+    <Card :pt="{ body: { class: 'p-0!' } }">
       <template #content>
         <skills-spinner v-if="isLoading" :is-loading="isLoading" class="py-20"/>
         <div v-else>
@@ -212,6 +234,16 @@ const loadEmailSubscriptionPreference = () => {
                     <div v-else><Tag severity="success" :data-cy="`attemptGradedFor_${slotProps.data.userId}`"><i class="fas fa-check mr-1" aria-hidden="true" /> Graded</Tag></div>
                   </div>
                 </div>
+                <InlineMessage
+                    v-if="isAiGradingPending(slotProps.data)"
+                    class="mt-3"
+                    data-cy="queuedForAiGradingMsg"
+                    icon="fa-solid fa-wand-magic-sparkles">Queued for AI grading</InlineMessage>
+                <InlineMessage
+                    v-if="isAiGradingFailed(slotProps.data)"
+                    class="mt-3"
+                    data-cy="aiGradingFailedMsg"
+                    severity="error">AI grading failed - manual review needed</InlineMessage>
               </template>
             </Column>
             <Column header="Date" field="completed" :sortable="true" :class="{'flex': responsive.md.value }">
