@@ -1,2 +1,2 @@
 set JAVA_HOME=D:\IDE\jdk-21
-%JAVA_HOME%\bin\java -Dspring.datasource.url=jdbc:postgresql://localhost:5432/drupal_course_db?currentSchema=skills -Dspring.datasource.username=junphine  -Dspring.datasource.password=332584185 -jar target/skills-service-3.6.0-SNAPSHOT.jar
+%JAVA_HOME%\bin\java -Dspring.datasource.url=jdbc:postgresql://localhost:5432/drupal_course_db?currentSchema=skills -Dspring.datasource.username=junphine  -Dspring.datasource.password=332584185 -jar target/skills-service-4.2.0-SNAPSHOT.jar

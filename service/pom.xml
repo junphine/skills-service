@@ -383,6 +383,7 @@
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-saml2-service-provider</artifactId>
+            <version>6.4.4</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.bouncycastle</groupId>
@@ -596,25 +597,6 @@
                             </resources>
                         </configuration>
                     </execution>
-<!--                    <execution>-->
-<!--                        <id>copy Vue.js client-display content</id>-->
-<!--                        <phase>generate-resources</phase>-->
-<!--                        <goals>-->
-<!--                            <goal>copy-resources</goal>-->
-<!--                        </goals>-->
-<!--                        <configuration>-->
-<!--                            <outputDirectory>${basedir}/src/main/resources/public/static/clientPortal</outputDirectory>-->
-<!--                            <overwrite>true</overwrite>-->
-<!--                            <resources>-->
-<!--                                <resource>-->
-<!--                                    <directory>${project.parent.basedir}/client-display/dist</directory>-->
-<!--                                    <includes>-->
-<!--                                        <include>/*/</include>-->
-<!--                                    </includes>-->
-<!--                                </resource>-->
-<!--                            </resources>-->
-<!--                        </configuration>-->
-<!--                    </execution>-->
                 </executions>
             </plugin>
 
@@ -764,6 +746,7 @@
                                 <validHeader>${basedir}/../license-add/LICENSE-HEADER_2025.txt</validHeader>
                             </validHeaders>
                             <excludes>
+                                <exclude>**/*.bat</exclude>
                                 <exclude>**/*.xml</exclude>
                                 <exclude>**/*.jks</exclude>
                                 <exclude>**/*.ftl</exclude>
